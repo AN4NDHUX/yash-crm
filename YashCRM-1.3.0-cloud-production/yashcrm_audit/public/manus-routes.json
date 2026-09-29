@@ -1,0 +1,23 @@
+{
+  "routes": [
+    { "path": "/", "title": "Yash CRM Dashboard" },
+    { "path": "/dashboard", "title": "Dashboard" },
+    { "path": "/leads", "title": "Leads" },
+    { "path": "/leads/:id", "title": "Lead detail" },
+    { "path": "/contacts", "title": "Contacts" },
+    { "path": "/contacts/:id", "title": "Contact detail" },
+    { "path": "/accounts", "title": "Accounts" },
+    { "path": "/accounts/:id", "title": "Account detail" },
+    { "path": "/deals", "title": "Deals" },
+    { "path": "/deals/:id", "title": "Deal detail" },
+    { "path": "/products", "title": "Products" },
+    { "path": "/products/:id", "title": "Product detail" },
+    { "path": "/activities", "title": "Activities" },
+    { "path": "/activities/:id", "title": "Activity detail" },
+    { "path": "/settings", "title": "Settings" },
+    { "path": "/settings/general", "title": "General settings" },
+    { "path": "/settings/profile-users", "title": "Profile and users" },
+    { "path": "/settings/approval-process", "title": "Approval process" },
+    { "path": "/settings/blueprint", "title": "Blueprint" }
+  ]
+}
