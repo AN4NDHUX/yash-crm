@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import os
 import secrets
-import logging
 import base64
+import binascii
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -257,6 +257,8 @@ def database_connection() -> tuple[str, dict[str, Any]]:
         raw = raw.replace("postgresql://", "postgresql+psycopg://", 1)
     if raw.startswith("mysql://"):
         raw = raw.replace("mysql://", "mysql+pymysql://", 1)
+    if IS_PRODUCTION and not raw.startswith("postgresql+psycopg://"):
+        raise RuntimeError("Production requires a PostgreSQL DATABASE_URL.")
     if raw.startswith("sqlite"):
         if IS_PRODUCTION and not env_bool("ALLOW_SQLITE_IN_PRODUCTION"):
             raise RuntimeError("Production requires PostgreSQL/MySQL DATABASE_URL; SQLite is disabled by default.")
@@ -388,6 +390,11 @@ class SettingsPayload(BaseModel):
     notifications: dict[str, bool] | None = None
     name: str | None = None
     email: str | None = None
+
+
+class BulkArchivePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    related_id: list[int]
 
 
 RESOURCE_MAP: dict[str, type[Base]] = {
@@ -644,10 +651,32 @@ def ensure_cloud_admin(db: Session) -> None:
         return
     name = os.getenv("ADMIN_NAME", "Administrator").strip() or "Administrator"
     email = os.getenv("ADMIN_EMAIL", "admin@yashcrm.local").strip().lower()
-    if parseaddr(email)[1] != email or "@" not in email:
+    if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise RuntimeError("ADMIN_EMAIL must be a valid email address")
     db.add(User(name=name, email=email, role="Administrator", status="Active", last_active=datetime.utcnow()))
     db.commit()
+
+
+def validate_production_settings() -> None:
+    if not IS_PRODUCTION:
+        return
+    hosts = [value.strip() for value in os.getenv("ALLOWED_HOSTS", "").split(",") if value.strip()]
+    if not hosts or "*" in hosts:
+        raise RuntimeError("ALLOWED_HOSTS must list the production hostname; wildcard access is not allowed.")
+    origins = [value.strip() for value in os.getenv("CORS_ORIGINS", "").split(",") if value.strip()]
+    if "*" in origins:
+        raise RuntimeError("CORS_ORIGINS cannot contain '*' in production.")
+    if not env_bool("ENABLE_AUTH", True):
+        raise RuntimeError("ENABLE_AUTH must remain enabled in production.")
+    if env_bool("ENABLE_AUTH", True):
+        username = os.getenv("APP_USERNAME", "").strip()
+        password = os.getenv("APP_PASSWORD", "")
+        insecure_passwords = {"change-this-to-a-long-password", "replace-with-at-least-12-random-characters"}
+        if not username or len(password) < 12 or password.lower() in insecure_passwords or secrets.compare_digest(username.encode(), password.encode()):
+            raise RuntimeError("APP_USERNAME and an APP_PASSWORD of at least 12 characters are required.")
+    admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    if parseaddr(admin_email)[1] != admin_email or "@" not in admin_email or "." not in admin_email.rsplit("@", 1)[-1]:
+        raise RuntimeError("ADMIN_EMAIL must be a valid production email address.")
 
 
 def startup() -> None:
@@ -666,6 +695,7 @@ def startup() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_production_settings()
     startup()
     yield
 
@@ -679,8 +709,6 @@ app = FastAPI(
 )
 
 allowed_hosts = [x.strip() for x in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1" if IS_PRODUCTION else "*").split(",") if x.strip()]
-if IS_PRODUCTION and allowed_hosts == ["localhost", "127.0.0.1"]:
-    logging.getLogger("yashcrm").warning("ALLOWED_HOSTS is still using local defaults")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 allowed_origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()]
@@ -703,16 +731,23 @@ async def cloud_security(request: Request, call_next):
             try:
                 decoded = base64.b64decode(header[6:]).decode("utf-8")
                 supplied_user, supplied_password = decoded.split(":", 1)
-                valid = secrets.compare_digest(supplied_user, expected_user) and secrets.compare_digest(supplied_password, expected_password)
-            except (ValueError, UnicodeDecodeError):
+                valid = secrets.compare_digest(supplied_user.encode(), expected_user.encode()) and secrets.compare_digest(supplied_password.encode(), expected_password.encode())
+            except (binascii.Error, ValueError, UnicodeDecodeError):
                 valid = False
         if not valid:
-            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Yash CRM"'})
+            response = Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Yash CRM"'})
+            return add_security_headers(response, request)
     response = await call_next(request)
+    return add_security_headers(response, request)
+
+
+def add_security_headers(response: Response, request: Request) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
     if IS_PRODUCTION:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -860,10 +895,12 @@ def get_collection(resource: str, search: str | None = None, status: str | None 
 
 
 @app.post("/api/leads/bulk-archive")
-def bulk_archive_leads(payload: RecordPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
-    ids = payload.model_dump(exclude_unset=True).get("related_id")
-    if not isinstance(ids, list):
-        raise HTTPException(422, "related_id must contain the selected lead IDs")
+def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    ids = list(dict.fromkeys(payload.related_id))
+    if not ids:
+        raise HTTPException(422, "related_id must contain at least one lead ID")
+    if len(ids) > 100:
+        raise HTTPException(422, "A maximum of 100 leads can be archived at once")
     leads = db.scalars(select(Lead).where(Lead.id.in_(ids))).all()
     for lead in leads:
         lead.archived = True

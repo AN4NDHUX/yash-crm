@@ -2,12 +2,15 @@ databases:
   - name: yashcrm-db
     databaseName: yashcrm
     user: yashcrm
+    ipAllowList: []
 
 services:
   - type: web
     name: yashcrm
     runtime: docker
     healthCheckPath: /ready
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
       - key: APP_ENV
         value: production
@@ -20,8 +23,15 @@ services:
       - key: APP_USERNAME
         value: admin
       - key: APP_PASSWORD
-        generateValue: true
+        sync: false
+      - key: ADMIN_NAME
+        value: Administrator
+      - key: ADMIN_EMAIL
+        sync: false
       - key: ALLOWED_HOSTS
-        value: "*.onrender.com"
+        fromService:
+          type: web
+          name: yashcrm
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: SEED_DEMO_DATA
         value: "false"

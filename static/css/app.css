@@ -933,7 +933,7 @@ body { color: var(--pepper-dark); }
 .related-group-head .card-head-link { font-size: 10px; }
 .related-empty { color: var(--text-faint); font-size: 10px; padding: 7px 0; }
 
-/* Cloud UI gloss: low-density, continuous, GPU-friendly and non-interactive. */
+/* Cloud UI gloss: one restrained pass on the navigation rail only. */
 .sidebar, .main-area { position: relative; isolation: isolate; }
 .sidebar { overflow: hidden; }
 .sidebar::after {
@@ -943,9 +943,9 @@ body { color: var(--pepper-dark); }
   z-index: 0;
   top: -35%;
   bottom: -35%;
-  left: -95%;
-  width: 78%;
-  opacity: .16;
+  left: -20%;
+  width: 14%;
+  opacity: .075;
   background: linear-gradient(112deg,
     transparent 0 34%,
     rgba(255,255,255,.025) 40%,
@@ -954,38 +954,19 @@ body { color: var(--pepper-dark); }
     transparent 66% 100%);
   filter: blur(9px);
   transform: translate3d(0,0,0) skewX(-8deg);
-  animation: yash-sidebar-gloss 22s linear infinite;
+  animation: yash-sidebar-gloss 32s linear infinite;
   will-change: transform;
 }
 .sidebar > * { position: relative; z-index: 1; }
 
-.main-area::before {
-  content: "";
-  position: fixed;
-  pointer-events: none;
-  z-index: 0;
-  inset: 0 0 0 var(--sidebar-width);
-  opacity: .20;
-  background:
-    linear-gradient(112deg, transparent 0 39%, rgba(255,255,255,.28) 48%, transparent 58%),
-    linear-gradient(112deg, transparent 0 18%, rgba(212,212,212,.12) 25%, transparent 32%);
-  background-size: 190% 100%, 245% 100%;
-  background-position: -160% 0, -220% 0;
-  animation: yash-main-gloss 28s linear infinite;
-  will-change: background-position;
-}
 .main-area > * { position: relative; z-index: 1; }
 
 @keyframes yash-sidebar-gloss {
   from { transform: translate3d(0,0,0) skewX(-8deg); }
-  to   { transform: translate3d(460%,0,0) skewX(-8deg); }
-}
-@keyframes yash-main-gloss {
-  to { background-position: 170% 0, 225% 0; }
+  to   { transform: translate3d(900%,0,0) skewX(-8deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar::after, .main-area::before { animation: none; }
+  .sidebar::after { animation: none; }
   .sidebar::after { opacity: .07; left: 18%; }
 }
-@media (max-width: 860px) { .main-area::before { inset: 0; } }
 

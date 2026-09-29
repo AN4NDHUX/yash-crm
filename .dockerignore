@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+*.db
+*.sqlite*
+.env
+.env.*
+!.env.example
+build
+dist
+release
+htmlcov
+.coverage
+*.log
