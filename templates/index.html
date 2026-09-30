@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0F2180" />
+  <meta name="theme-color" content="#005beb" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -15,7 +15,7 @@
   <link rel="icon" href="/static/icons/icon-192.png" type="image/png" sizes="192x192" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/app.css" />
 </head>
 <body>
@@ -24,19 +24,21 @@
       <div class="brand-lockup">
         <a class="brand" href="/" aria-label="Yash CRM home">
           <span class="brand-mark" aria-hidden="true"><i></i><b></b></span>
-          <span class="brand-name">Yash <em>CRM</em></span>
+          <span class="brand-name">Yash CRM</span>
         </a>
         <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation">×</button>
       </div>
+
       <div class="workspace-switcher">
         <span class="workspace-avatar">Y</span>
         <span class="workspace-copy"><small>Workspace</small><strong>Yash CRM</strong></span>
         <span class="chevron">⌄</span>
       </div>
+
       <nav class="primary-nav" aria-label="Primary navigation">
         <span class="nav-label">Workspace</span>
-        <a href="/dashboard" data-route="dashboard"><span class="nav-icon">◈</span>Dashboard</a>
-        <a href="/leads" data-route="leads"><span class="nav-icon">✦</span>Leads <span class="nav-count" id="nav-leads-count" hidden>0</span></a>
+        <a class="active" href="/dashboard" data-route="dashboard"><span class="nav-icon">◇</span>Dashboard</a>
+        <a href="/leads" data-route="leads"><span class="nav-icon">✦</span>Leads <span class="nav-count" id="nav-leads-count">1</span></a>
         <a href="/contacts" data-route="contacts"><span class="nav-icon">◎</span>Contacts</a>
         <a href="/accounts" data-route="accounts"><span class="nav-icon">▣</span>Accounts</a>
         <a href="/deals" data-route="deals"><span class="nav-icon">◇</span>Deals</a>
@@ -45,9 +47,18 @@
         <span class="nav-label nav-label-settings">Manage</span>
         <a href="/settings/general" data-route="settings"><span class="nav-icon">⚙</span>Settings</a>
       </nav>
+
       <div class="sidebar-footer">
-        <div class="help-card"><span class="help-icon">?</span><div><strong>Need a hand?</strong><small>Visit the help center</small></div><span class="arrow">↗</span></div>
-        <div class="user-mini"><span class="avatar avatar-indigo">Y</span><div><strong>Your profile</strong><small>&nbsp;</small></div><button class="icon-button" id="profile-shortcut" aria-label="Open profile">⋯</button></div>
+        <div class="help-card">
+          <span class="help-icon">?</span>
+          <div><strong>Need a hand?</strong><small>Visit the help center</small></div>
+          <span class="arrow">↗</span>
+        </div>
+        <div class="user-mini">
+          <span class="avatar avatar-indigo">A</span>
+          <div><strong>Administrator</strong><small>Administrator</small></div>
+          <button class="icon-button" id="profile-shortcut" aria-label="Open profile">•••</button>
+        </div>
       </div>
     </aside>
 
@@ -55,15 +66,93 @@
 
     <main class="main-area">
       <header class="topbar">
-        <button class="icon-button menu-toggle" id="menu-toggle" aria-label="Open navigation">☰</button>
+        <button class="icon-button menu-toggle" id="menu-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
         <div class="breadcrumbs" id="breadcrumbs"><span>Workspace</span><b>/</b><strong>Dashboard</strong></div>
         <div class="topbar-actions">
-          <div class="global-search" id="global-search-wrap"><span>⌕</span><input id="global-search" type="search" placeholder="Search anything..." aria-label="Search anything" autocomplete="off" /><kbd>⌘ K</kbd><div class="search-results" id="search-results"></div></div>
+          <div class="global-search" id="global-search-wrap">
+            <span>⌕</span>
+            <input id="global-search" type="search" placeholder="Search anything..." aria-label="Search anything" autocomplete="off" />
+            <kbd>⌘ K</kbd>
+            <div class="search-results" id="search-results"></div>
+          </div>
           <button class="icon-button top-icon" aria-label="Notifications"><span class="notification-dot"></span>♧</button>
-          <button class="top-profile" id="top-profile" aria-label="Open profile"><span class="avatar avatar-indigo">Y</span><span class="top-profile-copy"><strong>Your profile</strong><small>&nbsp;</small></span><span class="chevron">⌄</span></button>
+          <button class="top-profile" id="top-profile" aria-label="Open profile">
+            <span class="avatar avatar-indigo">A</span>
+            <span class="top-profile-copy"><strong>Administrator</strong><small>Administrator</small></span>
+            <span class="chevron">⌄</span>
+          </button>
         </div>
       </header>
-      <div class="content-area" id="app-content" tabindex="-1"></div>
+
+      <div class="content-area" id="app-content" tabindex="-1">
+        <section class="page-heading showcase-enter">
+          <div>
+            <span class="eyebrow">Overview</span>
+            <h1>Good afternoon, Administrator</h1>
+            <p class="subheading">Here is what is happening across your customer workspace.</p>
+          </div>
+          <div class="heading-actions">
+            <button class="button button-ghost">＋ Log activity</button>
+            <button class="button button-primary">＋ Add lead</button>
+          </div>
+        </section>
+
+        <section class="stats-grid" aria-label="Workspace summary">
+          <article class="card stat-card">
+            <div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div>
+            <strong class="stat-value">1</strong>
+            <p class="stat-foot"><b>Live</b> from CRM records</p>
+          </article>
+          <article class="card stat-card">
+            <div class="stat-top"><span class="stat-label">Open deals</span><span class="stat-icon">◇</span></div>
+            <strong class="stat-value">1</strong>
+            <p class="stat-foot"><b>Live</b> from CRM records</p>
+          </article>
+          <article class="card stat-card">
+            <div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div>
+            <strong class="stat-value">₹1,00,00,00,000</strong>
+            <p class="stat-foot"><b>Live</b> open opportunities</p>
+          </article>
+          <article class="card stat-card">
+            <div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div>
+            <strong class="stat-value">0</strong>
+            <p class="stat-foot"><b>Needs attention</b> next 7 days</p>
+          </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="dashboard-column">
+            <article class="card">
+              <div class="card-head"><div class="card-head-copy"><h2>Pipeline overview</h2><small>Open opportunities by stage</small></div><a class="card-head-link" href="/deals">View deals ↗</a></div>
+              <div class="card-body pipeline-chart">
+                <div class="pipeline-row"><span class="pipeline-label">Qualification</span><span class="progress-track"><i class="progress-bar" style="width:100%"></i></span><span class="pipeline-meta"><strong>₹1,00,00,00,000</strong>1 deal</span></div>
+              </div>
+            </article>
+
+            <article class="card">
+              <div class="card-head"><div class="card-head-copy"><h2>Recent activity</h2><small>Latest updates from the team</small></div><a class="card-head-link" href="/activities">View all ↗</a></div>
+              <div class="card-body empty-state"><span class="empty-icon">✓</span><h3>Nothing new yet.</h3><p>Your latest customer activity will appear here.</p></div>
+            </article>
+          </div>
+
+          <div class="dashboard-column">
+            <article class="card">
+              <div class="card-head"><div class="card-head-copy"><h2>Lead funnel</h2><small>Current lead distribution</small></div><a class="card-head-link" href="/leads">View leads ↗</a></div>
+              <div class="card-body funnel"><div class="funnel-row"><span>Converted</span><span class="funnel-bar"><i style="width:100%"></i></span><b>1</b></div></div>
+            </article>
+
+            <article class="card">
+              <div class="card-head"><div class="card-head-copy"><h2>Quick actions</h2><small>Keep your workspace up to date</small></div></div>
+              <div class="card-body quick-actions">
+                <button class="quick-action"><span>✦</span>Add lead</button>
+                <button class="quick-action"><span>◎</span>Add contact</button>
+                <button class="quick-action"><span>▣</span>Add account</button>
+                <button class="quick-action"><span>◇</span>Add deal</button>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
@@ -73,39 +162,57 @@
       <form id="record-form"><div class="modal-body" id="modal-body"></div><div class="modal-foot"><button type="button" class="button button-ghost" id="modal-cancel">Cancel</button><button type="submit" class="button button-primary" id="modal-submit">Save record</button></div></form>
     </section>
   </div>
+
   <div class="modal-backdrop" id="confirm-backdrop" hidden>
-    <section class="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div class="modal-head"><div><span class="eyebrow">Confirm action</span><h2 id="confirm-title">Are you sure?</h2></div><button class="icon-button modal-close" id="confirm-close" aria-label="Close">×</button></div><div class="modal-body"><p id="confirm-copy" class="modal-copy"></p></div><div class="modal-foot"><button type="button" class="button button-ghost" id="confirm-cancel">Cancel</button><button type="button" class="button button-danger" id="confirm-action">Continue</button></div></section>
+    <section class="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="modal-head"><div><span class="eyebrow">Confirm action</span><h2 id="confirm-title">Are you sure?</h2></div><button class="icon-button modal-close" id="confirm-close" aria-label="Close">×</button></div>
+      <div class="modal-body"><p id="confirm-copy" class="modal-copy"></p></div>
+      <div class="modal-foot"><button type="button" class="button button-ghost" id="confirm-cancel">Cancel</button><button type="button" class="button button-danger" id="confirm-action">Continue</button></div>
+    </section>
   </div>
+
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
   <script type="module" src="/static/js/app.js"></script>
   <script>
     (() => {
-      const glossyCardSelector = [
-        ".card",
-        ".deal-card",
-        ".quick-action",
-        ".settings-section",
-        ".detail-summary",
-        ".table-card",
-        ".kanban-column",
-        ".module-toolbar"
-      ].join(",");
+      const arrangeDashboard = () => {
+        const grid = document.querySelector(".dashboard-grid");
+        if (!grid) return;
 
-      document.addEventListener("click", (event) => {
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        const columns = grid.querySelectorAll(":scope > .dashboard-column");
+        if (columns.length !== 2) return;
 
-        const card = event.target.closest(glossyCardSelector);
-        if (!card) return;
+        const cards = [...grid.querySelectorAll(":scope > .dashboard-column > .card")];
+        const findCard = (title) => cards.find((card) => card.querySelector("h2")?.textContent.trim() === title);
+        const placement = [
+          [columns[0], ["Pipeline overview", "Lead funnel"]],
+          [columns[1], ["Recent activity", "Quick actions"]]
+        ];
 
-        card.classList.remove("is-glossing");
-        void card.offsetWidth;
-        card.classList.add("is-glossing");
-      });
+        placement.forEach(([column, titles]) => {
+          const currentTitles = [...column.querySelectorAll(":scope > .card h2")].map((heading) => heading.textContent.trim());
+          if (currentTitles.join("|") === titles.join("|")) return;
+          titles.forEach((title) => {
+            const card = findCard(title);
+            if (card) column.append(card);
+          });
+        });
+      };
 
-      document.addEventListener("animationend", (event) => {
-        if (event.animationName === "yash-card-click-gloss") {
-          event.target.classList.remove("is-glossing");
-        }
+      let queued = false;
+      const queueArrangement = () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => {
+          queued = false;
+          arrangeDashboard();
+        });
+      };
+
+      arrangeDashboard();
+      new MutationObserver(queueArrangement).observe(document.querySelector("#app-content"), {
+        childList: true,
+        subtree: true
       });
     })();
   </script>
