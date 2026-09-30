@@ -42,6 +42,20 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class ReadinessTrustedHostMiddleware(TrustedHostMiddleware):
+    """Allow Railway's internal readiness probe without relaxing other routes."""
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if (
+            scope["type"] == "http"
+            and scope.get("method") == "GET"
+            and scope.get("path") == "/ready"
+        ):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -709,7 +723,7 @@ app = FastAPI(
 )
 
 allowed_hosts = [x.strip() for x in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1" if IS_PRODUCTION else "*").split(",") if x.strip()]
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+app.add_middleware(ReadinessTrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 allowed_origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "").split(",") if x.strip()]
 if allowed_origins:
