@@ -3,647 +3,78 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
   <meta name="theme-color" content="#0F2180" />
-
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
-
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Yash CRM" />
-
-  <meta
-    name="description"
-    content="Yash CRM — a focused workspace for customer relationships and revenue."
-  />
-
+  <meta name="description" content="Yash CRM — a focused workspace for customer relationships and revenue." />
   <title>Yash CRM</title>
-
-  <link
-    rel="icon"
-    href="/favicon.svg"
-    type="image/svg+xml"
-  />
-
-  <link
-    rel="icon"
-    href="/static/icons/icon-192.png"
-    type="image/png"
-    sizes="192x192"
-  />
-
-  <link
-    rel="preconnect"
-    href="https://fonts.googleapis.com"
-  />
-
-  <link
-    rel="preconnect"
-    href="https://fonts.gstatic.com"
-    crossorigin
-  />
-
-  <link
-    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
-    rel="stylesheet"
-  />
-
-  <link
-    rel="stylesheet"
-    href="/static/css/app.css"
-  />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/static/icons/icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/app.css" />
 </head>
-
 <body>
-
   <div class="app-shell">
-
-    <!-- ========================================
-         SIDEBAR
-    ========================================= -->
-
-    <aside
-      class="sidebar"
-      id="sidebar"
-    >
-
-      <!-- BRAND -->
-
+    <aside class="sidebar" id="sidebar">
       <div class="brand-lockup">
-
-        <a
-          class="brand"
-          href="/"
-          aria-label="Yash CRM home"
-        >
-
-          <span
-            class="brand-mark"
-            aria-hidden="true"
-          >
-            <i></i>
-            <b></b>
-          </span>
-
-          <span class="brand-name">
-            Yash <em>CRM</em>
-          </span>
-
+        <a class="brand" href="/" aria-label="Yash CRM home">
+          <span class="brand-mark" aria-hidden="true"><i></i><b></b></span>
+          <span class="brand-name">Yash <em>CRM</em></span>
         </a>
-
-        <button
-          class="icon-button sidebar-close"
-          id="sidebar-close"
-          aria-label="Close navigation"
-        >
-          
-        </button>
-
+        <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation">×</button>
       </div>
-
-
-      <!-- WORKSPACE -->
-
       <div class="workspace-switcher">
-
-        <span class="workspace-avatar">
-          Y
-        </span>
-
-        <span class="workspace-copy">
-
-          <small>
-          
-          </small>
-
-          <strong>
-            Yash CRM
-          </strong>
-
-        </span>
-
-        <span class="chevron">
-          
-        </span>
-
+        <span class="workspace-avatar">Y</span>
+        <span class="workspace-copy"><small>Workspace</small><strong>Yash CRM</strong></span>
+        <span class="chevron">⌄</span>
       </div>
-
-
-      <!-- PRIMARY NAVIGATION -->
-
-      <nav
-        class="primary-nav"
-        aria-label="Primary navigation"
-      >
-
-        <span class="nav-label">
-          Workspace
-        </span>
-
-
-        <!-- Dashboard -->
-
-        <a
-          href="/dashboard"
-          data-route="dashboard"
-        >
-          <span class="nav-icon">◈</span>
-          Dashboard
-        </a>
-
-
-        <!-- Leads -->
-
-        <a
-          href="/leads"
-          data-route="leads"
-        >
-
-          <span class="nav-icon">
-            ✦
-          </span>
-
-          Leads
-
-          <span
-            class="nav-count"
-            id="nav-leads-count"
-            hidden
-          >
-            0
-          </span>
-
-        </a>
-
-
-        <!-- Contacts -->
-
-        <a
-          href="/contacts"
-          data-route="contacts"
-        >
-          <span class="nav-icon">◎</span>
-          Contacts
-        </a>
-
-
-        <!-- Accounts -->
-
-        <a
-          href="/accounts"
-          data-route="accounts"
-        >
-          <span class="nav-icon">▣</span>
-          Accounts
-        </a>
-
-
-        <!-- Deals -->
-
-        <a
-          href="/deals"
-          data-route="deals"
-        >
-          <span class="nav-icon">◇</span>
-          Deals
-        </a>
-
-
-        <!-- Products -->
-
-        <a
-          href="/products"
-          data-route="products"
-        >
-          <span class="nav-icon">□</span>
-          Products
-        </a>
-
-
-        <!-- Activities -->
-
-        <a
-          href="/activities"
-          data-route="activities"
-        >
-          <span class="nav-icon">✓</span>
-          Activities
-        </a>
-
-
-        <!-- SETTINGS SECTION -->
-
-        <span class="nav-label nav-label-settings">
-          Manage
-        </span>
-
-
-        <a
-          href="/settings/general"
-          data-route="settings"
-        >
-          <span class="nav-icon">⚙</span>
-          Settings
-        </a>
-
+      <nav class="primary-nav" aria-label="Primary navigation">
+        <span class="nav-label">Workspace</span>
+        <a href="/dashboard" data-route="dashboard"><span class="nav-icon">◈</span>Dashboard</a>
+        <a href="/leads" data-route="leads"><span class="nav-icon">✦</span>Leads <span class="nav-count" id="nav-leads-count" hidden>0</span></a>
+        <a href="/contacts" data-route="contacts"><span class="nav-icon">◎</span>Contacts</a>
+        <a href="/accounts" data-route="accounts"><span class="nav-icon">▣</span>Accounts</a>
+        <a href="/deals" data-route="deals"><span class="nav-icon">◇</span>Deals</a>
+        <a href="/products" data-route="products"><span class="nav-icon">□</span>Products</a>
+        <a href="/activities" data-route="activities"><span class="nav-icon">✓</span>Activities</a>
+        <span class="nav-label nav-label-settings">Manage</span>
+        <a href="/settings/general" data-route="settings"><span class="nav-icon">⚙</span>Settings</a>
       </nav>
-
-
-      <!-- SIDEBAR FOOTER -->
-
       <div class="sidebar-footer">
-
-
-        <!-- HELP -->
-
-        <div class="help-card">
-
-          <span class="help-icon">
-            ?
-          </span>
-
-          <div>
-
-            <strong>
-              Need a hand?
-            </strong>
-
-            <small>
-              Visit the help center
-            </small>
-
-          </div>
-
-          <span class="arrow">
-            ↗
-          </span>
-
-        </div>
-
-
-        <!-- PROFILE -->
-
-        <div class="user-mini">
-
-          <span class="avatar avatar-indigo">
-            Y
-          </span>
-
-          <div>
-
-            <strong>
-              Your profile
-            </strong>
-
-            <small>
-              &nbsp;
-            </small>
-
-          </div>
-
-          <button
-            class="icon-button"
-            id="profile-shortcut"
-            aria-label="Open profile"
-          >
-            ⋯
-          </button>
-
-        </div>
-
+        <div class="help-card"><span class="help-icon">?</span><div><strong>Need a hand?</strong><small>Visit the help center</small></div><span class="arrow">↗</span></div>
+        <div class="user-mini"><span class="avatar avatar-indigo">Y</span><div><strong>Your profile</strong><small>&nbsp;</small></div><button class="icon-button" id="profile-shortcut" aria-label="Open profile">⋯</button></div>
       </div>
-
     </aside>
 
-
-    <!-- ========================================
-         MAIN APPLICATION
-    ========================================= -->
-
     <main class="main-area">
-
-
-      <!-- TOP BAR -->
-
       <header class="topbar">
-
-
-        <!-- MOBILE MENU -->
-
-        <button
-          class="icon-button menu-toggle"
-          id="menu-toggle"
-          aria-label="Open navigation"
-        >
-          ☰
-        </button>
-
-
-        <!-- BREADCRUMBS -->
-
-        <div
-          class="breadcrumbs"
-          id="breadcrumbs"
-        >
-
-          <span>
-            Workspace
-          </span>
-
-          <b>
-            /
-          </b>
-
-          <strong>
-            Dashboard
-          </strong>
-
-        </div>
-
-
-        <!-- TOP BAR ACTIONS -->
-
+        <button class="icon-button menu-toggle" id="menu-toggle" aria-label="Open navigation">☰</button>
+        <div class="breadcrumbs" id="breadcrumbs"><span>Workspace</span><b>/</b><strong>Dashboard</strong></div>
         <div class="topbar-actions">
-
-
-          <!-- GLOBAL SEARCH -->
-
-          <div
-            class="global-search"
-            id="global-search-wrap"
-          >
-
-            <span>
-              ⌕
-            </span>
-
-            <input
-              id="global-search"
-              type="search"
-              placeholder="Search anything..."
-              aria-label="Search anything"
-              autocomplete="off"
-            />
-
-            <kbd>
-              
-            </kbd>
-
-            <div
-              class="search-results"
-              id="search-results"
-            ></div>
-
-          </div>
-
-
-          <!-- NOTIFICATIONS -->
-
-          <button
-            class="icon-button top-icon"
-            aria-label="Notifications"
-          >
-
-            <span class="notification-dot"></span>
-
-
-          </button>
-
-
-          <!-- PROFILE -->
-
-          <button
-            class="top-profile"
-            id="top-profile"
-            aria-label="Open profile"
-          >
-
-            <span class="avatar avatar-indigo">
-              Y
-            </span>
-
-            <span class="top-profile-copy">
-
-              <strong>
-                Your profile
-              </strong>
-
-              <small>
-                &nbsp;
-              </small>
-
-            </span>
-
-            <span class="chevron">
-            
-            </span>
-
-          </button>
-
+          <div class="global-search" id="global-search-wrap"><span>⌕</span><input id="global-search" type="search" placeholder="Search anything..." aria-label="Search anything" autocomplete="off" /><kbd>⌘ K</kbd><div class="search-results" id="search-results"></div></div>
+          <button class="icon-button top-icon" aria-label="Notifications"><span class="notification-dot"></span>♧</button>
+          <button class="top-profile" id="top-profile" aria-label="Open profile"><span class="avatar avatar-indigo">Y</span><span class="top-profile-copy"><strong>Your profile</strong><small>&nbsp;</small></span><span class="chevron">⌄</span></button>
         </div>
-
       </header>
-
-
-      <!-- ========================================
-           DYNAMIC APPLICATION CONTENT
-      ========================================= -->
-
-      <div
-        class="content-area"
-        id="app-content"
-        tabindex="-1"
-      ></div>
-
+      <div class="content-area" id="app-content" tabindex="-1"></div>
     </main>
-
   </div>
 
-
-  <!-- ========================================
-       CREATE / EDIT RECORD MODAL
-  ========================================= -->
-
-  <div
-    class="modal-backdrop"
-    id="modal-backdrop"
-    hidden
-  >
-
-    <section
-      class="modal"
-      id="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="modal-title"
-    >
-
-      <div class="modal-head">
-
-        <div>
-
-          <span
-            class="eyebrow"
-            id="modal-eyebrow"
-          >
-            Create
-          </span>
-
-          <h2 id="modal-title">
-            New record
-          </h2>
-
-        </div>
-
-
-        <button
-          class="icon-button modal-close"
-          id="modal-close"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <form id="record-form">
-
-
-        <div
-          class="modal-body"
-          id="modal-body"
-        ></div>
-
-
-        <div class="modal-foot">
-
-          <button
-            type="button"
-            class="button button-ghost"
-            id="modal-cancel"
-          >
-            Cancel
-          </button>
-
-
-          <button
-            type="submit"
-            class="button button-primary"
-            id="modal-submit"
-          >
-            Save record
-          </button>
-
-        </div>
-
-      </form>
-
+  <div class="modal-backdrop" id="modal-backdrop" hidden>
+    <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head"><div><span class="eyebrow" id="modal-eyebrow">Create</span><h2 id="modal-title">New record</h2></div><button class="icon-button modal-close" id="modal-close" aria-label="Close">×</button></div>
+      <form id="record-form"><div class="modal-body" id="modal-body"></div><div class="modal-foot"><button type="button" class="button button-ghost" id="modal-cancel">Cancel</button><button type="submit" class="button button-primary" id="modal-submit">Save record</button></div></form>
     </section>
-
   </div>
-
-
-  <!-- ========================================
-       CONFIRMATION MODAL
-  ========================================= -->
-
-  <div
-    class="modal-backdrop"
-    id="confirm-backdrop"
-    hidden
-  >
-
-    <section
-      class="modal modal-small"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-title"
-    >
-
-      <div class="modal-head">
-
-        <div>
-
-          <span class="eyebrow">
-            Confirm action
-          </span>
-
-          <h2 id="confirm-title">
-            Are you sure?
-          </h2>
-
-        </div>
-
-
-        <button
-          class="icon-button modal-close"
-          id="confirm-close"
-          aria-label="Close"
-        >
-          ×
-        </button>
-
-      </div>
-
-
-      <div class="modal-body">
-
-        <p
-          id="confirm-copy"
-          class="modal-copy"
-        ></p>
-
-      </div>
-
-
-      <div class="modal-foot">
-
-        <button
-          type="button"
-          class="button button-ghost"
-          id="confirm-cancel"
-        >
-          Cancel
-        </button>
-
-
-        <button
-          type="button"
-          class="button button-danger"
-          id="confirm-action"
-        >
-          Continue
-        </button>
-
-      </div>
-
-    </section>
-
+  <div class="modal-backdrop" id="confirm-backdrop" hidden>
+    <section class="modal modal-small" role="dialog" aria-modal="true" aria-labelledby="confirm-title"><div class="modal-head"><div><span class="eyebrow">Confirm action</span><h2 id="confirm-title">Are you sure?</h2></div><button class="icon-button modal-close" id="confirm-close" aria-label="Close">×</button></div><div class="modal-body"><p id="confirm-copy" class="modal-copy"></p></div><div class="modal-foot"><button type="button" class="button button-ghost" id="confirm-cancel">Cancel</button><button type="button" class="button button-danger" id="confirm-action">Continue</button></div></section>
   </div>
-
-
-  <!-- ========================================
-       TOAST NOTIFICATIONS
-  ========================================= -->
-
-  <div
-    class="toast-region"
-    id="toast-region"
-    aria-live="polite"
-    aria-atomic="true"
-  ></div>
-
-
-  <!-- ========================================
-       APPLICATION JAVASCRIPT
-  ========================================= -->
-
-  <script
-    type="module"
-    src="/static/js/app.js"
-  ></script>
-
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
