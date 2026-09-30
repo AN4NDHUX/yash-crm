@@ -473,7 +473,7 @@ body { color: var(--text); }
   background: #fff;
   border-color: #d4d4d4;
   box-shadow: var(--shadow-sm);
-  transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s ease, border-color .22s ease;
+  transition: box-shadow .22s ease, border-color .22s ease;
 }
 .card::before {
   content: "";
@@ -488,7 +488,7 @@ body { color: var(--text); }
 }
 .card > * { position: relative; z-index: 1; }
 .card:hover {
-  transform: translateY(-5px) scale(1.008);
+  transform: none;
   border-color: #000;
   box-shadow: 0 18px 42px rgba(0,0,0,.18);
 }
@@ -1077,4 +1077,385 @@ body { color: var(--pepper-dark); }
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar::before { animation: none; transform: translate3d(0,0,0); opacity: .7; }
+}
+
+/* ================================================================
+   Yash CRM - Powder Blue Luxury Theme
+   Final visual layer. Application behavior and layout remain intact.
+   ================================================================ */
+:root {
+  --bg: #89B4D9;
+  --surface: #D0E5F2;
+  --surface-soft: #e5f1f8;
+  --surface-indigo: #c3dbed;
+  --text: #10182f;
+  --text-soft: #44536b;
+  --text-faint: #66758c;
+  --border: rgba(15,33,128,.16);
+  --border-strong: rgba(15,33,128,.30);
+  --indigo: #0F2180;
+  --indigo-dark: #09175f;
+  --blue: #0F2180;
+  --blue-soft: #dbeaf5;
+  --shadow-sm: 0 10px 30px rgba(15,33,128,.09), inset 0 1px 0 rgba(255,255,255,.62);
+  --shadow-md: 0 26px 70px rgba(7,25,78,.20), inset 0 1px 0 rgba(255,255,255,.68);
+  --font-ui: "Varela Round", "Segoe UI", Arial, sans-serif;
+  --font-brand: "Alfaza Std", "Varela Round", "Segoe UI", Arial, sans-serif;
+}
+
+html,
+body {
+  color: var(--text);
+  background: #89B4D9;
+  font-family: var(--font-ui);
+}
+
+button,
+input,
+select,
+textarea,
+.data-table,
+.status-badge,
+.badge {
+  font-family: var(--font-ui);
+}
+
+h1,
+h2,
+h3,
+.stat-value,
+.detail-avatar {
+  font-family: var(--font-ui);
+}
+
+.brand-name {
+  font-family: var(--font-brand);
+  font-weight: 700;
+  letter-spacing: .015em;
+}
+
+/* Retain the continuously moving background, now over the exact blue base. */
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  background: #89B4D9;
+}
+
+.app-shell::before {
+  opacity: .58;
+  background-image:
+    radial-gradient(circle at 16% 22%, rgba(255,255,255,.24) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 78% 68%, rgba(15,33,128,.11) 0 1px, transparent 1.6px),
+    linear-gradient(115deg, transparent 0 46%, rgba(255,255,255,.20) 49%, transparent 53%),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(15,33,128,.026) 31px 32px),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.055) 31px 32px);
+  background-size: 23px 23px, 37px 37px, 170px 170px, auto, auto;
+  animation: saltPepperTexture 22s linear infinite;
+  mix-blend-mode: soft-light;
+}
+
+.app-shell::after {
+  opacity: .30;
+  filter: blur(34px);
+  background: linear-gradient(108deg, transparent 20%, rgba(255,255,255,.48) 42%, rgba(232,246,255,.54) 50%, transparent 70%);
+  background-size: 220% 100%;
+  transform: translateX(-70%);
+  animation: saltPepperGloss 14s ease-in-out infinite;
+}
+
+.main-area { background: transparent; }
+.content-area { position: relative; z-index: 1; }
+
+.topbar {
+  color: var(--text);
+  background: rgba(229,241,248,.86);
+  border-bottom-color: rgba(15,33,128,.14);
+  box-shadow: 0 8px 30px rgba(15,33,128,.07);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+.breadcrumbs,
+.breadcrumbs strong,
+.top-profile,
+.top-profile-copy strong { color: var(--text); }
+.breadcrumbs b,
+.top-profile-copy small { color: var(--text-faint); }
+
+.global-search,
+.search-results {
+  color: var(--text-soft);
+  background: rgba(242,249,253,.94);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 8px 26px rgba(15,33,128,.08);
+}
+.global-search input { color: var(--text); }
+.global-search input::placeholder { color: var(--text-faint); }
+.global-search kbd { color: var(--text-faint); border-color: var(--border); border-bottom-color: var(--border-strong); }
+.search-result:hover { background: rgba(208,229,242,.72); }
+
+/* All card and panel surfaces use the requested pale blue. */
+.card,
+.module-toolbar,
+.settings-section,
+.detail-summary,
+.table-card,
+.quick-action,
+.deal-card,
+.kanban-column,
+.modal {
+  color: var(--text);
+  background: #D0E5F2;
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(13px) saturate(112%);
+}
+
+.card,
+.module-toolbar,
+.settings-section,
+.detail-summary,
+.table-card,
+.quick-action,
+.deal-card,
+.kanban-column {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transform: none !important;
+  animation: none !important;
+  transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+
+.card:hover,
+.module-toolbar:hover,
+.settings-section:hover,
+.detail-summary:hover,
+.table-card:hover,
+.quick-action:hover,
+.deal-card:hover,
+.kanban-column:hover {
+  transform: none !important;
+  background: #D0E5F2;
+  border-color: rgba(15,33,128,.34);
+  box-shadow: 0 15px 38px rgba(15,33,128,.12), inset 0 1px 0 rgba(255,255,255,.70);
+}
+
+.card::before { display: none; }
+
+/* Delegated click handler adds this class so every click restarts one sweep. */
+.card::after,
+.module-toolbar::after,
+.settings-section::after,
+.detail-summary::after,
+.table-card::after,
+.quick-action::after,
+.deal-card::after,
+.kanban-column::after {
+  content: "";
+  position: absolute;
+  z-index: 20;
+  inset: -45% auto -45% -58%;
+  width: 34%;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(105deg, transparent, rgba(255,255,255,.72) 44%, rgba(255,255,255,.94) 52%, rgba(255,255,255,.30) 63%, transparent);
+  transform: translate3d(0,0,0) skewX(-14deg);
+}
+
+.card.is-glossing::after,
+.module-toolbar.is-glossing::after,
+.settings-section.is-glossing::after,
+.detail-summary.is-glossing::after,
+.table-card.is-glossing::after,
+.quick-action.is-glossing::after,
+.deal-card.is-glossing::after,
+.kanban-column.is-glossing::after {
+  animation: yash-card-click-gloss .78s cubic-bezier(.2,.72,.28,1);
+}
+
+@keyframes yash-card-click-gloss {
+  0% { left: -58%; opacity: 0; }
+  16% { opacity: .82; }
+  78% { opacity: .62; }
+  100% { left: 132%; opacity: 0; }
+}
+
+.card > *,
+.module-toolbar > *,
+.settings-section > *,
+.detail-summary > *,
+.table-card > *,
+.quick-action > *,
+.deal-card > *,
+.kanban-column > * { position: relative; z-index: 1; }
+
+.card-head,
+.activity-item,
+.data-table th,
+.data-table td,
+.detail-meta-grid > div,
+.rule-row,
+.modal-head,
+.modal-foot,
+.user-mini { border-color: rgba(15,33,128,.13); }
+
+.stat-icon,
+.activity-icon,
+.quick-action span,
+.result-icon,
+.empty-state .empty-icon,
+.related-dot {
+  color: #0F2180;
+  background: rgba(255,255,255,.48);
+  box-shadow: inset 0 0 0 1px rgba(15,33,128,.08);
+}
+
+.progress-track,
+.funnel-row .funnel-bar { background: rgba(15,33,128,.11); }
+.progress-bar,
+.funnel-row .funnel-bar i { background: linear-gradient(90deg, #0F2180, #3152bf); }
+
+.button { transform: none !important; }
+.button:hover { transform: none !important; }
+.button-primary {
+  color: #fff;
+  background: linear-gradient(135deg, #17339f, #0F2180);
+  border-color: #0F2180;
+  box-shadow: 0 7px 18px rgba(15,33,128,.22), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.button-primary:hover { color: #fff; background: #09175f; box-shadow: 0 9px 22px rgba(15,33,128,.25); }
+.button-ghost {
+  color: var(--text-soft);
+  background: rgba(255,255,255,.46);
+  border-color: var(--border);
+}
+.button-ghost:hover { color: #0F2180; background: rgba(255,255,255,.70); border-color: var(--border-strong); }
+.button-danger { color: #fff; background: #9c3048; border-color: #9c3048; }
+
+.toolbar-search,
+.filter-select,
+.field-select,
+.field-input,
+.field-textarea {
+  color: var(--text);
+  background: rgba(255,255,255,.68);
+  border-color: var(--border);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.64);
+}
+.toolbar-search input { color: var(--text); }
+.toolbar-search:focus-within,
+.filter-select:focus,
+.field-select:focus,
+.field-input:focus,
+.field-textarea:focus {
+  border-color: rgba(15,33,128,.58);
+  box-shadow: 0 0 0 3px rgba(15,33,128,.12), inset 0 1px 0 rgba(255,255,255,.72);
+}
+
+.data-table th { color: var(--text-soft); background: rgba(255,255,255,.34); }
+.data-table td { color: var(--text-soft); }
+.data-table tbody tr:hover { background: rgba(255,255,255,.32); }
+.data-table .primary-cell,
+.record-link { color: var(--text); }
+.record-link:hover,
+.card-head-link,
+.table-action:hover { color: #0F2180; }
+
+.status-badge,
+.badge { border-color: rgba(15,33,128,.12); box-shadow: inset 0 1px 0 rgba(255,255,255,.46); }
+.status-badge.indigo { color: #0F2180; background: rgba(255,255,255,.48); }
+
+.pagination-actions button,
+.view-toggle {
+  color: var(--text-soft);
+  background: rgba(255,255,255,.46);
+  border-color: var(--border);
+}
+.pagination-actions button:hover:not(:disabled),
+.view-toggle button.active { color: #fff; background: #0F2180; border-color: #0F2180; }
+
+.notes-box { color: var(--text); background: rgba(255,255,255,.38); border-color: var(--border); }
+.modal-backdrop { background: rgba(7,20,61,.40); backdrop-filter: blur(5px); }
+.modal { border-color: rgba(15,33,128,.22); box-shadow: var(--shadow-md); }
+
+.icon-button { color: var(--text-soft); }
+.topbar .icon-button:hover { color: #0F2180; background: rgba(255,255,255,.42); }
+.notification-dot { background: #0F2180; border-color: #e5f1f8; }
+
+.button:focus-visible,
+.icon-button:focus-visible,
+.primary-nav a:focus-visible,
+.card-head-link:focus-visible,
+.quick-action:focus-visible,
+.record-link:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(15,33,128,.62);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell::before,
+  .app-shell::after,
+  .sidebar::before,
+  .card.is-glossing::after,
+  .module-toolbar.is-glossing::after,
+  .settings-section.is-glossing::after,
+  .detail-summary.is-glossing::after,
+  .table-card.is-glossing::after,
+  .quick-action.is-glossing::after,
+  .deal-card.is-glossing::after,
+  .kanban-column.is-glossing::after {
+    animation: none !important;
+  }
+
+  .card,
+  .module-toolbar,
+  .settings-section,
+  .detail-summary,
+  .table-card,
+  .quick-action,
+  .deal-card,
+  .kanban-column,
+  .button { transition: none !important; }
+}
+
+/* Mobile drawer correction: later theme layers must not override the base breakpoint. */
+.drawer-backdrop { display: none; }
+
+@media (max-width: 820px) {
+  body.nav-open { overflow: hidden; }
+
+  .sidebar {
+    position: fixed;
+    z-index: 30;
+    inset: 0 auto 0 0;
+    height: 100vh;
+    min-height: 100vh;
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+  }
+
+  .sidebar.open { transform: translateX(0); }
+
+  .drawer-backdrop {
+    position: fixed;
+    z-index: 29;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgba(7,20,61,.38);
+    backdrop-filter: blur(3px);
+  }
+
+  .drawer-backdrop[hidden] { display: none; }
+  .main-area { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) and (max-width: 820px) {
+  .sidebar { transition: none !important; }
 }
