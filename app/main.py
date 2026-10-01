@@ -5,6 +5,9 @@ import os
 import secrets
 import base64
 import binascii
+import csv
+import io
+import threading
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -12,10 +15,10 @@ from typing import Any, Generator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from email.utils import parseaddr
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
@@ -38,8 +41,11 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
+from app.platform_catalog import PLATFORM_RESOURCES, SETUP_NAVIGATION, public_catalog
+
 
 ROOT = Path(__file__).resolve().parents[1]
+LEAD_CONVERSION_LOCK = threading.Lock()
 
 
 class ReadinessTrustedHostMiddleware(TrustedHostMiddleware):
@@ -256,6 +262,56 @@ class Blueprint(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class PlatformRecord(TimestampMixin, Base):
+    """Shared storage engine for configurable CRM modules and setup records.
+
+    Frequently queried relationship, amount and status values are typed columns;
+    module-specific values remain in ``data`` so custom fields do not require a
+    schema migration for every configuration change.
+    """
+
+    __tablename__ = "platform_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    resource: Mapped[str] = mapped_column(String(80), index=True)
+    title: Mapped[str] = mapped_column(String(220), index=True)
+    status: Mapped[str] = mapped_column(String(40), default="Active", index=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id"), nullable=True, index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("deals.id"), nullable=True, index=True)
+    related_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    related_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    data: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, default=dict)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    action: Mapped[str] = mapped_column(String(40), index=True)
+    resource: Mapped[str] = mapped_column(String(80), index=True)
+    record_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary: Mapped[str] = mapped_column(String(300))
+    before: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
+    after: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
+
+
+class ImportJob(TimestampMixin, Base):
+    __tablename__ = "import_jobs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    resource: Mapped[str] = mapped_column(String(80), index=True)
+    filename: Mapped[str] = mapped_column(String(220))
+    status: Mapped[str] = mapped_column(String(40), default="Completed")
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    imported_rows: Mapped[int] = mapped_column(Integer, default=0)
+    error_rows: Mapped[int] = mapped_column(Integer, default=0)
+    errors: Mapped[list[dict[str, Any]] | None] = mapped_column(SAJSON, default=list)
+
+
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 IS_PRODUCTION = APP_ENV == "production"
 
@@ -288,14 +344,14 @@ def database_connection() -> tuple[str, dict[str, Any]]:
 
 
 DB_URL, DB_CONNECT_ARGS = database_connection()
-engine = create_engine(
-    DB_URL,
-    pool_pre_ping=True,
-    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
-    pool_size=int(os.getenv("DB_POOL_SIZE", "5")) if not DB_URL.startswith("sqlite") else 5,
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")) if not DB_URL.startswith("sqlite") else 10,
-    connect_args=DB_CONNECT_ARGS,
-)
+engine_options: dict[str, Any] = {
+    "pool_pre_ping": True,
+    "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    "connect_args": DB_CONNECT_ARGS,
+}
+if not DB_URL.startswith("sqlite"):
+    engine_options.update(pool_size=int(os.getenv("DB_POOL_SIZE", "5")), max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")))
+engine = create_engine(DB_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
@@ -411,6 +467,27 @@ class BulkArchivePayload(BaseModel):
     related_id: list[int]
 
 
+class PlatformPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    title: str | None = None
+    status: str | None = None
+    owner_id: int | None = None
+    account_id: int | None = None
+    contact_id: int | None = None
+    deal_id: int | None = None
+    related_type: str | None = None
+    related_id: int | None = None
+    amount: float | None = None
+    due_date: date | None = None
+
+
+class RestorePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resource: str
+    record_id: int
+
+
 RESOURCE_MAP: dict[str, type[Base]] = {
     "leads": Lead,
     "contacts": Contact,
@@ -516,6 +593,131 @@ def related_label(db: Session, related_type: str, related_id: int) -> str | None
     return getattr(item, "name", getattr(item, "subject", f"{related_type} #{related_id}"))
 
 
+def platform_config(resource: str) -> dict[str, Any]:
+    config = PLATFORM_RESOURCES.get(resource)
+    if config is None:
+        raise HTTPException(404, "Unknown Yash CRM module or setup resource")
+    return config
+
+
+def platform_values(payload: PlatformPayload) -> dict[str, Any]:
+    return payload.model_dump(exclude_unset=True)
+
+
+def validate_platform_values(resource: str, values: dict[str, Any], *, partial: bool = False) -> None:
+    config = platform_config(resource)
+    field_map = {item["key"]: item for item in config.get("fields", [])}
+    if not partial:
+        for item in config.get("fields", []):
+            if item.get("required") and values.get(item["key"]) in (None, "", []):
+                raise HTTPException(422, f"{item['label']} is required")
+    for key in values:
+        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status"}:
+            raise HTTPException(422, f"Unknown field '{key}' for {config['label']}")
+    for item in config.get("fields", []):
+        if item.get("type") == "json" and item["key"] in values and values[item["key"]] is not None and not isinstance(values[item["key"]], (dict, list)):
+            raise HTTPException(422, f"{item['label']} must be valid JSON")
+        if item.get("options") and values.get(item["key"]) not in (None, "") and str(values[item["key"]]) not in item["options"]:
+            raise HTTPException(422, f"{item['label']} has an unsupported value")
+
+
+def sync_platform_columns(record: PlatformRecord, values: dict[str, Any]) -> None:
+    record.title = str(values.get("name") or values.get("title") or record.title or "Untitled").strip()
+    record.status = str(values.get("status") or record.status or "Active")
+    for key in ("owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date"):
+        if key in values:
+            setattr(record, key, values[key])
+    record.data = values
+
+
+def serialize_platform(record: PlatformRecord, db: Session | None = None) -> dict[str, Any]:
+    data = dict(record.data or {})
+    data.update({
+        "id": record.id,
+        "resource": record.resource,
+        "name": record.title,
+        "title": record.title,
+        "status": record.status,
+        "owner_id": record.owner_id,
+        "account_id": record.account_id,
+        "contact_id": record.contact_id,
+        "deal_id": record.deal_id,
+        "related_type": record.related_type,
+        "related_id": record.related_id,
+        "amount": record.amount,
+        "due_date": record.due_date.isoformat() if record.due_date else None,
+        "archived": record.archived,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        "updated_at": record.updated_at.isoformat() if record.updated_at else None,
+    })
+    if db and record.owner_id:
+        owner = db.get(User, record.owner_id)
+        data["owner_name"] = owner.name if owner else None
+    return data
+
+
+def add_audit(db: Session, action: str, resource: str, record_id: int | None,
+              summary: str, before: dict[str, Any] | None = None,
+              after: dict[str, Any] | None = None, actor_id: int | None = None) -> None:
+    db.add(AuditEvent(actor_id=actor_id, action=action, resource=resource, record_id=record_id,
+                      summary=summary[:300], before=before, after=after))
+
+
+def run_platform_automation(db: Session, resource: str, event: str,
+                            record: PlatformRecord, values: dict[str, Any]) -> None:
+    """Execute deterministic local automation and queue external work via audit events.
+
+    No outbound network call is made in the web request. Webhook and schedule
+    delivery is deliberately represented as queued work for a production worker.
+    """
+    rules = db.scalars(select(PlatformRecord).where(
+        PlatformRecord.resource == "workflow_rules", PlatformRecord.archived == False,
+        PlatformRecord.status == "Active"
+    )).all()
+    for rule in rules:
+        config = rule.data or {}
+        if str(config.get("module", "")).lower().replace(" ", "_") not in {resource, "all", "*"}:
+            continue
+        if config.get("event") not in (None, "", event):
+            continue
+        criterion = config.get("criteria_field")
+        if criterion and str(values.get(criterion, "")) != str(config.get("criteria_value", "")):
+            continue
+        action = config.get("action_type") or "audit"
+        if action == "field_update" and config.get("action_value"):
+            try:
+                field_name, field_value = str(config["action_value"]).split("=", 1)
+                changed = dict(record.data or {})
+                changed[field_name.strip()] = field_value.strip()
+                sync_platform_columns(record, changed)
+            except ValueError:
+                add_audit(db, "automation_error", resource, record.id, f"Workflow {rule.title} has an invalid field update")
+                continue
+        elif action == "create_task":
+            owner_id = record.owner_id or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+            db.add(Activity(activity_type="Task", subject=str(config.get("action_value") or f"Follow up: {record.title}"), owner_id=owner_id, status="Open", priority="Normal", related_type=resource, related_id=record.id))
+        add_audit(db, "automation", resource, record.id, f"Workflow '{rule.title}' executed action '{action}'")
+
+
+def apply_assignment_rule(db: Session, resource: str, values: dict[str, Any]) -> None:
+    if values.get("owner_id"):
+        return
+    rules = db.scalars(select(PlatformRecord).where(
+        PlatformRecord.resource == "assignment_rules", PlatformRecord.archived == False,
+        PlatformRecord.status == "Active"
+    ).order_by(PlatformRecord.id)).all()
+    for rule in rules:
+        config = rule.data or {}
+        if str(config.get("module", "")).lower().replace(" ", "_") != resource:
+            continue
+        criterion = config.get("criteria_field")
+        if criterion and str(values.get(criterion, "")) != str(config.get("criteria_value", "")):
+            continue
+        if config.get("owner_id"):
+            values["owner_id"] = int(config["owner_id"])
+            return
+
+
 def seed_defaults(db: Session) -> None:
     if db.scalar(select(User.id).limit(1)) is not None:
         return
@@ -596,6 +798,42 @@ def ensure_workspace_defaults(db: Session) -> None:
     db.commit()
 
 
+def ensure_platform_defaults(db: Session, include_demo: bool = False) -> None:
+    admin = db.scalar(select(User).order_by(User.id))
+    defaults: dict[str, list[dict[str, Any]]] = {
+        "company_details": [{"name": "Yash CRM", "legal_name": "Yash CRM", "email": admin.email if admin else "admin@yashcrm.local", "status": "Active"}],
+        "fiscal_years": [{"name": "April - March", "start_date": "2026-04-01", "end_date": "2027-03-31", "status": "Active"}],
+        "roles": [{"name": "Administrator", "data_scope": "All", "status": "Active", "description": "Full record visibility."}, {"name": "Sales Manager", "parent_role": "Administrator", "data_scope": "Own and Subordinates", "status": "Active"}, {"name": "Sales Representative", "parent_role": "Sales Manager", "data_scope": "Own", "status": "Active"}],
+        "profiles": [{"name": "Administrator", "permissions": {"all_modules": ["create", "read", "update", "delete", "export"], "setup": ["manage"]}, "status": "Active"}, {"name": "Standard", "permissions": {"crm_modules": ["create", "read", "update"], "setup": []}, "status": "Active"}],
+        "permissions": [{"name": "CRM administrator", "module": "*", "grants": ["create", "read", "update", "delete", "export", "manage_setup"], "status": "Active"}],
+        "pipelines": [{"name": "Default sales pipeline", "module": "Deals", "stages": [{"name": "Qualification", "probability": 20}, {"name": "Needs Analysis", "probability": 35}, {"name": "Proposal", "probability": 55}, {"name": "Negotiation", "probability": 75}, {"name": "Closed Won", "probability": 100, "closed": True}, {"name": "Closed Lost", "probability": 0, "closed": True}], "status": "Active"}],
+        "custom_views": [{"name": "My open records", "module": "Deals", "filters": [{"field": "status", "operator": "equals", "value": "Open"}], "sort": "updated_desc", "columns": ["name", "account", "amount", "stage", "owner"], "status": "Active"}],
+        "email_templates": [{"name": "Sales follow-up", "subject": "Next steps for {{account.name}}", "module": "Deals", "content": "Hello {{contact.first_name}},\n\nThank you for your time. Here are the agreed next steps.", "status": "Active"}],
+        "quote_templates": [{"name": "Standard quote", "content": "Quote {{quote.quote_number}}\nCustomer: {{account.name}}\nTotal: {{quote.amount}}", "status": "Active"}],
+        "invoice_templates": [{"name": "Standard invoice", "content": "Invoice {{invoice.invoice_number}}\nDue: {{invoice.due_date}}\nTotal: {{invoice.amount}}", "status": "Active"}],
+        "api_settings": [{"name": "Local API", "scopes": ["crm.read", "crm.write"], "token_hint": "Generate credentials through your deployment secret manager", "status": "Inactive"}],
+    }
+    if include_demo:
+        defaults.update({
+            "price_books": [{"name": "Standard INR", "currency": "INR", "discount_percent": 0, "status": "Active", "description": "Default list pricing."}],
+            "vendors": [{"name": "Sample Implementation Partner", "email": "partner@example.com", "category": "Professional services", "status": "Active"}],
+            "campaigns": [{"name": "Customer success webinar", "campaign_type": "Webinar", "status": "Planned", "budget": 25000}],
+            "cases": [{"name": "Sample onboarding question", "case_number": "CASE-1001", "priority": "Normal", "channel": "Web", "status": "New", "description": "Demonstration case for the local development workspace."}],
+            "solutions": [{"name": "Getting started checklist", "category": "Onboarding", "status": "Published", "content": "Confirm owners, import clean data, configure the pipeline, and review permissions."}],
+            "forecasts": [{"name": "Current quarter", "period": "Q4 2026", "target": 2500000, "committed": 0, "best_case": 0, "status": "Open"}],
+            "reports": [{"name": "Open pipeline by stage", "module": "Deals", "report_type": "Summary", "filters": [{"field": "status", "value": "Open"}], "columns": ["stage", "count", "amount"], "status": "Active"}],
+            "dashboards": [{"name": "Sales overview", "audience": "Sales team", "components": [{"type": "metric", "source": "open_deals"}, {"type": "pipeline", "source": "deals_by_stage"}], "status": "Active"}],
+        })
+    for resource, rows in defaults.items():
+        if db.scalar(select(func.count()).select_from(PlatformRecord).where(PlatformRecord.resource == resource)):
+            continue
+        for values in rows:
+            record = PlatformRecord(resource=resource, title=str(values.get("name") or "Untitled"), data={})
+            sync_platform_columns(record, values)
+            db.add(record)
+    db.commit()
+
+
 STAGE_PROBABILITY = {"Qualification": 20, "Needs Analysis": 40, "Proposal": 60, "Negotiation": 80, "Closed Won": 100, "Closed Lost": 0}
 STAGE_STATUS = {"Closed Won": "Won", "Closed Lost": "Lost"}
 
@@ -616,7 +854,7 @@ def order_clauses(model: type[Base], sort: str) -> list[Any]:
     return [created.desc(), model.id.desc()]
 
 
-def list_resource(db: Session, resource: str, search: str | None, status: str | None, owner_id: int | None, sort: str, min_amount: float | None, max_amount: float | None, close_from: date | None, close_to: date | None, limit: int, offset: int) -> dict[str, Any]:
+def list_resource(db: Session, resource: str, search: str | None, status: str | None, owner_id: int | None, sort: str, min_amount: float | None, max_amount: float | None, close_from: date | None, close_to: date | None, limit: int, offset: int, activity_type: str | None = None) -> dict[str, Any]:
     model = RESOURCE_MAP[resource]
     query = select(model)
     if hasattr(model, "archived"):
@@ -636,6 +874,8 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
             query = query.where(getattr(model, "stage") == status)
     if owner_id and hasattr(model, "owner_id"):
         query = query.where(getattr(model, "owner_id") == owner_id)
+    if resource == "activities" and activity_type:
+        query = query.where(Activity.activity_type == activity_type)
     if resource == "deals":
         if min_amount is not None:
             query = query.where(Deal.amount >= min_amount)
@@ -705,6 +945,7 @@ def startup() -> None:
         elif IS_PRODUCTION:
             ensure_cloud_admin(db)
         ensure_workspace_defaults(db)
+        ensure_platform_defaults(db, include_demo=(not IS_PRODUCTION or env_bool("SEED_DEMO_DATA")))
 
 
 @asynccontextmanager
@@ -716,7 +957,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Yash CRM",
-    version="1.2.0-cloud",
+    version="0.1.0.0",
     lifespan=lifespan,
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
@@ -846,6 +1087,9 @@ def global_search(q: str = Query(default="", min_length=0), db: Session = Depend
             item = serialize(row, db)
             label = item.get("full_name") or item.get("name")
             results.append({"resource": resource, "id": item["id"], "label": label, "meta": item.get("company") or item.get("stage") or item.get("industry")})
+    if len(results) < 12:
+        platform_rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == False, PlatformRecord.title.ilike(pattern)).order_by(PlatformRecord.updated_at.desc()).limit(12 - len(results))).all()
+        results.extend({"resource": row.resource, "id": row.id, "label": row.title, "meta": PLATFORM_RESOURCES.get(row.resource, {}).get("label", row.resource), "platform": True} for row in platform_rows)
     return {"results": results[:12]}
 
 
@@ -857,6 +1101,7 @@ def get_general_settings(db: Session = Depends(get_db)) -> dict[str, Any]:
 @app.put("/api/settings/general")
 def update_general_settings(payload: SettingsPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
     setting = get_or_create_settings(db)
+    before = serialize(setting)
     values = payload.model_dump(exclude_unset=True)
     for key, value in values.items():
         if key in {"id"} or not hasattr(setting, key) or value is None:
@@ -864,6 +1109,7 @@ def update_general_settings(payload: SettingsPayload, db: Session = Depends(get_
         if isinstance(value, str) and not value.strip():
             raise HTTPException(422, f"{key.replace('_', ' ').capitalize()} cannot be empty")
         setattr(setting, key, value)
+    add_audit(db, "update", "general_settings", setting.id, "Updated general settings", before=before, after=serialize(setting))
     db.commit()
     db.refresh(setting)
     return serialize(setting)
@@ -882,6 +1128,7 @@ def update_profile(payload: SettingsPayload, db: Session = Depends(get_db)) -> d
     user = db.scalar(select(User).order_by(User.id).limit(1))
     if user is None:
         raise HTTPException(404, "Profile not found")
+    before = serialize(user, db)
     for key, value in payload.model_dump(exclude_unset=True).items():
         if key in {"id", "role", "status"} or not hasattr(user, key):
             continue
@@ -896,16 +1143,284 @@ def update_profile(payload: SettingsPayload, db: Session = Depends(get_db)) -> d
                 raise HTTPException(409, "That email address is already used by another user")
             value = email
         setattr(user, key, value)
+    add_audit(db, "update", "personal_settings", user.id, "Updated personal settings", before=before, after=serialize(user, db), actor_id=user.id)
     db.commit()
     db.refresh(user)
     return serialize(user, db)
 
 
+@app.get("/api/platform/catalog")
+def get_platform_catalog() -> dict[str, Any]:
+    return {"resources": public_catalog(), "setup_navigation": SETUP_NAVIGATION}
+
+
+@app.get("/api/platform/{resource}")
+def list_platform_records(
+    resource: str,
+    search: str | None = None,
+    status: str | None = None,
+    owner_id: int | None = None,
+    sort: str = "updated_desc",
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    include_archived: bool = False,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    platform_config(resource)
+    query = select(PlatformRecord).where(PlatformRecord.resource == resource)
+    if not include_archived:
+        query = query.where(PlatformRecord.archived == False)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where(or_(PlatformRecord.title.ilike(pattern), PlatformRecord.status.ilike(pattern)))
+    if status:
+        query = query.where(PlatformRecord.status == status)
+    if owner_id:
+        query = query.where(PlatformRecord.owner_id == owner_id)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    ordering = {
+        "created_asc": PlatformRecord.created_at.asc(),
+        "created_desc": PlatformRecord.created_at.desc(),
+        "updated_asc": PlatformRecord.updated_at.asc(),
+        "updated_desc": PlatformRecord.updated_at.desc(),
+        "name_asc": PlatformRecord.title.asc(),
+        "name_desc": PlatformRecord.title.desc(),
+        "amount_desc": PlatformRecord.amount.desc(),
+    }.get(sort, PlatformRecord.updated_at.desc())
+    rows = db.scalars(query.order_by(ordering).limit(limit).offset(offset)).all()
+    return {"items": [serialize_platform(row, db) for row in rows], "total": int(total), "limit": limit, "offset": offset}
+
+
+@app.post("/api/platform/{resource}", status_code=201)
+def create_platform_record(resource: str, payload: PlatformPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    config = platform_config(resource)
+    values = platform_values(payload)
+    validate_platform_values(resource, values)
+    if config.get("singleton") and db.scalar(select(PlatformRecord.id).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)):
+        raise HTTPException(409, f"{config['label']} already has an active record")
+    apply_assignment_rule(db, resource, values)
+    title = str(values.get("name") or values.get("title") or "").strip()
+    record = PlatformRecord(resource=resource, title=title or config["singular"], data={})
+    sync_platform_columns(record, values)
+    db.add(record)
+    db.flush()
+    run_platform_automation(db, resource, "create", record, values)
+    add_audit(db, "create", resource, record.id, f"Created {config['singular']} '{record.title}'", after=serialize_platform(record))
+    db.commit()
+    db.refresh(record)
+    return serialize_platform(record, db)
+
+
+@app.get("/api/platform/{resource}/{item_id}")
+def get_platform_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    platform_config(resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
+    if record is None or record.archived:
+        raise HTTPException(404, "Record not found")
+    return serialize_platform(record, db)
+
+
+@app.get("/api/platform/{resource}/{item_id}/related")
+def get_platform_related(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    platform_config(resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id, PlatformRecord.archived == False))
+    if record is None:
+        raise HTTPException(404, "Record not found")
+    linked: dict[str, list[dict[str, Any]]] = {"accounts": [], "contacts": [], "deals": [], "activities": [], "platform_records": []}
+    for key, model, identifier in (("accounts", Account, record.account_id), ("contacts", Contact, record.contact_id), ("deals", Deal, record.deal_id)):
+        if identifier:
+            row = db.get(model, identifier)
+            if row is not None and not getattr(row, "archived", False):
+                linked[key].append(serialize(row, db))
+    linked["activities"] = [serialize(row, db) for row in db.scalars(select(Activity).where(Activity.related_type == resource, Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+    linked["platform_records"] = [serialize_platform(row, db) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.related_type == resource, PlatformRecord.related_id == item_id, PlatformRecord.archived == False).order_by(PlatformRecord.updated_at.desc())).all()]
+    return linked
+
+
+@app.patch("/api/platform/{resource}/{item_id}")
+def update_platform_record(resource: str, item_id: int, payload: PlatformPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    config = platform_config(resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
+    if record is None or record.archived:
+        raise HTTPException(404, "Record not found")
+    before = serialize_platform(record)
+    changes = platform_values(payload)
+    validate_platform_values(resource, changes, partial=True)
+    values = dict(record.data or {})
+    values.update(changes)
+    validate_platform_values(resource, values)
+    sync_platform_columns(record, values)
+    run_platform_automation(db, resource, "update", record, values)
+    add_audit(db, "update", resource, item_id, f"Updated {config['singular']} '{record.title}'", before=before, after=serialize_platform(record))
+    db.commit()
+    db.refresh(record)
+    return serialize_platform(record, db)
+
+
+@app.delete("/api/platform/{resource}/{item_id}")
+def archive_platform_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    config = platform_config(resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
+    if record is None or record.archived:
+        raise HTTPException(404, "Record not found")
+    before = serialize_platform(record)
+    record.archived = True
+    add_audit(db, "archive", resource, item_id, f"Archived {config['singular']} '{record.title}'", before=before)
+    db.commit()
+    return {"ok": True, "id": item_id, "archived": True}
+
+
+@app.post("/api/platform/{resource}/{item_id}/restore")
+def restore_platform_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    config = platform_config(resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
+    if record is None:
+        raise HTTPException(404, "Record not found")
+    record.archived = False
+    add_audit(db, "restore", resource, item_id, f"Restored {config['singular']} '{record.title}'", after=serialize_platform(record))
+    db.commit()
+    db.refresh(record)
+    return serialize_platform(record, db)
+
+
+@app.get("/api/audit")
+def audit_history(
+    resource: str | None = None,
+    action: str | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    query = select(AuditEvent)
+    if resource:
+        query = query.where(AuditEvent.resource == resource)
+    if action:
+        query = query.where(AuditEvent.action == action)
+    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = db.scalars(query.order_by(AuditEvent.occurred_at.desc()).limit(limit).offset(offset)).all()
+    return {"items": [{"id": row.id, "occurred_at": row.occurred_at.isoformat(), "actor_id": row.actor_id, "action": row.action, "resource": row.resource, "record_id": row.record_id, "summary": row.summary, "before": row.before, "after": row.after} for row in rows], "total": int(total), "limit": limit, "offset": offset}
+
+
+@app.get("/api/administration/recycle-bin")
+def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db)) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for resource, model in RESOURCE_MAP.items():
+        if not hasattr(model, "archived"):
+            continue
+        rows = db.scalars(select(model).where(getattr(model, "archived") == True).limit(limit)).all()
+        for row in rows:
+            serialized = serialize(row, db)
+            items.append({"resource": resource, "id": row.id, "name": serialized.get("name") or serialized.get("full_name") or serialized.get("subject") or serialized.get("title") or f"#{row.id}", "archived_at": serialized.get("updated_at")})
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == True).order_by(PlatformRecord.updated_at.desc()).limit(limit)).all()
+    items.extend({"resource": row.resource, "id": row.id, "name": row.title, "archived_at": row.updated_at.isoformat() if row.updated_at else None, "platform": True} for row in rows)
+    items.sort(key=lambda item: item.get("archived_at") or "", reverse=True)
+    return {"items": items[:limit], "total": len(items)}
+
+
+@app.post("/api/administration/restore")
+def restore_archived(payload: RestorePayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    if payload.resource in PLATFORM_RESOURCES:
+        record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == payload.resource, PlatformRecord.id == payload.record_id))
+    else:
+        model = RESOURCE_MAP.get(payload.resource)
+        record = db.get(model, payload.record_id) if model and hasattr(model, "archived") else None
+    if record is None:
+        raise HTTPException(404, "Archived record not found")
+    record.archived = False
+    add_audit(db, "restore", payload.resource, payload.record_id, "Restored record from recycle bin")
+    db.commit()
+    return {"ok": True, "resource": payload.resource, "id": payload.record_id}
+
+
+@app.get("/api/administration/duplicates")
+def duplicate_candidates(resource: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    groups: list[dict[str, Any]] = []
+    if resource in PLATFORM_RESOURCES:
+        rows = db.execute(select(func.lower(PlatformRecord.title), func.count(PlatformRecord.id)).where(PlatformRecord.resource == resource, PlatformRecord.archived == False).group_by(func.lower(PlatformRecord.title)).having(func.count(PlatformRecord.id) > 1)).all()
+        for normalized, count in rows:
+            matches = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, func.lower(PlatformRecord.title) == normalized, PlatformRecord.archived == False)).all()
+            groups.append({"match_on": "name", "value": normalized, "count": int(count), "records": [serialize_platform(row, db) for row in matches]})
+    elif resource in {"leads", "contacts", "users"}:
+        model = RESOURCE_MAP[resource]
+        email_column = getattr(model, "email")
+        query = select(func.lower(email_column), func.count(model.id)).where(email_column.is_not(None)).group_by(func.lower(email_column)).having(func.count(model.id) > 1)
+        if hasattr(model, "archived"):
+            query = query.where(getattr(model, "archived") == False)
+        for normalized, count in db.execute(query).all():
+            matches = db.scalars(select(model).where(func.lower(email_column) == normalized)).all()
+            groups.append({"match_on": "email", "value": normalized, "count": int(count), "records": [serialize(row, db) for row in matches]})
+    else:
+        raise HTTPException(422, "Duplicate detection currently supports platform modules, leads, contacts and users")
+    return {"resource": resource, "groups": groups, "duplicate_groups": len(groups)}
+
+
+@app.get("/api/export/{resource}.csv")
+def export_csv(resource: str, db: Session = Depends(get_db)) -> StreamingResponse:
+    if resource in PLATFORM_RESOURCES:
+        rows = [serialize_platform(row, db) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)).all()]
+    elif resource in RESOURCE_MAP:
+        model = RESOURCE_MAP[resource]
+        query = select(model)
+        if hasattr(model, "archived"):
+            query = query.where(getattr(model, "archived") == False)
+        rows = [serialize(row, db) for row in db.scalars(query).all()]
+    else:
+        raise HTTPException(404, "Unknown export resource")
+    keys = sorted({key for row in rows for key in row.keys() if key not in {"data"}}) or ["id", "name"]
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=keys, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({key: json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value for key, value in row.items()})
+    content = stream.getvalue().encode("utf-8-sig")
+    return StreamingResponse(iter([content]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="yash-crm-{resource}.csv"'})
+
+
+@app.post("/api/import/{resource}")
+async def import_csv(resource: str, file: UploadFile = File(...), db: Session = Depends(get_db)) -> dict[str, Any]:
+    config = platform_config(resource)
+    if not (file.filename or "").lower().endswith(".csv"):
+        raise HTTPException(422, "Upload a CSV file")
+    raw = await file.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "CSV files are limited to 5 MB")
+    try:
+        content = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise HTTPException(422, "CSV must use UTF-8 encoding") from error
+    reader = csv.DictReader(io.StringIO(content))
+    imported = 0
+    errors: list[dict[str, Any]] = []
+    for number, row in enumerate(reader, start=2):
+        values = {key.strip(): value.strip() for key, value in row.items() if key and value is not None and value.strip() != ""}
+        try:
+            with db.begin_nested():
+                validate_platform_values(resource, values)
+                record = PlatformRecord(resource=resource, title=str(values.get("name") or config["singular"]), data={})
+                sync_platform_columns(record, values)
+                db.add(record)
+                db.flush()
+                add_audit(db, "import", resource, record.id, f"Imported {config['singular']} '{record.title}'")
+            imported += 1
+        except Exception as error:
+            errors.append({"row": number, "error": str(getattr(error, "detail", error))[:240]})
+    job = ImportJob(resource=resource, filename=file.filename or "upload.csv", status="Completed with errors" if errors else "Completed", total_rows=imported + len(errors), imported_rows=imported, error_rows=len(errors), errors=errors[:100])
+    db.add(job)
+    db.commit()
+    return {"job_id": job.id, "resource": resource, "imported": imported, "errors": errors, "status": job.status}
+
+
+@app.get("/api/import-jobs")
+def import_jobs(db: Session = Depends(get_db)) -> dict[str, Any]:
+    rows = db.scalars(select(ImportJob).order_by(ImportJob.created_at.desc()).limit(100)).all()
+    return {"items": [{"id": row.id, "resource": row.resource, "filename": row.filename, "status": row.status, "total_rows": row.total_rows, "imported_rows": row.imported_rows, "error_rows": row.error_rows, "errors": row.errors, "created_at": row.created_at.isoformat()} for row in rows]}
+
+
 @app.get("/api/{resource}")
-def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, activity_type: str | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
-    return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset)
+    return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset, activity_type)
 
 
 @app.post("/api/leads/bulk-archive")
@@ -918,6 +1433,7 @@ def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db
     leads = db.scalars(select(Lead).where(Lead.id.in_(ids))).all()
     for lead in leads:
         lead.archived = True
+        add_audit(db, "archive", "leads", lead.id, f"Archived lead '{lead.name}'")
     db.commit()
     return {"ok": True, "archived": len(leads)}
 
@@ -956,6 +1472,9 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
     if resource == "activities" and item.status == "Completed" and item.completed_at is None:
         item.completed_at = datetime.utcnow()
     db.add(item)
+    db.flush()
+    created = serialize(item, db)
+    add_audit(db, "create", resource, item.id, f"Created {resource.rstrip('s')} record", after=created)
     db.commit()
     db.refresh(item)
     return serialize(item, db)
@@ -979,6 +1498,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
     if item is None:
         raise HTTPException(404, "Record not found")
     model = RESOURCE_MAP[resource]
+    before_full = serialize(item, db)
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
     for key, value in payload.model_dump(exclude_unset=True).items():
         column = model.__table__.columns.get(key)
@@ -996,6 +1516,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         item.completed_at = datetime.utcnow()
     if resource == "activities" and getattr(item, "status", None) != "Completed":
         item.completed_at = None
+    add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db))
     db.commit()
     db.refresh(item)
     return serialize(item, db)
@@ -1010,11 +1531,15 @@ def delete_record(resource: str, item_id: int, db: Session = Depends(get_db)) ->
         raise HTTPException(404, "Record not found")
     if resource == "users":
         item.status = "Inactive"
+        add_audit(db, "deactivate", resource, item_id, "Deactivated user", before=serialize(item, db))
         db.commit()
         return {"ok": True, "id": item_id, "archived": True}
     if hasattr(item, "archived"):
+        before = serialize(item, db)
         item.archived = True
+        add_audit(db, "archive", resource, item_id, f"Archived {resource.rstrip('s')} record", before=before)
     else:
+        add_audit(db, "delete", resource, item_id, f"Deleted {resource.rstrip('s')} configuration", before=serialize(item, db))
         db.delete(item)
     db.commit()
     return {"ok": True, "id": item_id, "archived": hasattr(item, "archived")}
@@ -1078,7 +1603,9 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
     if lead.archived:
         raise HTTPException(409, "Archived leads cannot be converted")
     values = payload.model_dump(exclude_unset=True)
+    LEAD_CONVERSION_LOCK.acquire()
     try:
+        db.refresh(lead)
         account = db.get(Account, lead.converted_account_id) if lead.converted_account_id else None
         if account is None:
             account_name = (values.get("account_name") or lead.company or f"{lead.name} account").strip()
@@ -1106,6 +1633,7 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
 
         lead.status = "Converted"
         lead.converted_account_id, lead.converted_contact_id, lead.converted_deal_id = account.id, contact.id, deal.id
+        add_audit(db, "convert", "leads", lead.id, f"Converted lead '{lead.name}' to account, contact and deal", before={"status": "Converted" if lead.converted_deal_id else lead.status}, after={"account_id": account.id, "contact_id": contact.id, "deal_id": deal.id}, actor_id=lead.owner_id)
         db.commit()
         for record in (lead, account, contact, deal): db.refresh(record)
         return {"lead": serialize(lead, db), "account": serialize(account, db), "contact": serialize(contact, db), "deal": serialize(deal, db)}
@@ -1113,6 +1641,8 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
         db.rollback(); raise
     except Exception:
         db.rollback(); raise
+    finally:
+        LEAD_CONVERSION_LOCK.release()
 
 
 @app.get("/{path:path}", response_class=HTMLResponse)

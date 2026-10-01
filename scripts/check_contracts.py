@@ -57,6 +57,11 @@ def read_checks() -> None:
         assert get(f"/api/{resource}?limit=1")["total"] >= 1, resource
     assert get("/api/settings/general")["org_name"]
     assert get("/api/settings/profile")["name"]
+    catalog = get("/api/platform/catalog")
+    for resource in ("price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards", "roles", "profiles", "permissions", "workflow_rules", "integration_settings"):
+        assert resource in catalog["resources"], resource
+    assert get("/api/activities?activity_type=Task&limit=100")["items"]
+    assert get("/api/audit?limit=1")["total"] >= 0
 
     # Installable-app files must be served as themselves, not swallowed by the SPA fallback.
     manifest = get("/manifest.webmanifest")
@@ -118,6 +123,32 @@ def write_checks() -> None:
         assert updated["email"] == temporary_email, updated
     finally:
         call("PUT", "/api/settings/profile", {"name": profile["name"], "email": profile["email"]})
+
+    # Expanded modules are persisted, searchable, editable, related, audited,
+    # archived and recoverable rather than being navigation-only placeholders.
+    workflow = call("POST", "/api/platform/workflow_rules", {"name": f"{tag} workflow", "module": "cases", "event": "create", "criteria_field": "status", "criteria_value": "New", "action_type": "create_task", "action_value": f"Follow up {tag}", "status": "Active"})
+    linked_account = get("/api/accounts?limit=1")["items"][0]
+    case = call("POST", "/api/platform/cases", {"name": tag, "case_number": f"CASE-{int(time.time())}", "account_id": linked_account["id"], "priority": "High", "channel": "Web", "status": "New", "description": "Contract test"})
+    assert case["name"] == tag and case["status"] == "New", case
+    listed = get(f"/api/platform/cases?search={quote(tag)}")
+    assert any(item["id"] == case["id"] for item in listed["items"]), listed
+    updated_case = call("PATCH", f"/api/platform/cases/{case['id']}", {"status": "In Progress"})
+    assert updated_case["status"] == "In Progress", updated_case
+    related = get(f"/api/platform/cases/{case['id']}/related")
+    assert set(related) == {"accounts", "contacts", "deals", "activities", "platform_records"}, related
+    assert related["accounts"][0]["id"] == linked_account["id"], related
+    assert any(item["subject"] == f"Follow up {tag}" for item in related["activities"]), related
+    call("DELETE", f"/api/platform/cases/{case['id']}")
+    recycle = get("/api/administration/recycle-bin")
+    assert any(item["resource"] == "cases" and item["id"] == case["id"] for item in recycle["items"]), recycle
+    restored = call("POST", "/api/administration/restore", {"resource": "cases", "record_id": case["id"]})
+    assert restored["ok"] is True, restored
+    call("DELETE", f"/api/platform/cases/{case['id']}")
+    audit = get("/api/audit?resource=cases&limit=100")
+    assert {item["action"] for item in audit["items"]} >= {"create", "update", "archive", "restore"}, audit
+    duplicates = get("/api/administration/duplicates?resource=cases")
+    assert duplicates["resource"] == "cases", duplicates
+    call("DELETE", f"/api/platform/workflow_rules/{workflow['id']}")
 
 
 def main() -> None:
