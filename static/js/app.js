@@ -10,6 +10,11 @@ const state = {
   platformCatalog: { resources: {}, setup_navigation: {} },
 };
 
+const PLATFORM_MODULE_ROUTES = [
+  "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices",
+  "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards",
+];
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
@@ -168,6 +173,16 @@ async function refreshMeta() {
   try { state.meta = await api("/api/meta"); } catch (error) { /* keep the previous list */ }
 }
 
+async function ensurePlatformCatalog() {
+  if (Object.keys(state.platformCatalog.resources || {}).length) return true;
+  try {
+    state.platformCatalog = await api("/api/platform/catalog");
+    return Object.keys(state.platformCatalog.resources || {}).length > 0;
+  } catch (error) {
+    return false;
+  }
+}
+
 function greeting() {
   const hour = new Date().getHours();
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -227,6 +242,18 @@ async function renderRoute() {
       setBreadcrumb("Settings", "Manage");
       content.innerHTML = await settingsView(tab);
       bindSettings();
+      return;
+    }
+    if (PLATFORM_MODULE_ROUTES.includes(parts[0])) {
+      const catalogReady = await ensurePlatformCatalog();
+      const resource = parts[0];
+      if (!catalogReady || !state.platformCatalog.resources[resource]) {
+        content.innerHTML = `<div class="card empty-state"><span class="empty-icon">!</span><h3>${esc(titleCase(resource))} is temporarily unavailable</h3><p>Yash CRM could not load the module catalog. Please retry without leaving this module.</p><div style="margin-top:16px"><button class="button button-primary" data-retry>Retry module</button></div></div>`;
+        return;
+      }
+      setBreadcrumb(state.platformCatalog.resources[resource].label);
+      content.innerHTML = await platformModuleView(resource);
+      bindPlatform(resource);
       return;
     }
     if (parts[0] === "activities" && ["tasks", "meetings", "calls"].includes(parts[1])) {
@@ -810,7 +837,11 @@ async function openConvertModal(id) {
 
 async function init() {
   bindGlobal();
-  try { state.platformCatalog = await api("/api/platform/catalog"); state.meta = await api("/api/meta"); state.settingsCache = await api("/api/settings/general"); state.profile = await api("/api/settings/profile"); applyProfile(); await ensureLookups(); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
+  try { await ensurePlatformCatalog(); } catch (error) { toast("Module catalog unavailable", error.message, "error"); }
+  try { state.meta = await api("/api/meta"); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
+  try { state.settingsCache = await api("/api/settings/general"); } catch (error) { /* use defaults until settings load */ }
+  try { state.profile = await api("/api/settings/profile"); applyProfile(); } catch (error) { /* keep the shell usable */ }
+  try { await ensureLookups(); } catch (error) { /* lookups retry when a related form opens */ }
   await renderRoute();
 }
 
