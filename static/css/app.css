@@ -1362,3 +1362,82 @@ textarea:focus-visible {
     transition: none !important;
   }
 }
+
+
+/* Exact ThreeUI BrandOrbs loader host ------------------------------------ */
+.loading {
+  min-height: 220px;
+  gap: 14px;
+  color: var(--premium-muted);
+}
+
+.loading::before,
+.loading::after {
+  display: none;
+  content: none;
+  animation: none;
+}
+
+.brand-orbs-loader {
+  display: block;
+  width: 88px;
+  height: 88px;
+  border: 0;
+  border-radius: 16px;
+  background: #dad7cc;
+  box-shadow: 0 12px 28px rgba(20, 33, 61, .10), 0 0 0 1px rgba(20, 33, 61, .06);
+}
+
+.loading-label {
+  color: var(--premium-ink);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .025em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-orbs-loader {
+    /* The registered engine respects reduced motion inside its canvas document. */
+    animation: none !important;
+  }
+}
+
+
+/* Fast premium motion pass ----------------------------------------------- */
+.main-area::before {
+  animation-duration: 14s, 20s;
+  opacity: .98;
+}
+
+.main-area::after {
+  animation-duration: 18s;
+  opacity: .48;
+}
+
+.brand-orbs-loader {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+  display: block;
+  background: #dad7cc;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 26px rgba(20, 33, 61, .12), 0 0 0 1px rgba(20, 33, 61, .07);
+}
+
+.loading-label {
+  display: block;
+  color: var(--premium-ink);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: .025em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-area::before,
+  .main-area::after {
+    animation: none !important;
+  }
+}
