@@ -15,8 +15,8 @@
   <link rel="icon" href="/static/icons/icon-192.png" type="image/png" sizes="192x192" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261001-premium-nav" />
 </head>
 <body>
   <div class="app-shell">
@@ -26,37 +26,45 @@
           <span class="brand-mark" aria-hidden="true"><i></i><b></b></span>
           <span class="brand-name">Yash CRM</span>
         </a>
-        <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation"></button>
-      </div>
-
-      <div class="workspace-switcher">
-        <span class="workspace-avatar">Y</span>
-        <span class="workspace-copy"><small>Workspace</small><strong>Yash CRM</strong></span>
-        <span class="chevron"></span>
+        <button class="icon-button sidebar-close" id="sidebar-close" aria-label="Close navigation">×</button>
       </div>
 
       <nav class="primary-nav expanded-nav" aria-label="Primary navigation">
-         <span class="nav-label">Workspace</span>
-        <a class="active" href="/dashboard" data-route="dashboard"><span class="nav-icon"></span>Dashboard</a>
-        <a href="/leads" data-route="leads"><span class="nav-icon"></span>Leads <span class="nav-count" id="nav-leads-count">1</span></a>
-        <a href="/contacts" data-route="contacts"><span class="nav-icon"></span>Contacts</a>
-        <a href="/accounts" data-route="accounts"><span class="nav-icon"></span>Accounts</a>
-        <a href="/deals" data-route="deals"><span class="nav-icon"></span>Deals</a>
-        <a href="/products" data-route="products"><span class="nav-icon"></span>Products</a>
-        <a href="/activities" data-route="activities"><span class="nav-icon"></span>Activities</a>
-        <details class="nav-group" open><summary><span class="nav-icon"></span>Sales &amp; Inventory</summary><a href="/price_books" data-route="price_books">Price Books</a><a href="/vendors" data-route="vendors">Vendors</a><a href="/quotes" data-route="quotes">Quotes</a><a href="/sales_orders" data-route="sales_orders">Sales Orders</a><a href="/purchase_orders" data-route="purchase_orders">Purchase Orders</a><a href="/invoices" data-route="invoices">Invoices</a></details>
-        <a href="/campaigns" data-route="campaigns"><span class="nav-icon"></span>Campaigns</a>
-        <a href="/cases" data-route="cases"><span class="nav-icon"></span>Cases</a>
-        <a href="/solutions" data-route="solutions"><span class="nav-icon"></span>Solutions</a>
-        <a href="/documents" data-route="documents"><span class="nav-icon"></span>Documents</a>
-        <details class="nav-group" open><summary><span class="nav-icon"></span>Analytics</summary><a href="/forecasts" data-route="forecasts">Forecasts</a><a href="/reports" data-route="reports">Reports</a><a href="/dashboards" data-route="dashboards"></a></details>
-        <span class="nav-label nav-label-settings">Setup</span>
-        <a href="/setup/company_details" data-route="setup"><span class="nav-icon"></span>Open Setup</a>
-      </nav>
+        <span class="nav-label nav-label-settings">Workspace</span>
+        <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
+        <a href="/leads" data-route="leads">Leads <span class="nav-count" id="nav-leads-count">1</span></a>
+        <a href="/contacts" data-route="contacts">Contacts</a>
+        <a href="/accounts" data-route="accounts">Accounts</a>
+        <a href="/deals" data-route="deals">Deals</a>
 
-      <nav class="primary-nav legacy-nav" aria-label="Legacy navigation">
-        <span class="nav-label nav-label-settings">Manage</span>
-        <a href="/settings/general" data-route="settings"><span class="nav-icon">⚙</span>Settings</a>
+        <span class="nav-label nav-label-settings">Activities</span>
+        <a href="/activities/tasks" data-route="activities">Tasks</a>
+        <a href="/activities/meetings" data-route="activities">Meetings</a>
+        <a href="/activities/calls" data-route="activities">Calls</a>
+
+        <span class="nav-label nav-label-settings">Sales &amp; Inventory</span>
+        <a href="/products" data-route="products">Products</a>
+        <a href="/price_books" data-route="price_books">Price Books</a>
+        <a href="/vendors" data-route="vendors">Vendors</a>
+        <a href="/quotes" data-route="quotes">Quotes</a>
+        <a href="/sales_orders" data-route="sales_orders">Sales Orders</a>
+        <a href="/purchase_orders" data-route="purchase_orders">Purchase Orders</a>
+        <a href="/invoices" data-route="invoices">Invoices</a>
+
+        <span class="nav-label nav-label-settings">Customer &amp; Marketing</span>
+        <a href="/campaigns" data-route="campaigns">Campaigns</a>
+        <a href="/cases" data-route="cases">Cases</a>
+        <a href="/solutions" data-route="solutions">Solutions</a>
+        <a href="/documents" data-route="documents">Documents</a>
+
+        <span class="nav-label nav-label-settings">Analytics</span>
+        <a href="/forecasts" data-route="forecasts">Forecasts</a>
+        <a href="/reports" data-route="reports">Reports</a>
+        <a href="/dashboards" data-route="dashboards">Dashboards</a>
+
+        <span class="nav-label nav-label-settings">Setup</span>
+        <a href="/setup/company_details" data-route="setup">Open Setup</a>
+        <a href="/settings/general" data-route="settings">Settings</a>
       </nav>
 
       <div class="sidebar-footer">
@@ -71,6 +79,7 @@
           <button class="icon-button" id="profile-shortcut" aria-label="Open profile">•••</button>
         </div>
       </div>
+      <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize navigation panel" aria-valuemin="248" aria-valuemax="360" aria-valuenow="280" tabindex="0"></div>
     </aside>
 
     <button class="drawer-backdrop" id="drawer-backdrop" type="button" aria-label="Close navigation" hidden></button>
@@ -83,9 +92,9 @@
           
           <div class="global-search" id="global-search-wrap">
             <span>⌕</span>
-            <input id="global-search" type="search" placeholder="Search anything..." aria-label="Search anything" autocomplete="off" />
+            <input id="global-search" type="search" placeholder="Search anything..." aria-label="Search anything" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results" autocomplete="off" />
             <kbd></kbd>
-            <div class="search-results" id="search-results"></div>
+            <div class="search-results" id="search-results" role="listbox" aria-label="Search results"></div>
           </div>
           <button class="icon-button top-icon" aria-label="Notifications"><span class="notification-dot"></span></button>
           <button class="top-profile" id="top-profile" aria-label="Open profile">
@@ -187,6 +196,49 @@
   <script type="module" src="/static/js/app.js"></script>
   <script>
     (() => {
+      const syncSidebarRoute = () => {
+        const currentPath = window.location.pathname.replace(/\/$/, "") || "/dashboard";
+        const links = [...document.querySelectorAll(".expanded-nav a")];
+        let match = links
+          .filter((link) => {
+            const href = new URL(link.href, window.location.origin).pathname.replace(/\/$/, "") || "/dashboard";
+            return currentPath === href || currentPath.startsWith(`${href}/`);
+          })
+          .sort((first, second) => second.getAttribute("href").length - first.getAttribute("href").length)[0];
+        if (currentPath.startsWith("/settings/")) match = links.find((link) => link.getAttribute("href") === "/settings/general");
+        if (currentPath.startsWith("/setup/")) match = links.find((link) => link.getAttribute("href") === "/setup/company_details");
+        links.forEach((link) => link.classList.toggle("active", link === match));
+      };
+
+      const sidebarElement = document.querySelector("#sidebar");
+      const drawerBackdrop = document.querySelector("#drawer-backdrop");
+      const globalSearch = document.querySelector("#global-search");
+      const searchResults = document.querySelector("#search-results");
+      new MutationObserver(() => {
+        globalSearch.setAttribute("aria-expanded", String(searchResults.classList.contains("open")));
+        searchResults.querySelectorAll(".search-result").forEach((result) => result.setAttribute("role", "option"));
+      }).observe(searchResults, { attributes: true, attributeFilter: ["class"], childList: true });
+      const syncDrawer = () => {
+        const isOpen = sidebarElement.classList.contains("open") && window.matchMedia("(max-width: 1000px)").matches;
+        drawerBackdrop.hidden = !isOpen;
+        document.body.classList.toggle("nav-open", isOpen);
+        document.querySelector("#menu-toggle").setAttribute("aria-expanded", String(isOpen));
+      };
+
+      [document.querySelector("#menu-toggle"), document.querySelector("#sidebar-close")].forEach((control) => {
+        control.addEventListener("click", () => requestAnimationFrame(syncDrawer));
+      });
+      drawerBackdrop.addEventListener("click", () => {
+        sidebarElement.classList.remove("open");
+        syncDrawer();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || !sidebarElement.classList.contains("open")) return;
+        sidebarElement.classList.remove("open");
+        syncDrawer();
+        document.querySelector("#menu-toggle").focus();
+      });
+
       const arrangeDashboard = () => {
         const grid = document.querySelector(".dashboard-grid");
         if (!grid) return;
@@ -222,9 +274,69 @@
       };
 
       arrangeDashboard();
-      new MutationObserver(queueArrangement).observe(document.querySelector("#app-content"), {
+      syncSidebarRoute();
+      new MutationObserver(() => {
+        queueArrangement();
+        syncSidebarRoute();
+        syncDrawer();
+      }).observe(document.querySelector("#app-content"), {
         childList: true,
         subtree: true
+      });
+
+      const sidebar = sidebarElement;
+      const resizer = document.querySelector("#sidebar-resizer");
+      const desktop = window.matchMedia("(min-width: 1001px)");
+      desktop.addEventListener("change", syncDrawer);
+      const minimumWidth = 248;
+      const maximumWidth = 360;
+      const defaultWidth = 280;
+      const clampWidth = (width) => Math.min(maximumWidth, Math.max(minimumWidth, width));
+      const applySidebarWidth = (width, persist = true) => {
+        const nextWidth = clampWidth(Math.round(width));
+        document.documentElement.style.setProperty("--sidebar-width", `${nextWidth}px`);
+        resizer.setAttribute("aria-valuenow", String(nextWidth));
+        if (persist) {
+          try { localStorage.setItem("yash-crm-sidebar-width", String(nextWidth)); } catch (_) { /* Storage is optional. */ }
+        }
+      };
+
+      try {
+        const savedWidth = Number(localStorage.getItem("yash-crm-sidebar-width"));
+        if (Number.isFinite(savedWidth) && savedWidth > 0) applySidebarWidth(savedWidth, false);
+      } catch (_) { /* Use the default width when storage is unavailable. */ }
+
+      let resizing = false;
+      let startX = 0;
+      let startWidth = defaultWidth;
+      const finishResize = () => {
+        if (!resizing) return;
+        resizing = false;
+        document.body.classList.remove("is-resizing-sidebar");
+      };
+
+      resizer.addEventListener("pointerdown", (event) => {
+        if (!desktop.matches) return;
+        resizing = true;
+        startX = event.clientX;
+        startWidth = sidebar.getBoundingClientRect().width;
+        resizer.setPointerCapture(event.pointerId);
+        document.body.classList.add("is-resizing-sidebar");
+        event.preventDefault();
+      });
+      resizer.addEventListener("pointermove", (event) => {
+        if (!resizing) return;
+        applySidebarWidth(startWidth + event.clientX - startX);
+      });
+      resizer.addEventListener("pointerup", finishResize);
+      resizer.addEventListener("pointercancel", finishResize);
+      resizer.addEventListener("dblclick", () => applySidebarWidth(defaultWidth));
+      resizer.addEventListener("keydown", (event) => {
+        if (!desktop.matches || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        const currentWidth = sidebar.getBoundingClientRect().width;
+        const nextWidth = event.key === "Home" ? minimumWidth : event.key === "End" ? maximumWidth : currentWidth + (event.key === "ArrowLeft" ? -8 : 8);
+        applySidebarWidth(nextWidth);
+        event.preventDefault();
       });
     })();
   </script>
