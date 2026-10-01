@@ -11,6 +11,7 @@ import json
 import os
 import time
 import base64
+from datetime import date, timedelta
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -52,13 +53,14 @@ def read_checks() -> None:
     assert get("/ready")["database"] == "ready"
     assert len(get("/manus-routes.json")["routes"]) >= 10
     dashboard = get("/api/dashboard")
-    assert set(dashboard["metrics"]) == {"total_leads", "open_deals", "pipeline_value", "activities_due"}
+    assert {"total_leads", "open_deals", "pipeline_value", "activities_due", "payments_received", "team_target"} <= set(dashboard["metrics"])
+    assert "sales_performance" in dashboard and "attention" in dashboard
     for resource in ("leads", "contacts", "accounts", "deals", "activities"):
         assert get(f"/api/{resource}?limit=1")["total"] >= 1, resource
     assert get("/api/settings/general")["org_name"]
     assert get("/api/settings/profile")["name"]
     catalog = get("/api/platform/catalog")
-    for resource in ("price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards", "roles", "profiles", "permissions", "workflow_rules", "integration_settings"):
+    for resource in ("price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "payments", "site_visits", "sales_targets", "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards", "roles", "profiles", "permissions", "workflow_rules", "integration_settings"):
         assert resource in catalog["resources"], resource
     assert get("/api/activities?activity_type=Task&limit=100")["items"]
     assert get("/api/audit?limit=1")["total"] >= 0
@@ -112,6 +114,33 @@ def write_checks() -> None:
     assert converted["lead"]["converted_account_id"] == converted["account"]["id"], converted
     assert converted["lead"]["converted_contact_id"] == converted["contact"]["id"], converted
     assert converted["lead"]["converted_deal_id"] == converted["deal"]["id"], converted
+
+    # Lead-to-cash records inherit customer, opportunity and ownership context.
+    owner = get("/api/meta")["users"][0]
+    quote_record = call("POST", "/api/platform/quotes", {"name": f"{tag} quote", "deal_id": converted["deal"]["id"], "owner_id": owner["id"], "amount": 1250, "valid_until": (date.today() + timedelta(days=5)).isoformat(), "status": "Sent"})
+    assert quote_record["quote_number"].startswith("QUO-") and quote_record["deal_id"] == converted["deal"]["id"], quote_record
+    order = call("POST", "/api/platform/sales_orders", {"name": f"{tag} order", "quote_id": quote_record["id"], "due_date": (date.today() + timedelta(days=10)).isoformat(), "status": "Confirmed"})
+    assert order["order_number"].startswith("SO-") and order["deal_id"] == converted["deal"]["id"], order
+    invoice = call("POST", "/api/platform/invoices", {"name": f"{tag} invoice", "sales_order_id": order["id"], "due_date": (date.today() + timedelta(days=15)).isoformat(), "status": "Issued"})
+    assert invoice["invoice_number"].startswith("INV-") and invoice["amount"] == 1250, invoice
+    payment = call("POST", "/api/platform/payments", {"name": f"PAY-{int(time.time())}", "invoice_id": invoice["id"], "amount": 1000, "payment_date": date.today().isoformat(), "method": "Bank Transfer", "status": "Cleared"})
+    refreshed_invoice = get(f"/api/platform/invoices/{invoice['id']}")
+    assert refreshed_invoice["status"] == "Partially Paid" and refreshed_invoice["paid_amount"] == 1000, refreshed_invoice
+    visit = call("POST", "/api/platform/site_visits", {"name": f"{tag} visit", "lead_id": lead["id"], "visit_date": date.today().isoformat(), "status": "Completed", "outcome": "Requirements confirmed"})
+    target = call("POST", "/api/platform/sales_targets", {"name": f"{tag} target", "owner_id": owner["id"], "period_start": date.today().replace(day=1).isoformat(), "period_end": (date.today() + timedelta(days=31)).isoformat(), "target_amount": 2000000, "incentive_rate": 2, "threshold_percent": 0, "status": "Active"})
+    journey = get(f"/api/journey/leads/{lead['id']}")
+    assert [stage["key"] for stage in journey["stages"]] == ["lead", "visit", "quotation", "invoice", "payment"], journey
+    assert journey["visits"] and journey["quotes"] and journey["invoices"] and journey["payments"], journey
+    performance = get("/api/analytics/sales-performance")
+    owner_performance = next(item for item in performance["people"] if item["owner_id"] == owner["id"])
+    assert owner_performance["target"] == 2000000 and owner_performance["achieved"] >= 1000, owner_performance
+
+    vendor = call("POST", "/api/platform/vendors", {"name": f"{tag} vendor", "status": "Active"})
+    purchase_order = call("POST", "/api/platform/purchase_orders", {"name": f"{tag} purchase", "vendor_id": vendor["id"], "amount": 500, "due_date": (date.today() + timedelta(days=20)).isoformat(), "status": "Issued"})
+    assert purchase_order["po_number"].startswith("PO-") and purchase_order["related_id"] == vendor["id"], purchase_order
+
+    for resource, item in (("payments", payment), ("invoices", invoice), ("sales_orders", order), ("quotes", quote_record), ("site_visits", visit), ("sales_targets", target), ("purchase_orders", purchase_order), ("vendors", vendor)):
+        call("DELETE", f"/api/platform/{resource}/{item['id']}")
     for resource, item in (("leads", converted["lead"]), ("deals", converted["deal"]), ("contacts", converted["contact"]), ("accounts", converted["account"])):
         call("DELETE", f"/api/{resource}/{item['id']}")
 

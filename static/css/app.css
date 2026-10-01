@@ -1501,3 +1501,79 @@ textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .yash-loading-mark { animation: none !important; }
 }
+
+/* Revenue journey, management visibility, and logo-led loading state. */
+.management-grid { margin-bottom: 18px; align-items: start; }
+.performance-table th,
+.performance-table td { white-space: nowrap; }
+.performance-table td:first-child { min-width: 168px; }
+.achievement-meter {
+  display: inline-block;
+  width: 74px;
+  height: 6px;
+  margin-right: 8px;
+  overflow: hidden;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.achievement-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1769e0, #26a269);
+}
+.settings-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.journey-group { padding-bottom: 16px; }
+.journey-track { display: grid; grid-template-columns: repeat(5, minmax(58px, 1fr)); gap: 7px; margin: 12px 0; }
+.journey-stage { display: grid; justify-items: center; gap: 5px; color: var(--text-faint); font-size: 9px; text-align: center; }
+.journey-stage i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-style: normal;
+  font-weight: 700;
+}
+.journey-stage.complete { color: var(--premium-ink); }
+.journey-stage.complete i { color: #fff; border-color: #1769e0; background: #1769e0; box-shadow: 0 6px 16px rgba(23, 105, 224, .22); }
+.journey-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.yash-loading-logo {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 12px 34px rgba(23, 105, 224, .25), 0 0 0 1px rgba(255, 255, 255, .72);
+  animation: yash-logo-float 1.7s ease-in-out infinite;
+}
+.yash-loading-logo img { width: 46px; height: 46px; object-fit: contain; }
+.loading-steps { display: flex; align-items: center; gap: 6px; color: var(--text-faint); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.loading-steps i { font-style: normal; }
+.loading-steps b { width: 12px; height: 1px; background: var(--border-strong); }
+.loading-progress { width: 190px; height: 3px; overflow: hidden; border-radius: 99px; background: rgba(23, 105, 224, .1); }
+.loading-progress i { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, transparent, #1769e0, transparent); animation: journey-load 1.45s ease-in-out infinite; }
+@keyframes yash-logo-float { 0%, 100% { transform: translateY(2px) scale(.98); } 50% { transform: translateY(-3px) scale(1); } }
+@keyframes journey-load { 0% { transform: translateX(-110%); } 100% { transform: translateX(350%); } }
+
+@media (max-width: 720px) {
+  .management-grid { grid-template-columns: 1fr; }
+  .journey-track { grid-template-columns: repeat(5, minmax(48px, 1fr)); }
+  .loading-steps { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yash-loading-logo,
+  .loading-progress i { animation: none !important; }
+  .loading-progress i { width: 100%; transform: none; opacity: .6; }
+}

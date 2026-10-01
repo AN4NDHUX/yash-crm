@@ -5,14 +5,15 @@ const state = {
   modal: null,
   confirmResolve: null,
   settingsCache: {},
-  lookups: { accounts: [], contacts: [], loaded: false },
+  lookups: { accounts: [], contacts: [], leads: [], deals: [], loaded: false },
+  platformLookups: {},
   profile: null,
   platformCatalog: { resources: {}, setup_navigation: {} },
 };
 
 const PLATFORM_MODULE_ROUTES = [
-  "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices",
-  "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards",
+  "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "payments",
+  "campaigns", "cases", "solutions", "documents", "site_visits", "forecasts", "reports", "dashboards", "sales_targets",
 ];
 const BRAND_ORBS_LOADER_URL = "/static/threeui/brand-orbs-loader.html?v=20261001-logo-orbs";
 
@@ -129,9 +130,13 @@ function lookupName(resource, id) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail || body.message || "Something went wrong");
+  let response;
+  try { response = await fetch(path, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); }
+  catch { throw new Error("Yash CRM could not reach the server. Check the connection and try again."); }
+  const raw = await response.text();
+  let body = {};
+  try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
+  if (!response.ok) throw new Error(body.detail || body.message || raw.slice(0, 180) || `Request failed with HTTP ${response.status}`);
   return body;
 }
 
@@ -150,25 +155,46 @@ function setBreadcrumb(label, parent = "Workspace") {
 
 function activeNav(route) {
   const root = route.split("/").filter(Boolean)[0] || "dashboard";
-  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === (root === "settings" ? "setup" : root)));
+  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === root));
+}
+
+function enhanceNavigation() {
+  const setupLink = $('[data-route="setup"]');
+  if (setupLink) setupLink.remove();
+  const settingsLink = $('[data-route="settings"]');
+  if (settingsLink) settingsLink.textContent = "Settings & General Setup";
+  const addAfter = (route, nextRoute, label) => {
+    const anchor = $(`[data-route="${route}"]`);
+    if (anchor && !$(`[data-route="${nextRoute}"]`)) anchor.insertAdjacentHTML("afterend", `<a href="/${nextRoute}" data-route="${nextRoute}">${label}</a>`);
+  };
+  addAfter("invoices", "payments", "Payments");
+  addAfter("documents", "site_visits", "Site Visits");
+  addAfter("reports", "sales_targets", "Sales Targets & Incentives");
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 
-function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-shell"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading your workspace" aria-label="Loading your workspace" loading="eager"></iframe><span class="yash-loading-mark" aria-hidden="true"><i></i><b></b></span></div><span class="loading-label">Loading your workspace...</span></div>`; }
+function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-shell"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading animation" aria-hidden="true" tabindex="-1" loading="eager"></iframe><span class="yash-loading-logo" aria-hidden="true"><img src="/static/yash-crm-logo.png" alt="" /></span></div><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
 function emptyState(icon, title, copy, button = "") { return `<div class="empty-state"><span class="empty-icon">${icon}</span><h3>${esc(title)}</h3><p>${esc(copy)}</p>${button ? `<div style="margin-top:16px">${button}</div>` : ""}</div>`; }
 
 async function ensureLookups() {
   if (state.lookups.loaded) return;
-  const [accounts, contacts] = await Promise.all([api("/api/accounts?limit=100"), api("/api/contacts?limit=100")]);
+  const [accounts, contacts, leads, deals] = await Promise.all([api("/api/accounts?limit=100"), api("/api/contacts?limit=100"), api("/api/leads?limit=100"), api("/api/deals?limit=100")]);
   state.lookups.accounts = accounts.items;
   state.lookups.contacts = contacts.items;
+  state.lookups.leads = leads.items;
+  state.lookups.deals = deals.items;
   state.lookups.loaded = true;
 }
 
-function invalidateLookups() { state.lookups.loaded = false; }
+async function ensurePlatformLookup(resource) {
+  if (state.platformLookups[resource]) return;
+  state.platformLookups[resource] = (await api(`/api/platform/${resource}?limit=100&sort=name_asc`)).items;
+}
+
+function invalidateLookups() { state.lookups.loaded = false; state.platformLookups = {}; }
 
 async function refreshMeta() {
   try { state.meta = await api("/api/meta"); } catch (error) { /* keep the previous list */ }
@@ -295,6 +321,8 @@ async function dashboardView() {
   const metrics = data.metrics;
   const maxPipeline = Math.max(...data.pipeline.map((row) => row.amount), 1);
   const maxLeads = Math.max(...data.lead_funnel.map((row) => row.count), 1);
+  const performancePanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Sales performance</h2><small>Target, collections, conversion and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${performanceTable(data.sales_performance || [])}</div></section>`;
+  const attentionPanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div></div><div class="card-body">${attentionQueue(data.attention || {})}</div></section>`;
   return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
     <div class="stats-grid">
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div><div class="stat-value">${metrics.total_leads}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
@@ -302,6 +330,7 @@ async function dashboardView() {
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></article>
     </div>
+    <div class="dashboard-grid management-grid">${performancePanel}${attentionPanel}</div>
     <div class="dashboard-grid">
       <div class="dashboard-column">
         <section class="card"><div class="card-head"><div class="card-head-copy"><h2>Pipeline overview</h2><small>Open opportunities by stage</small></div><button class="card-head-link" data-go="/deals">View deals ↗</button></div><div class="card-body"><div class="pipeline-chart">${data.pipeline.length ? data.pipeline.map((row) => `<div class="pipeline-row"><span class="pipeline-label">${esc(row.stage)}</span><div class="progress-track"><div class="progress-bar" style="width:${Math.max(4, row.amount / maxPipeline * 100)}%"></div></div><span class="pipeline-meta"><strong>${formatMoney(row.amount)}</strong>${row.count} deal${row.count === 1 ? "" : "s"}</span></div>`).join("") : `<p class="loading">No pipeline records yet.</p>`}</div></div></section>
@@ -312,6 +341,21 @@ async function dashboardView() {
         <section class="card"><div class="card-head"><div class="card-head-copy"><h2>Quick actions</h2><small>Keep your workspace up to date</small></div></div><div class="card-body"><div class="quick-actions"><button class="quick-action" data-create="leads"><span>✦</span>Add lead</button><button class="quick-action" data-create="contacts"><span>◎</span>Add contact</button><button class="quick-action" data-create="accounts"><span>▣</span>Add account</button><button class="quick-action" data-create="deals"><span>◇</span>Add deal</button><button class="quick-action" data-create="activities"><span>✓</span>Log activity</button><button class="quick-action" data-go="/settings/general"><span>⚙</span>Open settings</button></div></div></section>
       </div>
     </div>`;
+}
+
+function performanceTable(rows) {
+  if (!rows.length) return emptyState("◎", "No active salespeople", "Add active users and targets to calculate performance.");
+  return `<div class="table-wrap"><table class="data-table performance-table"><thead><tr><th>Salesperson</th><th>Target</th><th>Achieved</th><th>Achievement</th><th>Conversions</th><th>Incentive</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${esc(row.name)}</strong><span class="sub-cell">${esc(row.role)}${row.target_configured ? "" : " · target missing"}</span></td><td>${formatMoney(row.target)}</td><td>${formatMoney(row.achieved)}</td><td><span class="achievement-meter"><i style="width:${Math.min(Number(row.achievement_percent || 0), 100)}%"></i></span><strong>${Number(row.achievement_percent || 0).toFixed(1)}%</strong></td><td>${row.conversions}</td><td>${formatMoney(row.incentive)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function attentionQueue(attention) {
+  const leads = attention.stuck_leads || [];
+  const quotes = attention.quotes_needing_follow_up || [];
+  const items = [
+    ...leads.map((item) => `<button class="related-item" data-go="/leads/${item.id}"><span class="related-dot">!</span><span class="related-main"><strong>${esc(item.name)}</strong><small>Lead stuck at ${esc(item.status)}${item.next_follow_up ? ` · follow-up ${formatDate(item.next_follow_up)}` : ""}</small></span><span>›</span></button>`),
+    ...quotes.map((item) => `<button class="related-item" data-go="/quotes"><span class="related-dot">₹</span><span class="related-main"><strong>${esc(item.name)}</strong><small>${esc(item.status)}${item.valid_until ? ` · valid until ${formatDate(item.valid_until)}` : " · no expiry date"}</small></span><span>›</span></button>`),
+  ];
+  return items.length ? items.join("") : emptyState("✓", "Nothing urgent", "No stale leads or quotations need immediate follow-up.");
 }
 
 function activityItem(item) {
@@ -372,8 +416,19 @@ function platformState(resource) {
 function platformTable(resource, data) {
   const config = state.platformCatalog.resources[resource];
   if (!data.items.length) return `<section class="card">${emptyState("+", `No ${config.label.toLowerCase()} found`, "Create a record or adjust the current filters.", `<button class="button button-primary" data-platform-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
-  const visible = (config.fields || []).filter((item) => !["textarea", "json"].includes(item.type)).slice(0, 4);
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : esc(row[field.key] ?? "-")}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Archive" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+  const visible = (config.fields || []).filter((item) => !["textarea", "json", "file"].includes(item.type)).slice(0, 4);
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Archive" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+function platformDisplay(field, value) {
+  const type = String(field.type || "");
+  if (type === "account" || type === "contact" || type === "lead" || type === "deal") return esc(lookupName(`${type}s`, value));
+  if (type === "user") return esc((state.meta?.users || []).find((item) => Number(item.id) === Number(value))?.name || (value ? `#${value}` : "-"));
+  if (type.startsWith("platform:")) {
+    const resource = type.split(":")[1];
+    return esc((state.platformLookups[resource] || []).find((item) => Number(item.id) === Number(value))?.name || (value ? `#${value}` : "-"));
+  }
+  return esc(value ?? "-");
 }
 
 async function platformPanel(resource, compact = false) {
@@ -391,6 +446,7 @@ async function platformPanel(resource, compact = false) {
 
 async function platformModuleView(resource) {
   const config = state.platformCatalog.resources[resource];
+  await Promise.all((config.fields || []).filter((field) => String(field.type || "").startsWith("platform:")).map((field) => ensurePlatformLookup(field.type.split(":")[1])));
   return `${pageHeader(config.group || "Workspace", config.label, config.description, `<button class="button button-primary" data-platform-create="${resource}">+ Add ${config.singular.toLowerCase()}</button>`)}${await platformPanel(resource)}`;
 }
 
@@ -495,6 +551,7 @@ function bindModule(resource) {
 
 async function detailView(resource, id) {
   const [record, related] = await Promise.all([api(`/api/${resource}/${id}`), api(`/api/${resource}/${id}/related`)]);
+  if (resource === "leads") related.journey = await api(`/api/journey/leads/${id}`);
   const config = MODULES[resource];
   const title = resource === "contacts" ? record.full_name : record.name || record.subject;
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
@@ -518,6 +575,10 @@ function relatedContent(resource, related) {
   const addSection = (key, label, icon, rows, createResource) => {
     sections.push(`<div class="related-group"><div class="related-group-head"><strong>${label}</strong><button class="card-head-link" data-create="${createResource}">＋ Add</button></div>${rows.length ? rows.join("") : `<p class="related-empty">No ${label.toLowerCase()} yet.</p>`}</div>`);
   };
+  if (related.journey) {
+    const stages = related.journey.stages || [];
+    sections.push(`<div class="related-group journey-group"><div class="related-group-head"><strong>Customer journey</strong><span class="eyebrow">Lead to cash</span></div><div class="journey-track">${stages.map((stage) => `<span class="journey-stage ${stage.complete ? "complete" : ""}"><i>${stage.complete ? "✓" : stage.count}</i><b>${esc(stage.label)}</b></span>`).join("")}</div><div class="journey-actions"><button class="button button-small button-ghost" data-platform-create="site_visits" data-lead-id="${related.journey.lead.id}">+ Site visit</button>${related.journey.lead.converted_deal_id ? `<button class="button button-small button-ghost" data-platform-create="quotes" data-deal-id="${related.journey.lead.converted_deal_id}">+ Quotation</button>` : ""}</div></div>`);
+  }
   addSection("activities", "Open activities", "✓", (related.activities || []).filter((item) => item.status !== "Completed").map((item) => relatedRow("✓", item.subject, `${titleCase(item.activity_type)} · ${formatDateTime(item.due_at)}`, "activities", item.id)), "activities");
   addSection("notes", "Notes", "▤", (related.notes || []).map((item) => relatedRow("▤", item.title, item.content || "Open note", "notes", item.id, false)), "notes");
   addSection("products", "Products", "□", (related.products || []).map((item) => relatedRow("□", item.name, `${formatMoney(item.unit_price)} · ${item.sku || "No SKU"}`, "products", item.id)), "products");
@@ -543,6 +604,7 @@ function bindDetail(resource, id) {
   $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, { related_type: resource, related_id: id })));
+  $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate, null, { lead_id: button.dataset.leadId ? Number(button.dataset.leadId) : null, deal_id: button.dataset.dealId ? Number(button.dataset.dealId) : null })));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $("[data-convert-lead]")?.addEventListener("click", () => openConvertModal(Number(id)));
   $$('[data-stage-update]').forEach((button) => button.addEventListener("click", async () => { try { await api(`/api/deals/${button.dataset.stageUpdate}`, { method: "PATCH", body: JSON.stringify({ stage: button.dataset.stage }) }); toast("Deal updated", `Moved to ${button.dataset.stage}`); await renderRoute(); } catch (error) { toast("Could not update deal", error.message, "error"); } }));
@@ -554,26 +616,33 @@ function fieldHtml(field, value = "") {
   const required = field.required ? "required" : "";
   const hint = field.hint ? `<small style="font-size:10px;color:var(--text-faint)">${esc(field.hint)}</small>` : "";
   let input = "";
-  if (type === "textarea" || type === "json") {
+  if (type === "file") {
+    input = `<input class="field-input" id="${id}" name="${field.key}" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg" ${required} />`;
+  }
+  else if (type === "textarea" || type === "json") {
     let rendered = value || "";
     if (type === "json" && typeof rendered !== "string") rendered = JSON.stringify(rendered ?? [], null, 2);
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
     input = `<textarea class="field-textarea" id="${id}" name="${field.key}" ${type === "json" ? 'data-json="true"' : ""} ${required}>${esc(rendered)}</textarea>`;
   }
-  else if (type === "select" || type === "user" || type === "account" || type === "contact") {
+  else if (["select", "user", "account", "contact", "lead", "deal"].includes(type) || type.startsWith("platform:")) {
     let options = field.options || [];
     if (type === "user") options = (state.meta?.users || []).map((user) => ({ value: user.id, label: user.name }));
     if (type === "account") options = state.lookups.accounts.map((item) => ({ value: item.id, label: item.name }));
     if (type === "contact") options = state.lookups.contacts.map((item) => ({ value: item.id, label: item.full_name || `${item.first_name} ${item.last_name}` }));
+    if (type === "lead") options = state.lookups.leads.map((item) => ({ value: item.id, label: `${item.name}${item.company ? ` · ${item.company}` : ""}` }));
+    if (type === "deal") options = state.lookups.deals.map((item) => ({ value: item.id, label: `${item.name} · ${formatMoney(item.amount)}` }));
+    if (type.startsWith("platform:")) options = (state.platformLookups[type.split(":")[1]] || []).map((item) => ({ value: item.id, label: item.name }));
     const normalized = options.map((option) => typeof option === "string" ? { value: option, label: option } : option);
-    input = `<select class="field-select" id="${id}" name="${field.key}" ${required}><option value="">Select ${esc(field.label.toLowerCase())}</option>${normalized.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(value ?? "") ? "selected" : ""}>${esc(option.label)}</option>`).join("")}</select>`;
+    const numeric = type !== "select" ? 'data-numeric="true"' : "";
+    input = `<select class="field-select" id="${id}" name="${field.key}" ${numeric} ${required}><option value="">Select ${esc(field.label.toLowerCase())}</option>${normalized.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(value ?? "") ? "selected" : ""}>${esc(option.label)}</option>`).join("")}</select>`;
   } else {
     let rendered = value ?? "";
     if (type === "datetime-local" && rendered) rendered = String(rendered).slice(0, 16);
     if (type === "date" && rendered) rendered = String(rendered).slice(0, 10);
     if (field.key === "tags" && Array.isArray(rendered)) rendered = rendered.join(", ");
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
-    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any"' : ""} ${required} />`;
+    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
   }
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
 }
@@ -593,11 +662,12 @@ async function openRecordModal(resource, id = null, preset = {}) {
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
 }
 
-async function openPlatformModal(resource, id = null) {
+async function openPlatformModal(resource, id = null, preset = {}) {
   const config = state.platformCatalog.resources[resource];
   if (!config) return;
-  if ((config.fields || []).some((field) => ["account", "contact"].includes(field.type))) await ensureLookups();
-  let record = {};
+  if ((config.fields || []).some((field) => ["account", "contact", "lead", "deal"].includes(field.type))) await ensureLookups();
+  await Promise.all((config.fields || []).filter((field) => String(field.type || "").startsWith("platform:")).map((field) => ensurePlatformLookup(field.type.split(":")[1])));
+  let record = { ...preset };
   if (id) record = await api(`/api/platform/${resource}/${id}`);
   state.modal = { resource, id, platform: true };
   $("#modal-eyebrow").textContent = id ? `Edit ${config.singular}` : `New ${config.singular}`;
@@ -621,8 +691,9 @@ function settingsResourceConfig(resource) {
 function readForm(form) {
   const data = {};
   $$('[name]', form).forEach((input) => {
+    if (input.type === "file") return;
     let value = input.value;
-    if (["owner_id", "account_id", "contact_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
+    if (input.dataset.numeric === "true" || ["owner_id", "account_id", "contact_id", "deal_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
     else if (["tags"].includes(input.name)) value = value ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
     else if (input.dataset.json === "true" || ["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(input.name)) {
       try { value = value ? JSON.parse(value) : []; } catch { throw new Error(`${titleCase(input.name)} must be valid JSON. Check the brackets and quotes.`); }
@@ -663,7 +734,20 @@ async function submitPlatformRecord(form) {
   try {
     const data = readForm(form);
     submit.disabled = true;
-    await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+    const upload = resource === "documents" ? form.querySelector('input[type="file"]')?.files?.[0] : null;
+    if (upload) {
+      if (id) throw new Error("Upload a new document as a separate record; existing file history remains unchanged.");
+      const body = new FormData();
+      body.append("file", upload);
+      Object.entries(data).forEach(([key, value]) => { if (value !== null && value !== "") body.append(key, String(value)); });
+      const response = await fetch("/api/documents/upload", { method: "POST", body });
+      const raw = await response.text();
+      let result = {}; try { result = raw ? JSON.parse(raw) : {}; } catch { result = {}; }
+      if (!response.ok) throw new Error(result.detail || raw.slice(0, 180) || `Upload failed with HTTP ${response.status}`);
+    } else {
+      await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+    }
+    invalidateLookups();
     closeModal();
     toast(`${id ? "Updated" : "Created"} ${config.singular}`);
     await renderRoute();
@@ -779,11 +863,19 @@ async function settingsView(tab) {
   const tabs = [{ id: "general", label: "General settings", icon: "⚙" }, { id: "profile-users", label: "Profile & users", icon: "◎" }, { id: "approval-process", label: "Approval process", icon: "✓" }, { id: "blueprint", label: "Blueprint", icon: "◇" }];
   const nav = `<section class="card settings-nav">${tabs.map((item) => `<a href="/settings/${item.id}" class="${tab === item.id ? "active" : ""}"><span>${item.icon}</span>${item.label}</a>`).join("")}</section>`;
   let content = "";
-  if (tab === "general") content = await generalSettingsView();
+  if (tab === "general") content = `${await generalSettingsView()}${await settingsPlatformSummary("company_details", "Company details")}${await settingsPlatformSummary("fiscal_years", "Fiscal years")}`;
   if (tab === "profile-users") content = await profileUsersView();
   if (tab === "approval-process") content = await approvalSettingsView();
   if (tab === "blueprint") content = await blueprintSettingsView();
   return `${pageHeader("Manage", "Settings", "Shape how Yash CRM works for your team.")}<div class="settings-layout">${nav}<div class="settings-content">${content}</div></div>`;
+}
+
+async function settingsPlatformSummary(resource, title) {
+  const config = state.platformCatalog.resources[resource];
+  if (!config) return "";
+  const data = await api(`/api/platform/${resource}?limit=100&sort=name_asc`);
+  const add = config.singleton && data.total ? "" : `<button class="button button-primary button-small" data-platform-create="${resource}">+ Add ${esc(config.singular.toLowerCase())}</button>`;
+  return `<section class="card settings-section"><div class="settings-section-head settings-heading-row"><div><h2>${esc(title)}</h2><p>${esc(config.description)}</p></div>${add}</div>${platformTable(resource, data)}</section>`;
 }
 
 async function generalSettingsView() {
@@ -823,6 +915,9 @@ function bindSettings() {
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create)));
   $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
+  $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate)));
+  $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
+  $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   $$('[data-setting-toggle]').forEach((button) => button.addEventListener("click", () => button.classList.toggle("on")));
   $$('[data-toggle-user]').forEach((button) => button.addEventListener("click", async () => { try { const status = button.dataset.status === "Active" ? "Inactive" : "Active"; await api(`/api/users/${button.dataset.toggleUser}`, { method: "PATCH", body: JSON.stringify({ status }) }); await refreshMeta(); toast("User status updated", `${status} user`); await renderRoute(); } catch (error) { toast("Could not update user", error.message, "error"); } }));
   $$('[data-toggle-blueprint]').forEach((button) => button.addEventListener("click", async () => { try { const active = button.dataset.active !== "true"; await api(`/api/blueprints/${button.dataset.toggleBlueprint}`, { method: "PATCH", body: JSON.stringify({ active }) }); toast("Blueprint updated", active ? "Blueprint is active" : "Blueprint is inactive"); await renderRoute(); } catch (error) { toast("Could not update blueprint", error.message, "error"); } }));
@@ -839,6 +934,7 @@ async function openConvertModal(id) {
 async function init() {
   bindGlobal();
   try { await ensurePlatformCatalog(); } catch (error) { toast("Module catalog unavailable", error.message, "error"); }
+  enhanceNavigation();
   try { state.meta = await api("/api/meta"); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
   try { state.settingsCache = await api("/api/settings/general"); } catch (error) { /* use defaults until settings load */ }
   try { state.profile = await api("/api/settings/profile"); applyProfile(); } catch (error) { /* keep the shell usable */ }

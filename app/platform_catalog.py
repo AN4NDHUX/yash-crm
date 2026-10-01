@@ -39,22 +39,37 @@ PLATFORM_RESOURCES: dict[str, dict[str, Any]] = {
     "quotes": {
         "label": "Quotes", "singular": "Quote", "group": "Sales & Inventory",
         "description": "Prepare commercial offers linked to customers and opportunities.",
-        "fields": [field("name", "Quote subject", required=True), field("quote_number", "Quote number"), field("account_id", "Account", "account"), field("contact_id", "Contact", "contact"), field("deal_id", "Deal ID", "number"), field("amount", "Total", "number"), field("valid_until", "Valid until", "date"), field("status", "Status", "select", options=SALES_STATUS), field("terms", "Terms", "textarea", full=True)],
+        "fields": [field("name", "Quote subject", required=True), field("quote_number", "Quote number (automatic)"), field("account_id", "Account", "account"), field("contact_id", "Contact", "contact"), field("deal_id", "Opportunity", "deal"), field("amount", "Total", "number"), field("valid_until", "Valid until", "date"), field("status", "Status", "select", options=SALES_STATUS), field("terms", "Terms", "textarea", full=True)],
     },
     "sales_orders": {
         "label": "Sales Orders", "singular": "Sales Order", "group": "Sales & Inventory",
         "description": "Track accepted customer orders through fulfilment.",
-        "fields": [field("name", "Order subject", required=True), field("order_number", "Order number"), field("account_id", "Account", "account"), field("quote_id", "Quote ID", "number"), field("amount", "Total", "number"), field("due_date", "Delivery date", "date"), field("status", "Status", "select", options=["Draft", "Confirmed", "In Fulfilment", "Fulfilled", "Cancelled"]), field("notes", "Notes", "textarea", full=True)],
+        "fields": [field("name", "Order subject", required=True), field("order_number", "Order number (automatic)"), field("account_id", "Account", "account"), field("quote_id", "Source quote", "platform:quotes"), field("deal_id", "Opportunity", "deal"), field("amount", "Total", "number"), field("due_date", "Delivery date", "date"), field("status", "Status", "select", options=["Draft", "Confirmed", "In Fulfilment", "Fulfilled", "Cancelled"]), field("notes", "Notes", "textarea", full=True)],
     },
     "purchase_orders": {
         "label": "Purchase Orders", "singular": "Purchase Order", "group": "Sales & Inventory",
         "description": "Control purchasing commitments with vendors.",
-        "fields": [field("name", "PO subject", required=True), field("po_number", "PO number"), field("vendor_id", "Vendor ID", "number"), field("amount", "Total", "number"), field("due_date", "Expected date", "date"), field("status", "Status", "select", options=["Draft", "Issued", "Partially Received", "Received", "Cancelled"]), field("notes", "Notes", "textarea", full=True)],
+        "fields": [field("name", "PO subject", required=True), field("po_number", "PO number (automatic)"), field("vendor_id", "Vendor", "platform:vendors"), field("amount", "Total", "number"), field("due_date", "Expected date", "date"), field("status", "Status", "select", options=["Draft", "Issued", "Partially Received", "Received", "Cancelled"]), field("notes", "Notes", "textarea", full=True)],
     },
     "invoices": {
         "label": "Invoices", "singular": "Invoice", "group": "Sales & Inventory",
         "description": "Track invoices, due dates and payment state.",
-        "fields": [field("name", "Invoice subject", required=True), field("invoice_number", "Invoice number"), field("account_id", "Account", "account"), field("sales_order_id", "Sales order ID", "number"), field("amount", "Total", "number"), field("due_date", "Due date", "date"), field("status", "Status", "select", options=["Draft", "Issued", "Partially Paid", "Paid", "Overdue", "Void"]), field("notes", "Notes", "textarea", full=True)],
+        "fields": [field("name", "Invoice subject", required=True), field("invoice_number", "Invoice number (automatic)"), field("account_id", "Account", "account"), field("sales_order_id", "Sales order", "platform:sales_orders"), field("deal_id", "Opportunity", "deal"), field("amount", "Total", "number"), field("due_date", "Due date", "date"), field("status", "Status", "select", options=["Draft", "Issued", "Partially Paid", "Paid", "Overdue", "Void"]), field("notes", "Notes", "textarea", full=True)],
+    },
+    "payments": {
+        "label": "Payments", "singular": "Payment", "group": "Sales & Inventory",
+        "description": "Record customer collections against invoices and sales ownership.",
+        "fields": [field("name", "Payment reference", required=True), field("invoice_id", "Invoice", "platform:invoices", required=True), field("account_id", "Account", "account"), field("deal_id", "Opportunity", "deal"), field("amount", "Amount received", "number", required=True), field("payment_date", "Payment date", "date", required=True), field("method", "Method", "select", options=["Bank Transfer", "UPI", "Card", "Cheque", "Cash", "Other"]), field("status", "Status", "select", options=["Pending", "Received", "Cleared", "Failed", "Refunded"]), field("notes", "Notes", "textarea", full=True)],
+    },
+    "site_visits": {
+        "label": "Site Visits", "singular": "Site Visit", "group": "Customer & Marketing",
+        "description": "Schedule, complete and review visits without losing lead or opportunity context.",
+        "fields": [field("name", "Visit subject", required=True), field("lead_id", "Lead", "lead"), field("account_id", "Account", "account"), field("contact_id", "Contact", "contact"), field("deal_id", "Opportunity", "deal"), field("visit_date", "Visit date", "date", required=True), field("status", "Status", "select", options=["Scheduled", "Completed", "Cancelled", "Rescheduled"]), field("location", "Location"), field("outcome", "Outcome", "textarea", full=True), field("next_action", "Next action", "textarea", full=True)],
+    },
+    "sales_targets": {
+        "label": "Sales Targets", "singular": "Sales Target", "group": "Analytics",
+        "description": "Set salesperson targets and calculate achievement and earned incentives from cleared payments.",
+        "fields": [field("name", "Target name", required=True), field("owner_id", "Salesperson", "user", required=True), field("period_start", "Period start", "date", required=True), field("period_end", "Period end", "date", required=True), field("target_amount", "Target amount", "number", required=True), field("incentive_rate", "Incentive rate %", "number"), field("threshold_percent", "Minimum achievement %", "number"), field("status", "Status", "select", options=["Active", "Closed", "Draft"]), field("notes", "Notes", "textarea", full=True)],
     },
     "campaigns": {
         "label": "Campaigns", "singular": "Campaign", "group": "Customer & Marketing",
@@ -73,8 +88,8 @@ PLATFORM_RESOURCES: dict[str, dict[str, Any]] = {
     },
     "documents": {
         "label": "Documents", "singular": "Document", "group": "Collaboration",
-        "description": "Catalog governed document links and their CRM relationships.",
-        "fields": [field("name", "Document name", required=True), field("document_type", "Type"), field("url", "Secure URL"), field("version", "Version"), field("related_type", "Related module"), field("related_id", "Related record ID", "number"), field("status", "Status", "select", options=["Draft", "Active", "Archived"]), field("description", "Description", "textarea", full=True)],
+        "description": "Upload governed documents and connect them to the relevant CRM record.",
+        "fields": [field("name", "Document name", required=True), field("file", "Upload document", "file"), field("document_type", "Type"), field("url", "Secure URL"), field("version", "Version"), field("related_type", "Related module", "select", options=["leads", "contacts", "accounts", "deals", "quotes", "sales_orders", "purchase_orders", "invoices", "payments", "site_visits"]), field("related_id", "Related record ID", "number"), field("status", "Status", "select", options=["Draft", "Active", "Archived"]), field("description", "Description", "textarea", full=True)],
     },
     "forecasts": {
         "label": "Forecasts", "singular": "Forecast", "group": "Analytics",
@@ -125,7 +140,7 @@ PLATFORM_RESOURCES: dict[str, dict[str, Any]] = {
 
 
 SETUP_NAVIGATION: dict[str, list[tuple[str, str]]] = {
-    "General": [("company_details", "Company Details"), ("personal_settings", "Personal Settings"), ("users", "Users"), ("fiscal_years", "Fiscal Year")],
+    "General": [("company_details", "Company Details"), ("fiscal_years", "Fiscal Year")],
     "Security": [("users", "Users"), ("roles", "Roles"), ("profiles", "Profiles"), ("permissions", "Permissions"), ("sharing_rules", "Sharing Rules"), ("audit_log", "Audit Log")],
     "Customization": [("custom_modules", "Modules"), ("custom_fields", "Fields"), ("layouts", "Layouts"), ("pipelines", "Pipelines"), ("validation_rules", "Validation Rules"), ("custom_views", "Custom Views")],
     "Automation": [("workflow_rules", "Workflow Rules"), ("assignment_rules", "Assignment Rules"), ("approval_processes", "Approval Processes"), ("blueprints", "Blueprint"), ("scoring_rules", "Scoring Rules"), ("schedules", "Schedules"), ("webhooks", "Webhooks")],

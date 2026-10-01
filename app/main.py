@@ -8,6 +8,7 @@ import binascii
 import csv
 import io
 import threading
+import re
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Any, Generator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from email.utils import parseaddr
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, File
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -45,6 +46,8 @@ from app.platform_catalog import PLATFORM_RESOURCES, SETUP_NAVIGATION, public_ca
 
 
 ROOT = Path(__file__).resolve().parents[1]
+UPLOAD_ROOT = ROOT / "uploads"
+DOCUMENT_UPLOAD_ROOT = UPLOAD_ROOT / "documents"
 LEAD_CONVERSION_LOCK = threading.Lock()
 
 
@@ -612,7 +615,7 @@ def validate_platform_values(resource: str, values: dict[str, Any], *, partial: 
             if item.get("required") and values.get(item["key"]) in (None, "", []):
                 raise HTTPException(422, f"{item['label']} is required")
     for key in values:
-        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status"}:
+        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "paid_amount", "balance_due"}:
             raise HTTPException(422, f"Unknown field '{key}' for {config['label']}")
     for item in config.get("fields", []):
         if item.get("type") == "json" and item["key"] in values and values[item["key"]] is not None and not isinstance(values[item["key"]], (dict, list)):
@@ -626,8 +629,119 @@ def sync_platform_columns(record: PlatformRecord, values: dict[str, Any]) -> Non
     record.status = str(values.get("status") or record.status or "Active")
     for key in ("owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date"):
         if key in values:
-            setattr(record, key, values[key])
-    record.data = values
+            value = values[key]
+            if key == "due_date" and isinstance(value, str) and value:
+                value = date.fromisoformat(value[:10])
+            setattr(record, key, value)
+    record.data = json_safe(values)
+
+
+def json_safe(value: Any) -> Any:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(item) for item in value]
+    return value
+
+
+def get_platform_reference(db: Session, resource: str, raw_id: Any, label: str) -> PlatformRecord:
+    try:
+        item_id = int(raw_id)
+    except (TypeError, ValueError) as error:
+        raise HTTPException(422, f"Select a valid {label.lower()}") from error
+    record = db.scalar(select(PlatformRecord).where(
+        PlatformRecord.resource == resource,
+        PlatformRecord.id == item_id,
+        PlatformRecord.archived == False,
+    ))
+    if record is None:
+        raise HTTPException(422, f"The selected {label.lower()} no longer exists")
+    return record
+
+
+def normalize_platform_links(db: Session, resource: str, values: dict[str, Any]) -> None:
+    """Validate cross-module links and inherit shared customer/revenue context."""
+    parent: PlatformRecord | None = None
+    if resource == "quotes" and values.get("deal_id"):
+        deal = db.get(Deal, int(values["deal_id"]))
+        if deal is None or deal.archived:
+            raise HTTPException(422, "The selected opportunity no longer exists")
+        if values.get("account_id") in (None, ""):
+            values["account_id"] = deal.account_id
+        if values.get("contact_id") in (None, ""):
+            values["contact_id"] = deal.contact_id
+        if values.get("owner_id") in (None, ""):
+            values["owner_id"] = deal.owner_id
+        if values.get("amount") in (None, ""):
+            values["amount"] = deal.amount
+        values.update({"related_type": "deals", "related_id": deal.id})
+    elif resource == "sales_orders" and values.get("quote_id"):
+        parent = get_platform_reference(db, "quotes", values["quote_id"], "Quote")
+    elif resource == "purchase_orders" and values.get("vendor_id"):
+        parent = get_platform_reference(db, "vendors", values["vendor_id"], "Vendor")
+    elif resource == "invoices" and values.get("sales_order_id"):
+        parent = get_platform_reference(db, "sales_orders", values["sales_order_id"], "Sales order")
+    elif resource == "payments" and values.get("invoice_id"):
+        parent = get_platform_reference(db, "invoices", values["invoice_id"], "Invoice")
+    elif resource == "site_visits" and values.get("lead_id"):
+        lead = db.get(Lead, int(values["lead_id"]))
+        if lead is None or lead.archived:
+            raise HTTPException(422, "The selected lead no longer exists")
+        if values.get("owner_id") in (None, ""):
+            values["owner_id"] = lead.owner_id
+        values.update({"related_type": "leads", "related_id": lead.id})
+
+    if parent is not None:
+        inherited = dict(parent.data or {})
+        for key in ("owner_id", "account_id", "contact_id", "deal_id"):
+            if values.get(key) in (None, "") and getattr(parent, key, None) is not None:
+                values[key] = getattr(parent, key)
+        if values.get("amount") in (None, "") and parent.amount is not None:
+            values["amount"] = parent.amount
+        values.update({"related_type": parent.resource, "related_id": parent.id})
+
+
+TRANSACTION_NUMBERS = {
+    "quotes": ("quote_number", "QUO"),
+    "sales_orders": ("order_number", "SO"),
+    "purchase_orders": ("po_number", "PO"),
+    "invoices": ("invoice_number", "INV"),
+}
+
+
+def ensure_transaction_number(record: PlatformRecord) -> None:
+    definition = TRANSACTION_NUMBERS.get(record.resource)
+    if not definition:
+        return
+    key, prefix = definition
+    values = dict(record.data or {})
+    if not values.get(key):
+        values[key] = f"{prefix}-{datetime.utcnow():%Y%m}-{record.id:05d}"
+        sync_platform_columns(record, values)
+
+
+def refresh_invoice_balance(db: Session, invoice_id: int) -> None:
+    invoice = db.scalar(select(PlatformRecord).where(
+        PlatformRecord.resource == "invoices", PlatformRecord.id == invoice_id,
+        PlatformRecord.archived == False,
+    ))
+    if invoice is None:
+        return
+    payments = db.scalars(select(PlatformRecord).where(
+        PlatformRecord.resource == "payments", PlatformRecord.archived == False,
+    )).all()
+    paid = sum(float(item.amount or 0) for item in payments if int((item.data or {}).get("invoice_id") or 0) == invoice_id and item.status in {"Received", "Cleared"})
+    total = float(invoice.amount or 0)
+    values = dict(invoice.data or {})
+    values["paid_amount"] = paid
+    values["balance_due"] = max(total - paid, 0)
+    if paid >= total and total > 0:
+        values["status"] = "Paid"
+    elif paid > 0:
+        values["status"] = "Partially Paid"
+    sync_platform_columns(invoice, values)
 
 
 def serialize_platform(record: PlatformRecord, db: Session | None = None) -> dict[str, Any]:
@@ -1008,6 +1122,8 @@ def add_security_headers(response: Response, request: Request) -> Response:
     return response
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
 
 
 @app.exception_handler(IntegrityError)
@@ -1070,7 +1186,93 @@ def dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
     stage_rows = db.execute(select(Deal.stage, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.stage.not_in(closed)).group_by(Deal.stage)).all()
     lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False).group_by(Lead.status)).all()
     recent = db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc()).limit(6)).all()
-    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent]}
+    performance = sales_performance(db)
+    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
+
+
+def _date_value(value: Any) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def sales_performance(db: Session) -> dict[str, Any]:
+    today = date.today()
+    users = db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
+    targets = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "sales_targets", PlatformRecord.archived == False)).all()
+    payments = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "payments", PlatformRecord.archived == False, PlatformRecord.status.in_(["Received", "Cleared"]))).all()
+    people: list[dict[str, Any]] = []
+    for user in users:
+        candidates = []
+        for target in targets:
+            data = target.data or {}
+            start, end = _date_value(data.get("period_start")), _date_value(data.get("period_end"))
+            if target.owner_id == user.id and start and end and start <= today <= end and target.status == "Active":
+                candidates.append((start, end, target))
+        candidates.sort(key=lambda item: (item[0], item[2].id), reverse=True)
+        target_record = candidates[0][2] if candidates else None
+        target_data = dict(target_record.data or {}) if target_record else {}
+        start = _date_value(target_data.get("period_start")) or date(today.year, today.month, 1)
+        end = _date_value(target_data.get("period_end")) or today
+        achieved = sum(float(item.amount or 0) for item in payments if item.owner_id == user.id and start <= (_date_value((item.data or {}).get("payment_date")) or item.created_at.date()) <= end)
+        target_amount = float(target_data.get("target_amount") or 0)
+        achievement = round((achieved / target_amount * 100), 1) if target_amount else 0.0
+        rate = float(target_data.get("incentive_rate") or 0)
+        threshold = float(target_data.get("threshold_percent") or 80)
+        incentive = round(achieved * rate / 100, 2) if achievement >= threshold else 0.0
+        conversions = db.scalar(select(func.count()).select_from(Lead).where(Lead.owner_id == user.id, Lead.status == "Converted", Lead.archived == False, Lead.updated_at >= datetime.combine(start, datetime.min.time()), Lead.updated_at <= datetime.combine(end, datetime.max.time()))) or 0
+        people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "period_start": start.isoformat(), "period_end": end.isoformat(), "target_configured": target_record is not None})
+
+    stuck_leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]), or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
+    open_quotes = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False, PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]))).all()
+    quote_attention = []
+    for quote in open_quotes:
+        valid_until = _date_value((quote.data or {}).get("valid_until"))
+        if valid_until is None or valid_until <= today + timedelta(days=7):
+            quote_attention.append({"id": quote.id, "name": quote.title, "status": quote.status, "valid_until": valid_until.isoformat() if valid_until else None, "owner_id": quote.owner_id})
+    attention = {
+        "stuck_leads": [{"id": lead.id, "name": lead.name, "status": lead.status, "next_follow_up": lead.next_follow_up.isoformat() if lead.next_follow_up else None, "owner_id": lead.owner_id} for lead in stuck_leads],
+        "quotes_needing_follow_up": quote_attention[:8],
+    }
+    return {"people": people, "attention": attention, "totals": {"target": sum(item["target"] for item in people), "achieved": sum(item["achieved"] for item in people), "incentive": sum(item["incentive"] for item in people)}}
+
+
+@app.get("/api/analytics/sales-performance")
+def sales_performance_api(db: Session = Depends(get_db)) -> dict[str, Any]:
+    return sales_performance(db)
+
+
+@app.get("/api/journey/leads/{lead_id}")
+def lead_journey(lead_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    lead = db.get(Lead, lead_id)
+    if lead is None or lead.archived:
+        raise HTTPException(404, "Lead not found")
+    deal_ids = {lead.converted_deal_id} if lead.converted_deal_id else set()
+    visits = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "site_visits", PlatformRecord.archived == False)).all() if int((item.data or {}).get("lead_id") or 0) == lead.id]
+    quotes = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False)).all() if item.deal_id in deal_ids]
+    quote_ids = {item.id for item in quotes}
+    orders = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "sales_orders", PlatformRecord.archived == False)).all() if int((item.data or {}).get("quote_id") or 0) in quote_ids]
+    order_ids = {item.id for item in orders}
+    invoices = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "invoices", PlatformRecord.archived == False)).all() if int((item.data or {}).get("sales_order_id") or 0) in order_ids]
+    invoice_ids = {item.id for item in invoices}
+    payments = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "payments", PlatformRecord.archived == False)).all() if int((item.data or {}).get("invoice_id") or 0) in invoice_ids]
+    related_pairs = {("leads", lead.id)} | {("deals", item_id) for item_id in deal_ids}
+    activities = [item for item in db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc())).all() if (item.related_type, item.related_id) in related_pairs]
+    emails = [item for item in db.scalars(select(Email).where(Email.archived == False).order_by(Email.created_at.desc())).all() if (item.related_type, item.related_id) in related_pairs]
+    return {
+        "lead": serialize(lead, db),
+        "stages": [
+            {"key": "lead", "label": "Lead", "count": 1, "complete": lead.status == "Converted"},
+            {"key": "visit", "label": "Visit", "count": len(visits), "complete": any(item.status == "Completed" for item in visits)},
+            {"key": "quotation", "label": "Quotation", "count": len(quotes), "complete": bool(quotes)},
+            {"key": "invoice", "label": "Invoice", "count": len(invoices), "complete": bool(invoices)},
+            {"key": "payment", "label": "Payment", "count": len(payments), "complete": any(item.status in {"Received", "Cleared"} for item in payments)},
+        ],
+        "visits": [serialize_platform(item, db) for item in visits], "quotes": [serialize_platform(item, db) for item in quotes], "sales_orders": [serialize_platform(item, db) for item in orders], "invoices": [serialize_platform(item, db) for item in invoices], "payments": [serialize_platform(item, db) for item in payments], "activities": [serialize(item, db) for item in activities], "emails": [serialize(item, db) for item in emails],
+    }
 
 
 @app.get("/api/search")
@@ -1195,6 +1397,7 @@ def list_platform_records(
 def create_platform_record(resource: str, payload: PlatformPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
     config = platform_config(resource)
     values = platform_values(payload)
+    normalize_platform_links(db, resource, values)
     validate_platform_values(resource, values)
     if config.get("singleton") and db.scalar(select(PlatformRecord.id).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)):
         raise HTTPException(409, f"{config['label']} already has an active record")
@@ -1204,6 +1407,9 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
     sync_platform_columns(record, values)
     db.add(record)
     db.flush()
+    ensure_transaction_number(record)
+    if resource == "payments":
+        refresh_invoice_balance(db, int(values["invoice_id"]))
     run_platform_automation(db, resource, "create", record, values)
     add_audit(db, "create", resource, record.id, f"Created {config['singular']} '{record.title}'", after=serialize_platform(record))
     db.commit()
@@ -1248,8 +1454,12 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
     validate_platform_values(resource, changes, partial=True)
     values = dict(record.data or {})
     values.update(changes)
+    normalize_platform_links(db, resource, values)
     validate_platform_values(resource, values)
     sync_platform_columns(record, values)
+    ensure_transaction_number(record)
+    if resource == "payments":
+        refresh_invoice_balance(db, int(values["invoice_id"]))
     run_platform_automation(db, resource, "update", record, values)
     add_audit(db, "update", resource, item_id, f"Updated {config['singular']} '{record.title}'", before=before, after=serialize_platform(record))
     db.commit()
@@ -1265,6 +1475,9 @@ def archive_platform_record(resource: str, item_id: int, db: Session = Depends(g
         raise HTTPException(404, "Record not found")
     before = serialize_platform(record)
     record.archived = True
+    if resource == "payments" and (record.data or {}).get("invoice_id"):
+        db.flush()
+        refresh_invoice_balance(db, int(record.data["invoice_id"]))
     add_audit(db, "archive", resource, item_id, f"Archived {config['singular']} '{record.title}'", before=before)
     db.commit()
     return {"ok": True, "id": item_id, "archived": True}
@@ -1414,6 +1627,47 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
 def import_jobs(db: Session = Depends(get_db)) -> dict[str, Any]:
     rows = db.scalars(select(ImportJob).order_by(ImportJob.created_at.desc()).limit(100)).all()
     return {"items": [{"id": row.id, "resource": row.resource, "filename": row.filename, "status": row.status, "total_rows": row.total_rows, "imported_rows": row.imported_rows, "error_rows": row.error_rows, "errors": row.errors, "created_at": row.created_at.isoformat()} for row in rows]}
+
+
+@app.post("/api/documents/upload", status_code=201)
+async def upload_document(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    document_type: str | None = Form(None),
+    version: str | None = Form(None),
+    related_type: str | None = Form(None),
+    related_id: int | None = Form(None),
+    owner_id: int | None = Form(None),
+    status: str = Form("Active"),
+    description: str | None = Form(None),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    original = Path(file.filename or "").name
+    extension = Path(original).suffix.lower()
+    allowed = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg"}
+    if extension not in allowed:
+        raise HTTPException(422, "Upload a PDF, Office document, CSV, text file, PNG or JPEG")
+    content = await file.read(10_000_001)
+    if not content:
+        raise HTTPException(422, "The selected document is empty")
+    if len(content) > 10_000_000:
+        raise HTTPException(413, "Documents are limited to 10 MB")
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original).stem).strip("-._")[:80] or "document"
+    stored_name = f"{datetime.utcnow():%Y%m%d%H%M%S}-{secrets.token_hex(5)}-{safe_stem}{extension}"
+    DOCUMENT_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    target = DOCUMENT_UPLOAD_ROOT / stored_name
+    target.write_bytes(content)
+    values: dict[str, Any] = {
+        "name": name.strip(), "document_type": document_type or extension.lstrip(".").upper(),
+        "url": f"/uploads/documents/{stored_name}", "version": version, "related_type": related_type,
+        "related_id": related_id, "owner_id": owner_id, "status": status, "description": description,
+        "file_name": original, "file_size": len(content), "content_type": file.content_type,
+    }
+    try:
+        return create_platform_record("documents", PlatformPayload(**values), db)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
 
 
 @app.get("/api/{resource}")
