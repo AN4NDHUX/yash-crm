@@ -1050,3 +1050,206 @@ textarea:focus-visible {
     transition: none !important;
   }
 }
+
+
+/* Yash CRM premium finish --------------------------------------------------
+   Visual-only layer: the existing blue/navy theme remains the source of truth.
+*/
+.main-area {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--premium-canvas);
+}
+
+.main-area::before,
+.main-area::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A quiet, continuously breathing canvas texture for the white workspace. */
+.main-area::before {
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 62% 42% at 78% 8%, rgba(23, 105, 224, .085), transparent 68%),
+    radial-gradient(ellipse 46% 38% at 9% 88%, rgba(89, 127, 224, .055), transparent 72%),
+    linear-gradient(135deg, rgba(255, 255, 255, .94), rgba(246, 248, 252, .96));
+  transform: translate3d(0, 0, 0) scale(1.04);
+  transform-origin: center;
+  animation: premium-canvas-breathe 18s ease-in-out infinite alternate;
+}
+
+/* Fine blueprint lines add craft without turning the CRM into a decorative page. */
+.main-area::after {
+  z-index: -1;
+  opacity: .27;
+  background-image:
+    linear-gradient(rgba(23, 105, 224, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 105, 224, .035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .55), transparent 72%);
+}
+
+.topbar,
+.content-area {
+  position: relative;
+  z-index: 1;
+}
+
+.content-area {
+  background: transparent;
+}
+
+.topbar {
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 1px 0 rgba(20, 33, 61, .025), 0 10px 28px rgba(20, 33, 61, .025);
+}
+
+.page-heading,
+.stats-grid,
+.dashboard-grid,
+.settings-layout,
+.detail-layout {
+  animation: premium-content-rise .48s cubic-bezier(.2, .7, .2, 1) both;
+}
+
+.page-heading { animation-delay: 20ms; }
+.stats-grid { animation-delay: 55ms; }
+.dashboard-grid,
+.settings-layout,
+.detail-layout { animation-delay: 90ms; }
+
+.card,
+.module-toolbar,
+.settings-section,
+.detail-summary,
+.table-card,
+.deal-card,
+.kanban-column {
+  box-shadow: 0 1px 1px rgba(20, 33, 61, .025), 0 14px 32px rgba(20, 33, 61, .055);
+  transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease;
+}
+
+.card:hover,
+.module-toolbar:hover,
+.settings-section:hover,
+.detail-summary:hover,
+.table-card:hover,
+.deal-card:hover,
+.kanban-column:hover {
+  border-color: #d4deec;
+  box-shadow: 0 2px 2px rgba(20, 33, 61, .025), 0 18px 38px rgba(20, 33, 61, .075);
+}
+
+.stat-card:hover,
+.quick-action:hover,
+.deal-card:hover {
+  transform: translateY(-2px);
+}
+
+.button-primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.button-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, .18) 48%, transparent 70%);
+  transform: translateX(-130%);
+  transition: transform .6s ease;
+}
+
+.button-primary:hover::after { transform: translateX(130%); }
+
+.loading {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--premium-muted);
+  letter-spacing: .01em;
+}
+
+.loading::before {
+  content: "";
+  width: 44px;
+  height: 44px;
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(23, 105, 224, .12);
+  box-shadow: 0 0 0 8px rgba(23, 105, 224, .035), 0 0 0 16px rgba(23, 105, 224, .018);
+  animation: premium-loading-pulse 1.8s ease-out infinite;
+}
+
+.loading .spin {
+  position: relative;
+  z-index: 1;
+  width: 19px;
+  height: 19px;
+  border-width: 2px;
+  border-color: #d8e6fb;
+  border-top-color: var(--premium-blue-600);
+  box-shadow: 0 4px 12px rgba(23, 105, 224, .14);
+}
+
+.loading::after {
+  content: "Preparing your workspace";
+  color: var(--premium-ink);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  animation: premium-loading-copy 1.8s ease-in-out infinite;
+}
+
+@keyframes premium-canvas-breathe {
+  0% { transform: translate3d(-.8%, -.35%, 0) scale(1.04); filter: saturate(.98); }
+  50% { transform: translate3d(.45%, .3%, 0) scale(1.07); filter: saturate(1.04); }
+  100% { transform: translate3d(1%, -.2%, 0) scale(1.04); filter: saturate(.98); }
+}
+
+@keyframes premium-content-rise {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes premium-loading-pulse {
+  0% { opacity: .9; transform: scale(.72); }
+  70%, 100% { opacity: 0; transform: scale(1.2); }
+}
+
+@keyframes premium-loading-copy {
+  0%, 100% { opacity: .58; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-area::before,
+  .page-heading,
+  .stats-grid,
+  .dashboard-grid,
+  .settings-layout,
+  .detail-layout,
+  .loading::before,
+  .loading::after {
+    animation: none !important;
+  }
+
+  .card,
+  .module-toolbar,
+  .settings-section,
+  .detail-summary,
+  .table-card,
+  .deal-card,
+  .kanban-column,
+  .stat-card,
+  .quick-action {
+    transition: none !important;
+  }
+}
