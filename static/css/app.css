@@ -1253,3 +1253,112 @@ textarea:focus-visible {
     transition: none !important;
   }
 }
+
+
+/* Always-on white workspace motion ---------------------------------------
+   The animation is intentionally slow and low-contrast for a calm premium CRM.
+*/
+.main-area::before {
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 55% 46% at 86% 6%, rgba(23, 105, 224, .14), transparent 68%),
+    radial-gradient(ellipse 42% 38% at 4% 78%, rgba(108, 142, 232, .085), transparent 70%),
+    radial-gradient(ellipse 38% 28% at 52% 46%, rgba(255, 255, 255, .9), transparent 72%),
+    linear-gradient(135deg, #ffffff 0%, #f7faff 48%, #f2f6fc 100%);
+  background-size: 145% 145%, 150% 150%, 130% 130%, 100% 100%;
+  animation: premium-canvas-breathe 20s ease-in-out infinite alternate,
+             premium-canvas-shift 28s ease-in-out infinite alternate;
+}
+
+.main-area::after {
+  z-index: 0;
+  opacity: .42;
+  background-image:
+    linear-gradient(118deg, transparent 0%, rgba(255, 255, 255, .7) 43%, transparent 58%),
+    linear-gradient(rgba(23, 105, 224, .028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 105, 224, .028) 1px, transparent 1px);
+  background-size: 210% 100%, 44px 44px, 44px 44px;
+  background-position: 120% 0, 0 0, 0 0;
+  animation: premium-light-sweep 24s ease-in-out infinite;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .78), transparent 84%);
+}
+
+.topbar,
+.content-area {
+  position: relative;
+  z-index: 1;
+}
+
+.content-area > * {
+  position: relative;
+  z-index: 1;
+}
+
+.page-heading h1 {
+  text-wrap: balance;
+}
+
+.card-head-link,
+.record-link,
+.table-action,
+.quick-action,
+.settings-nav a {
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.card-head-link:hover,
+.record-link:hover {
+  color: var(--premium-blue-600);
+}
+
+.table-action:hover {
+  color: var(--premium-blue-600);
+  background: var(--premium-blue-100);
+  border-color: #c9dcf7;
+  transform: translateY(-1px);
+}
+
+.module-toolbar,
+.global-search,
+.field-input,
+.field-select,
+.field-textarea {
+  backdrop-filter: blur(8px);
+}
+
+.global-search,
+.module-toolbar {
+  background: rgba(255, 255, 255, .82);
+}
+
+.data-table tbody tr {
+  transition: background-color .18s ease, box-shadow .18s ease;
+}
+
+.data-table tbody tr:hover {
+  box-shadow: inset 3px 0 0 var(--premium-blue-600);
+}
+
+@keyframes premium-canvas-shift {
+  0% { background-position: 0% 0%, 100% 100%, 50% 40%, 0 0; }
+  100% { background-position: 100% 34%, 0% 62%, 58% 54%, 0 0; }
+}
+
+@keyframes premium-light-sweep {
+  0%, 24% { background-position: 120% 0, 0 0, 0 0; }
+  62%, 100% { background-position: -120% 0, 0 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-area::before,
+  .main-area::after,
+  .data-table tbody tr,
+  .card-head-link,
+  .record-link,
+  .table-action,
+  .quick-action,
+  .settings-nav a {
+    animation: none !important;
+    transition: none !important;
+  }
+}
