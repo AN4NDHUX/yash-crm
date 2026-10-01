@@ -157,7 +157,7 @@ function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 
-function loading() { return `<div class="loading" role="status" aria-live="polite"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading your workspace" aria-label="Loading your workspace" loading="eager"></iframe><span class="loading-label">Loading your workspace...</span></div>`; }
+function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-shell"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading your workspace" aria-label="Loading your workspace" loading="eager"></iframe><span class="yash-loading-mark" aria-hidden="true"><i></i><b></b></span></div><span class="loading-label">Loading your workspace...</span></div>`; }
 function emptyState(icon, title, copy, button = "") { return `<div class="empty-state"><span class="empty-icon">${icon}</span><h3>${esc(title)}</h3><p>${esc(copy)}</p>${button ? `<div style="margin-top:16px">${button}</div>` : ""}</div>`; }
 
 async function ensureLookups() {
