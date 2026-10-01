@@ -35,7 +35,26 @@
         <span class="chevron"></span>
       </div>
 
-      <nav class="primary-nav" aria-label="Primary navigation">
+      <nav class="primary-nav expanded-nav" aria-label="Primary navigation">
+        <span class="nav-label">Workspace</span>
+        <a class="active" href="/dashboard" data-route="dashboard"><span class="nav-icon">H</span>Home</a>
+        <a href="/leads" data-route="leads"><span class="nav-icon">L</span>Leads <span class="nav-count" id="nav-leads-count">1</span></a>
+        <a href="/contacts" data-route="contacts"><span class="nav-icon">C</span>Contacts</a>
+        <a href="/accounts" data-route="accounts"><span class="nav-icon">A</span>Accounts</a>
+        <a href="/deals" data-route="deals"><span class="nav-icon">D</span>Deals</a>
+        <details class="nav-group" open><summary><span class="nav-icon">T</span>Activities</summary><a href="/activities/tasks" data-route="activities">Tasks</a><a href="/activities/meetings" data-route="activities">Meetings</a><a href="/activities/calls" data-route="activities">Calls</a></details>
+        <a href="/products" data-route="products"><span class="nav-icon">P</span>Products</a>
+        <details class="nav-group" open><summary><span class="nav-icon">S</span>Sales &amp; Inventory</summary><a href="/price_books" data-route="price_books">Price Books</a><a href="/vendors" data-route="vendors">Vendors</a><a href="/quotes" data-route="quotes">Quotes</a><a href="/sales_orders" data-route="sales_orders">Sales Orders</a><a href="/purchase_orders" data-route="purchase_orders">Purchase Orders</a><a href="/invoices" data-route="invoices">Invoices</a></details>
+        <a href="/campaigns" data-route="campaigns"><span class="nav-icon">M</span>Campaigns</a>
+        <a href="/cases" data-route="cases"><span class="nav-icon">#</span>Cases</a>
+        <a href="/solutions" data-route="solutions"><span class="nav-icon">K</span>Solutions</a>
+        <a href="/documents" data-route="documents"><span class="nav-icon">F</span>Documents</a>
+        <details class="nav-group" open><summary><span class="nav-icon">R</span>Analytics</summary><a href="/forecasts" data-route="forecasts">Forecasts</a><a href="/reports" data-route="reports">Reports</a><a href="/dashboards" data-route="dashboards">Dashboards</a></details>
+        <span class="nav-label nav-label-settings">Setup</span>
+        <a href="/setup/company_details" data-route="setup"><span class="nav-icon">G</span>Open Setup</a>
+      </nav>
+
+      <nav class="primary-nav legacy-nav" aria-label="Legacy navigation">
         <span class="nav-label">Workspace</span>
         <a class="active" href="/dashboard" data-route="dashboard"><span class="nav-icon"></span>Dashboard</a>
         <a href="/leads" data-route="leads"><span class="nav-icon"></span>Leads <span class="nav-count" id="nav-leads-count">1</span></a>

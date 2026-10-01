@@ -559,6 +559,40 @@ body { color: var(--text); }
   .card:hover { transform: none; }
 }
 
+/* Expanded Yash CRM information architecture */
+.legacy-nav { display: none !important; }
+.expanded-nav { padding-bottom: 18px; }
+.nav-group { margin: 2px 0; }
+.nav-group summary {
+  align-items: center;
+  border-radius: 8px;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 10px;
+  list-style: none;
+  padding: 8px 10px;
+  user-select: none;
+}
+.nav-group summary::-webkit-details-marker { display: none; }
+.nav-group summary::after { content: "+"; margin-left: auto; opacity: .65; }
+.nav-group[open] summary::after { content: "−"; }
+.nav-group > a { font-size: 10px; margin-left: 26px; min-height: 30px; padding: 6px 10px; }
+.nav-group summary:hover { background: rgba(255,255,255,.06); color: var(--text); }
+.platform-cell strong { display: block; }
+.setup-directory { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.setup-directory .card { box-shadow: none; }
+.setup-links { display: grid; gap: 6px; padding: 12px 14px 16px; }
+.setup-links a { border-radius: 8px; color: var(--text-faint); font-size: 11px; padding: 8px 10px; }
+.setup-links a:hover, .setup-links a.active { background: var(--surface-soft); color: var(--text); }
+.foundation-note { border: 1px solid var(--border); border-radius: 10px; color: var(--text-faint); font-size: 10px; line-height: 1.55; margin-bottom: 14px; padding: 10px 12px; }
+.audit-row { align-items: flex-start; border-bottom: 1px solid var(--border); display: grid; gap: 10px; grid-template-columns: 130px 90px 1fr; padding: 12px 0; }
+.audit-row:last-child { border-bottom: 0; }
+.audit-row small { color: var(--text-faint); }
+@media (max-width: 720px) { .audit-row { grid-template-columns: 1fr; } }
+
 
 /* Hard black edges and corner definition */
 :root {

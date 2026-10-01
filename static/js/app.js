@@ -7,6 +7,7 @@ const state = {
   settingsCache: {},
   lookups: { accounts: [], contacts: [], loaded: false },
   profile: null,
+  platformCatalog: { resources: {}, setup_navigation: {} },
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -143,7 +144,7 @@ function setBreadcrumb(label, parent = "Workspace") {
 
 function activeNav(route) {
   const root = route.split("/").filter(Boolean)[0] || "dashboard";
-  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === (root === "settings" ? "settings" : root)));
+  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === (root === "settings" ? "setup" : root)));
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
@@ -212,6 +213,13 @@ async function renderRoute() {
       bindDashboard();
       return;
     }
+    if (parts[0] === "setup") {
+      const resource = parts[1] || "company_details";
+      setBreadcrumb(titleCase(resource), "Setup");
+      content.innerHTML = await setupView(resource);
+      bindPlatform(resource);
+      return;
+    }
     if (parts[0] === "settings") {
       const validTabs = ["general", "profile-users", "approval-process", "blueprint"];
       if (parts[1] && !validTabs.includes(parts[1])) return navigate("/settings/general", true);
@@ -219,6 +227,13 @@ async function renderRoute() {
       setBreadcrumb("Settings", "Manage");
       content.innerHTML = await settingsView(tab);
       bindSettings();
+      return;
+    }
+    if (parts[0] === "activities" && ["tasks", "meetings", "calls"].includes(parts[1])) {
+      const type = parts[1].slice(0, -1).replace(/^./, (value) => value.toUpperCase());
+      setBreadcrumb(`${type}s`, "Activities");
+      content.innerHTML = await activityTypeView(type);
+      bindModule("activities");
       return;
     }
     if (MODULES[parts[0]]) {
@@ -232,6 +247,13 @@ async function renderRoute() {
         content.innerHTML = await moduleView(resource);
         bindModule(resource);
       }
+      return;
+    }
+    if (state.platformCatalog.resources[parts[0]]) {
+      const resource = parts[0];
+      setBreadcrumb(state.platformCatalog.resources[resource].label);
+      content.innerHTML = await platformModuleView(resource);
+      bindPlatform(resource);
       return;
     }
     await navigate("/dashboard", true);
@@ -299,6 +321,94 @@ async function moduleView(resource) {
     ${resource === "deals" && current.view === "kanban" ? "" : pagination(resource, data)}`;
 }
 
+async function activityTypeView(type) {
+  const resource = "activities";
+  const current = state.moduleState[resource] || { search: "", status: "", owner_id: "", sort: "created_desc", offset: 0, selectedIds: [] };
+  state.moduleState[resource] = current;
+  const params = new URLSearchParams({ limit: "25", offset: String(current.offset), activity_type: type });
+  if (current.search) params.set("search", current.search);
+  if (current.status) params.set("status", current.status);
+  if (current.owner_id) params.set("owner_id", current.owner_id);
+  if (current.sort) params.set("sort", current.sort);
+  const data = await api(`/api/activities?${params}`);
+  return `${pageHeader("Activities", `${type}s`, `Manage ${type.toLowerCase()} records, ownership, due dates and related CRM context.`, `<button class="button button-primary" data-create="activities" data-activity-type="${type}">+ Add ${type.toLowerCase()}</button>`)}
+    <div class="module-toolbar"><label class="toolbar-search"><span>?</span><input data-module-search="activities" value="${esc(current.search)}" placeholder="Search ${type.toLowerCase()}s..." /></label><select class="filter-select" data-module-status="activities"><option value="">All statuses</option><option ${current.status === "Open" ? "selected" : ""}>Open</option><option ${current.status === "Completed" ? "selected" : ""}>Completed</option></select><select class="filter-select" data-module-owner="activities"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-module-sort="activities"><option value="created_desc">Recently added</option><option value="name_asc">Subject A-Z</option></select><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>
+    ${tableView(resource, data)}${pagination(resource, data)}`;
+}
+
+function platformState(resource) {
+  if (!state.moduleState[`platform:${resource}`]) state.moduleState[`platform:${resource}`] = { search: "", status: "", owner_id: "", sort: "updated_desc", offset: 0 };
+  return state.moduleState[`platform:${resource}`];
+}
+
+function platformTable(resource, data) {
+  const config = state.platformCatalog.resources[resource];
+  if (!data.items.length) return `<section class="card">${emptyState("+", `No ${config.label.toLowerCase()} found`, "Create a record or adjust the current filters.", `<button class="button button-primary" data-platform-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
+  const visible = (config.fields || []).filter((item) => !["textarea", "json"].includes(item.type)).slice(0, 4);
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : esc(row[field.key] ?? "-")}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Archive" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+async function platformPanel(resource, compact = false) {
+  const config = state.platformCatalog.resources[resource];
+  if (!config) return `<section class="card">${emptyState("!", "Configuration view unavailable", "This setup surface is not registered in the platform catalog.")}</section>`;
+  const current = platformState(resource);
+  const params = new URLSearchParams({ limit: compact ? "100" : "25", offset: compact ? "0" : String(current.offset), sort: current.sort });
+  if (current.search) params.set("search", current.search);
+  if (current.status) params.set("status", current.status);
+  if (current.owner_id) params.set("owner_id", current.owner_id);
+  const data = await api(`/api/platform/${resource}?${params}`);
+  const toolbar = `<div class="module-toolbar"><label class="toolbar-search"><span>?</span><input data-platform-search="${resource}" value="${esc(current.search)}" placeholder="Search ${esc(config.label.toLowerCase())}..." /></label><select class="filter-select" data-platform-status="${resource}"><option value="">All statuses</option><option ${current.status === "Active" ? "selected" : ""}>Active</option><option ${current.status === "Inactive" ? "selected" : ""}>Inactive</option></select><select class="filter-select" data-platform-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-platform-sort="${resource}"><option value="updated_desc">Recently updated</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A-Z</option><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently created</option></select><a class="button button-ghost button-small" href="/api/export/${resource}.csv" download>Export CSV</a><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>`;
+  return `${toolbar}${platformTable(resource, data)}${compact ? "" : pagination(`platform:${resource}`, data)}`;
+}
+
+async function platformModuleView(resource) {
+  const config = state.platformCatalog.resources[resource];
+  return `${pageHeader(config.group || "Workspace", config.label, config.description, `<button class="button button-primary" data-platform-create="${resource}">+ Add ${config.singular.toLowerCase()}</button>`)}${await platformPanel(resource)}`;
+}
+
+function setupDirectory(active) {
+  return `<section class="card settings-nav">${Object.entries(state.platformCatalog.setup_navigation || {}).map(([group, links]) => `<div><span class="eyebrow" style="display:block;padding:12px 12px 5px">${esc(group)}</span>${links.map(([resource, label]) => `<a href="/setup/${resource}" class="${active === resource ? "active" : ""}">${esc(label)}</a>`).join("")}</div>`).join("")}</section>`;
+}
+
+async function auditView() {
+  const data = await api("/api/audit?limit=100");
+  return `<section class="card settings-section"><div class="settings-section-head"><h2>Audit history</h2><p>Immutable application events for record, configuration and automation changes.</p></div>${data.items.length ? data.items.map((item) => `<div class="audit-row"><small>${formatDateTime(item.occurred_at)}</small>${badge(titleCase(item.action))}<div><strong>${esc(item.summary)}</strong><small>${esc(titleCase(item.resource))}${item.record_id ? ` · #${item.record_id}` : ""}</small></div></div>`).join("") : emptyState("A", "No audit events yet", "Changes made after this upgrade will appear here.")}</section>`;
+}
+
+async function recycleBinView() {
+  const data = await api("/api/administration/recycle-bin");
+  return `<section class="card settings-section"><div class="settings-section-head"><h2>Recycle Bin</h2><p>Restore archived CRM and setup records.</p></div>${data.items.length ? data.items.map((item) => `<div class="rule-row"><div class="rule-info"><strong>${esc(item.name)}</strong><small>${esc(titleCase(item.resource))} · #${item.id}</small></div><button class="button button-small button-ghost" data-restore-resource="${item.resource}" data-id="${item.id}">Restore</button></div>`).join("") : emptyState("R", "Recycle bin is empty", "Archived records will appear here.")}</section>`;
+}
+
+function importView() {
+  const choices = Object.entries(state.platformCatalog.resources).filter(([, config]) => !["Security", "Customization", "Automation", "Templates", "Developer", "General"].includes(config.group));
+  return `<section class="card settings-section"><div class="settings-section-head"><h2>Import</h2><p>Import UTF-8 CSV files into expanded CRM modules. Required column names match the field API names.</p></div><form data-import-form><div class="form-grid"><div class="field"><label>Module</label><select class="field-select" name="resource">${choices.map(([key, config]) => `<option value="${key}">${esc(config.label)}</option>`).join("")}</select></div><div class="field"><label>CSV file</label><input class="field-input" name="file" type="file" accept=".csv,text/csv" required /></div></div><div class="form-actions"><button class="button button-primary" type="submit">Import records</button></div></form></section>`;
+}
+
+function exportView() {
+  const resources = [...Object.keys(MODULES), ...Object.keys(state.platformCatalog.resources)];
+  return `<section class="card settings-section"><div class="settings-section-head"><h2>Export</h2><p>Download active records as UTF-8 CSV for analysis or backup.</p></div><div class="setup-directory">${resources.map((resource) => `<a class="button button-ghost" href="/api/export/${resource}.csv" download>${esc(MODULES[resource]?.label || state.platformCatalog.resources[resource]?.label || titleCase(resource))}</a>`).join("")}</div></section>`;
+}
+
+function duplicateView() {
+  return `<section class="card settings-section"><div class="settings-section-head"><h2>Duplicate Management</h2><p>Scan platform modules by normalized name, or leads, contacts and users by email.</p></div><form data-duplicate-form><div class="form-grid"><div class="field"><label>Module</label><select class="field-select" name="resource"><option>leads</option><option>contacts</option><option>users</option>${Object.keys(state.platformCatalog.resources).map((key) => `<option>${key}</option>`).join("")}</select></div></div><div class="form-actions"><button class="button button-primary" type="submit">Scan for duplicates</button></div></form><div data-duplicate-results></div></section>`;
+}
+
+async function setupView(resource) {
+  let content;
+  if (resource === "personal_settings" || resource === "users") content = await profileUsersView();
+  else if (resource === "approval_processes") content = await approvalSettingsView();
+  else if (resource === "blueprints") content = await blueprintSettingsView();
+  else if (resource === "audit_log") content = await auditView();
+  else if (resource === "recycle_bin") content = await recycleBinView();
+  else if (resource === "import") content = importView();
+  else if (resource === "export") content = exportView();
+  else if (resource === "duplicates") content = duplicateView();
+  else if (state.platformCatalog.resources[resource]) content = `<section class="foundation-note">This is a working foundation: records persist, validate, filter, sort, export, audit and recycle. External delivery, identity-provider enforcement and background scheduling require deployment-specific workers or integrations.</section>${await platformPanel(resource, true)}`;
+  else content = `<section class="card">${emptyState("!", "Unknown setup page", "Choose a setup item from the directory.")}</section>`;
+  return `${pageHeader("Setup", titleCase(resource), "Configure Yash CRM without changing its source code.")}<div class="settings-layout">${setupDirectory(resource)}<div class="settings-content">${content}</div></div>`;
+}
+
 function tableView(resource, data) {
   const config = MODULES[resource];
   if (!data.items.length) return `<section class="card">${emptyState(config.icon, `No ${config.label.toLowerCase()} found`, "Try changing your filters or create a new record.", `<button class="button button-primary" data-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
@@ -335,7 +445,7 @@ async function bulkArchiveLeads(current) {
 
 function bindModule(resource) {
   const current = state.moduleState[resource];
-  $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create)));
+  $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
@@ -416,10 +526,11 @@ function fieldHtml(field, value = "") {
   const required = field.required ? "required" : "";
   const hint = field.hint ? `<small style="font-size:10px;color:var(--text-faint)">${esc(field.hint)}</small>` : "";
   let input = "";
-  if (type === "textarea") {
+  if (type === "textarea" || type === "json") {
     let rendered = value || "";
+    if (type === "json" && typeof rendered !== "string") rendered = JSON.stringify(rendered ?? [], null, 2);
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
-    input = `<textarea class="field-textarea" id="${id}" name="${field.key}" ${required}>${esc(rendered)}</textarea>`;
+    input = `<textarea class="field-textarea" id="${id}" name="${field.key}" ${type === "json" ? 'data-json="true"' : ""} ${required}>${esc(rendered)}</textarea>`;
   }
   else if (type === "select" || type === "user" || type === "account" || type === "contact") {
     let options = field.options || [];
@@ -434,7 +545,7 @@ function fieldHtml(field, value = "") {
     if (type === "date" && rendered) rendered = String(rendered).slice(0, 10);
     if (field.key === "tags" && Array.isArray(rendered)) rendered = rendered.join(", ");
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
-    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${required} />`;
+    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any"' : ""} ${required} />`;
   }
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
 }
@@ -450,6 +561,21 @@ async function openRecordModal(resource, id = null, preset = {}) {
   $("#modal-title").textContent = id ? `Update ${config.singular.toLowerCase()}` : `Create ${config.singular.toLowerCase()}`;
   $("#modal-submit").textContent = id ? "Save changes" : `Create ${config.singular.toLowerCase()}`;
   $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.map((field) => fieldHtml(field, record[field.key])).join("")}</div>`;
+  $("#modal-backdrop").hidden = false;
+  $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
+}
+
+async function openPlatformModal(resource, id = null) {
+  const config = state.platformCatalog.resources[resource];
+  if (!config) return;
+  if ((config.fields || []).some((field) => ["account", "contact"].includes(field.type))) await ensureLookups();
+  let record = {};
+  if (id) record = await api(`/api/platform/${resource}/${id}`);
+  state.modal = { resource, id, platform: true };
+  $("#modal-eyebrow").textContent = id ? `Edit ${config.singular}` : `New ${config.singular}`;
+  $("#modal-title").textContent = id ? `Update ${config.singular.toLowerCase()}` : `Create ${config.singular.toLowerCase()}`;
+  $("#modal-submit").textContent = id ? "Save changes" : `Create ${config.singular.toLowerCase()}`;
+  $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.map((field) => fieldHtml(field, record[field.key])).join("")}${config.fields.some((field) => field.key === "owner_id") ? "" : fieldHtml({ key: "owner_id", label: "Owner", type: "user" }, record.owner_id)}</div>`;
   $("#modal-backdrop").hidden = false;
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
 }
@@ -470,9 +596,9 @@ function readForm(form) {
     let value = input.value;
     if (["owner_id", "account_id", "contact_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
     else if (["tags"].includes(input.name)) value = value ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
-    else if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(input.name)) {
+    else if (input.dataset.json === "true" || ["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(input.name)) {
       try { value = value ? JSON.parse(value) : []; } catch { throw new Error(`${titleCase(input.name)} must be valid JSON. Check the brackets and quotes.`); }
-      if (!Array.isArray(value)) throw new Error(`${titleCase(input.name)} must be a JSON list, like [ ... ].`);
+      if (input.dataset.json !== "true" && !Array.isArray(value)) throw new Error(`${titleCase(input.name)} must be a JSON list, like [ ... ].`);
     }
     else if (input.dataset.boolean === "true") value = input.classList.contains("on");
     else if (value === "") value = null;
@@ -485,6 +611,7 @@ async function submitRecord(event) {
   event.preventDefault();
   if (!state.modal) return;
   if (state.modal.convert) return submitConvert(event.currentTarget);
+  if (state.modal.platform) return submitPlatformRecord(event.currentTarget);
   const { resource, id } = state.modal;
   const singular = MODULES[resource]?.singular || settingsResourceConfig(resource)?.singular || "record";
   const submit = $("#modal-submit");
@@ -496,6 +623,21 @@ async function submitRecord(event) {
     if (resource === "users") { await refreshMeta(); if (id && id === state.profile?.id) { state.profile = await api("/api/settings/profile"); applyProfile(); } }
     closeModal();
     toast(`${id ? "Updated" : "Created"} ${singular}`);
+    await renderRoute();
+  } catch (error) { toast("Could not save record", error.message, "error"); }
+  finally { submit.disabled = false; }
+}
+
+async function submitPlatformRecord(form) {
+  const { resource, id } = state.modal;
+  const config = state.platformCatalog.resources[resource];
+  const submit = $("#modal-submit");
+  try {
+    const data = readForm(form);
+    submit.disabled = true;
+    await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+    closeModal();
+    toast(`${id ? "Updated" : "Created"} ${config.singular}`);
     await renderRoute();
   } catch (error) { toast("Could not save record", error.message, "error"); }
   finally { submit.disabled = false; }
@@ -554,10 +696,38 @@ async function deleteRecord(resource, id) {
   } catch (error) { toast("Could not complete that action", error.message, "error"); }
 }
 
+async function deletePlatformRecord(resource, id) {
+  const config = state.platformCatalog.resources[resource];
+  const confirmed = await confirmAction(`Archive this ${config.singular.toLowerCase()}?`, "The record will move to the recycle bin and can be restored.", "Archive");
+  if (!confirmed) return;
+  try {
+    await api(`/api/platform/${resource}/${id}`, { method: "DELETE" });
+    toast("Record archived", "It can be restored from Setup > Recycle Bin.");
+    await renderRoute();
+  } catch (error) { toast("Could not archive record", error.message, "error"); }
+}
+
+function bindPlatform(resource) {
+  if (["personal_settings", "users", "approval_processes", "blueprints"].includes(resource)) bindSettings();
+  $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate)));
+  $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
+  $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
+  const current = state.platformCatalog.resources[resource] ? platformState(resource) : null;
+  let timer;
+  $('[data-platform-search]')?.addEventListener("input", (event) => { clearTimeout(timer); current.search = event.target.value; current.offset = 0; timer = setTimeout(renderRoute, 250); });
+  $('[data-platform-status]')?.addEventListener("change", (event) => { current.status = event.target.value; current.offset = 0; renderRoute(); });
+  $('[data-platform-owner]')?.addEventListener("change", (event) => { current.owner_id = event.target.value; current.offset = 0; renderRoute(); });
+  $('[data-platform-sort]')?.addEventListener("change", (event) => { current.sort = event.target.value; current.offset = 0; renderRoute(); });
+  $$('[data-page]').forEach((button) => button.addEventListener("click", () => { if (!current) return; current.offset += button.dataset.page === "next" ? 25 : -25; renderRoute(); }));
+  $$('[data-restore-resource]').forEach((button) => button.addEventListener("click", async () => { try { await api("/api/administration/restore", { method: "POST", body: JSON.stringify({ resource: button.dataset.restoreResource, record_id: Number(button.dataset.id) }) }); toast("Record restored"); await renderRoute(); } catch (error) { toast("Could not restore record", error.message, "error"); } }));
+  $('[data-import-form]')?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const file = form.querySelector('[name="file"]').files[0]; if (!file) return; const body = new FormData(); body.append("file", file); try { const response = await fetch(`/api/import/${form.elements.resource.value}`, { method: "POST", body }); const result = await response.json(); if (!response.ok) throw new Error(result.detail || "Import failed"); toast("Import complete", `${result.imported} rows imported; ${result.errors.length} errors.`); form.reset(); } catch (error) { toast("Could not import CSV", error.message, "error"); } });
+  $('[data-duplicate-form]')?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const target = $('[data-duplicate-results]'); try { const result = await api(`/api/administration/duplicates?resource=${encodeURIComponent(form.elements.resource.value)}`); target.innerHTML = result.groups.length ? result.groups.map((group) => `<div class="rule-row"><div class="rule-info"><strong>${esc(group.value)}</strong><small>${group.count} records match on ${esc(group.match_on)}</small></div>${badge("Review")}</div>`).join("") : emptyState("✓", "No duplicates found", "No exact normalized matches were detected."); } catch (error) { toast("Duplicate scan failed", error.message, "error"); } });
+}
+
 function bindGlobal() {
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[href]");
-    if (link && !event.metaKey && !event.ctrlKey && !event.shiftKey && link.origin === window.location.origin && link.getAttribute("href").startsWith("/")) { event.preventDefault(); navigate(link.getAttribute("href")); return; }
+    if (link && !link.hasAttribute("download") && !link.getAttribute("href").startsWith("/api/") && !event.metaKey && !event.ctrlKey && !event.shiftKey && link.origin === window.location.origin && link.getAttribute("href").startsWith("/")) { event.preventDefault(); navigate(link.getAttribute("href")); return; }
     const retry = event.target.closest("[data-retry]"); if (retry) renderRoute();
   });
   window.addEventListener("popstate", renderRoute);
@@ -634,13 +804,13 @@ function bindSettings() {
 async function openConvertModal(id) {
   state.modal = { resource: "leads", id, convert: true };
   $("#modal-eyebrow").textContent = "Lead conversion"; $("#modal-title").textContent = "Convert lead"; $("#modal-submit").textContent = "Convert lead";
-  $("#modal-body").innerHTML = `<div class="form-grid"><div class="field full"><label for="convert-account">Account name</label><input class="field-input" id="convert-account" name="account_name" placeholder="Company account" /></div><div class="field"><label for="convert-deal">Create a deal</label><select class="field-select" id="convert-deal" name="create_deal"><option value="true" selected>Create deal</option></select></div><div class="field"><label for="convert-amount">Deal amount</label><input class="field-input" id="convert-amount" name="deal_amount" type="number" value="0" /></div><div class="field"><label for="convert-name">Deal name</label><input class="field-input" id="convert-name" name="deal_name" placeholder="Optional opportunity name" /></div><div class="field"><label for="convert-date">Expected close date</label><input class="field-input" id="convert-date" name="expected_close_date" type="date" /></div></div>`;
+  $("#modal-body").innerHTML = `<div class="form-grid"><div class="field full"><label for="convert-account">Account name</label><input class="field-input" id="convert-account" name="account_name" placeholder="Company account" /></div><div class="field"><label for="convert-deal">Create a deal</label><select class="field-select" id="convert-deal" name="create_deal"><option value="true" selected>Create deal</option></select></div><div class="field"><label for="convert-amount">Deal amount</label><input class="field-input" id="convert-amount" name="deal_amount" type="number" step="any" value="0" /></div><div class="field"><label for="convert-name">Deal name</label><input class="field-input" id="convert-name" name="deal_name" placeholder="Optional opportunity name" /></div><div class="field"><label for="convert-date">Expected close date</label><input class="field-input" id="convert-date" name="expected_close_date" type="date" /></div></div>`;
   $("#modal-backdrop").hidden = false;
 }
 
 async function init() {
   bindGlobal();
-  try { state.meta = await api("/api/meta"); state.settingsCache = await api("/api/settings/general"); state.profile = await api("/api/settings/profile"); applyProfile(); await ensureLookups(); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
+  try { state.platformCatalog = await api("/api/platform/catalog"); state.meta = await api("/api/meta"); state.settingsCache = await api("/api/settings/general"); state.profile = await api("/api/settings/profile"); applyProfile(); await ensureLookups(); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
   await renderRoute();
 }
 

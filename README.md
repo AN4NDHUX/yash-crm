@@ -1,6 +1,22 @@
-# Yash CRM
+# Yash CRM 2.0
 
-Yash CRM is a browser-based FastAPI CRM for leads, contacts, accounts, deals, products, activities, settings, approvals, and blueprints. The production deployment is a stateless Docker web service backed by PostgreSQL.
+Yash CRM is a browser-based FastAPI CRM with core sales, inventory, service, marketing, analytics, customization, security, automation and data-administration foundations. The production deployment is a stateless Docker web service backed by PostgreSQL.
+
+## Included modules
+
+- Home, Leads, Contacts, Accounts, Deals and Products
+- Activities separated into Tasks, Meetings and Calls
+- Price Books, Vendors, Quotes, Sales Orders, Purchase Orders and Invoices
+- Campaigns, Cases, Solutions and Documents
+- Forecasts, saved Reports and configurable Dashboards
+- Setup for company/personal settings, users, roles, profiles, permissions, sharing rules and audit history
+- Module, field, layout, pipeline, validation-rule and custom-view configuration
+- Workflow, assignment, approval, blueprint, scoring, schedule and webhook configuration foundations
+- Email, quote and invoice templates
+- CSV import/export, duplicate detection and recycle/restore
+- API client, webhook and integration metadata without storing raw secrets
+
+Expanded modules use a shared typed platform-record engine. Common relationships, ownership, amount, due date, status, timestamps and archival state are queryable columns; module-specific and custom values are stored as JSON. This avoids a new migration for every custom field while retaining database-enforced links to users, accounts, contacts and deals.
 
 ## Production architecture
 
@@ -67,7 +83,7 @@ With the app running locally:
 python scripts/check_contracts.py
 ```
 
-For an authenticated deployment, also set `YASH_CRM_USERNAME` and `YASH_CRM_PASSWORD`. The checks cover health, security headers, CRUD behavior, lead-to-account/contact/deal conversion, and editable administrator profile data.
+For an authenticated deployment, also set `YASH_CRM_USERNAME` and `YASH_CRM_PASSWORD`. The checks cover health, security headers, core and expanded CRUD behavior, activity subtypes, lead-to-account/contact/deal conversion, related records, automation execution, editable administrator profile data, audit history and recycle/restore.
 
 ## Preserved product behavior
 
@@ -76,3 +92,7 @@ For an authenticated deployment, also set `YASH_CRM_USERNAME` and `YASH_CRM_PASS
 - The administrator name and email are editable from Settings.
 - Deletes archive normal CRM records instead of physically removing them.
 - The existing responsive UI is retained; the sidebar gloss is intentionally subtle and disabled for reduced-motion users.
+
+## Honest scope boundary
+
+This package is a functional Yash CRM foundation, not a claim of complete feature parity with any commercial CRM. SMTP/email delivery, document binary storage, webhook dispatch, schedule execution, OIDC/SSO, granular per-request authorization, accounting/payment gateways and arbitrary report-query execution require deployment-specific services or further product work. Configuration records and queue/audit foundations are present so those services can be added without replacing the CRM data model. See [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md).
