@@ -1441,3 +1441,63 @@ textarea:focus-visible {
     animation: none !important;
   }
 }
+
+
+/* Deployment-safe loader fallback: logo remains visible if the iframe asset 404s. */
+.brand-orbs-shell {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #dad7cc;
+  box-shadow: 0 10px 26px rgba(20, 33, 61, .12), 0 0 0 1px rgba(20, 33, 61, .07);
+  overflow: hidden;
+}
+
+.brand-orbs-shell .brand-orbs-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.yash-loading-mark {
+  position: relative;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: block;
+  border-radius: 8px;
+  background: #1769e0;
+  box-shadow: 0 5px 15px rgba(23, 105, 224, .32), 0 0 0 3px rgba(255, 255, 255, .32);
+  overflow: hidden;
+  animation: yash-logo-pulse 1.6s ease-in-out infinite;
+}
+
+.yash-loading-mark i,
+.yash-loading-mark b {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 19px;
+  border-radius: 1px;
+  background: #fff;
+  transform: skewY(-28deg) rotate(20deg);
+}
+
+.yash-loading-mark i { left: 6px; top: 6px; }
+.yash-loading-mark b { right: 5px; bottom: 5px; opacity: .72; }
+
+@keyframes yash-logo-pulse {
+  0%, 100% { transform: scale(.94); box-shadow: 0 5px 15px rgba(23, 105, 224, .26), 0 0 0 3px rgba(255, 255, 255, .27); }
+  50% { transform: scale(1); box-shadow: 0 7px 20px rgba(23, 105, 224, .38), 0 0 0 5px rgba(255, 255, 255, .35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yash-loading-mark { animation: none !important; }
+}
