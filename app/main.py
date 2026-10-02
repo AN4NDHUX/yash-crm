@@ -10,6 +10,7 @@ import io
 import threading
 import re
 import hashlib
+import hmac
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -390,13 +391,36 @@ AI_BASE_URL = os.getenv("YASHCRM_AI_BASE_URL", "https://router.huggingface.co/v1
 AI_API_KEY = os.getenv("YASHCRM_AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("YASHCRM_AI_MODEL", "openai/gpt-oss-20b:cheapest").strip()
 AI_PROVIDER = os.getenv("YASHCRM_AI_PROVIDER", "Hugging Face Inference Providers").strip() or "OpenAI-compatible cloud"
-AI_TIMEOUT_SECONDS = max(10, min(int(os.getenv("YASHCRM_AI_TIMEOUT", "90")), 300))
+def _env_int(name: str, default: int) -> int:
+    # A malformed value must not crash the import (or surface later as a bogus 422).
+    try:
+        return int(os.getenv(name, str(default)).strip())
+    except ValueError:
+        return default
+
+
+AI_TIMEOUT_SECONDS = max(10, min(_env_int("YASHCRM_AI_TIMEOUT", 90), 300))
 
 def env_bool(name: str, default: bool = False) -> bool:
     return os.getenv(name, "1" if default else "0").strip().lower() in {"1", "true", "yes", "on"}
 
 AI_EXCEPTIONS_ENABLED = env_bool("YASHCRM_AI_EXCEPTIONS_ENABLED", not IS_PRODUCTION)
-AI_CSRF_TOKEN = secrets.token_urlsafe(24)
+
+
+def _stable_csrf_token() -> str:
+    """CSRF token that survives restarts, redeploys and multiple workers.
+
+    A per-process random token made every open /ai tab fail with CSRF_REJECTED after a
+    restart (and intermittently when more than one worker/instance serves traffic).
+    The token is an HMAC of a server-side secret, so it is stable but not reversible.
+    """
+    seed = os.getenv("YASHCRM_CSRF_SECRET", "").strip() or os.getenv("APP_PASSWORD", "").strip("\r\n")
+    if not seed:
+        return secrets.token_urlsafe(24)
+    return hmac.new(seed.encode("utf-8"), b"yash-crm/ai-csrf/v1", hashlib.sha256).hexdigest()[:48]
+
+
+AI_CSRF_TOKEN = _stable_csrf_token()
 
 def database_connection() -> tuple[str, dict[str, Any]]:
     raw = os.getenv("DATABASE_URL", "sqlite:///./yashcrm.db").strip()
@@ -1161,6 +1185,46 @@ def ensure_cloud_admin(db: Session) -> None:
     db.commit()
 
 
+PUBLIC_PROBE_PATHS = frozenset({"/health", "/ready"})
+# Static, non-sensitive files that browsers request WITHOUT the page's Basic-auth
+# credentials: the manifest fetch, favicon requests and the manifest's icons. Putting
+# them behind auth makes installability and the tab icon fail with 401. Exact paths
+# only (no prefixes), GET/HEAD only.
+PUBLIC_ASSET_PATHS = frozenset({
+    "/manifest.webmanifest",
+    "/favicon.ico",
+    "/favicon.svg",
+    "/static/icons/app.ico",
+    "/static/icons/icon-192.png",
+    "/static/icons/icon-512.png",
+    "/static/icons/icon-maskable-512.png",
+    "/static/icons/apple-touch-icon.png",
+})
+
+
+def _app_credentials() -> tuple[str, str]:
+    # Hosting secret stores often add a trailing newline when a value is pasted; that
+    # silently made a correct password fail with 401.
+    return os.getenv("APP_USERNAME", "").strip(), os.getenv("APP_PASSWORD", "").strip("\r\n")
+
+
+def _basic_auth_valid(header: str) -> bool:
+    scheme, _, token = header.strip().partition(" ")
+    token = token.strip()
+    if scheme.lower() != "basic" or not token:  # the scheme name is case-insensitive (RFC 7235)
+        return False
+    token += "=" * (-len(token) % 4)  # tolerate clients that omit base64 padding
+    try:
+        decoded = base64.b64decode(token).decode("utf-8")
+        supplied_user, supplied_password = decoded.split(":", 1)
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return False
+    expected_user, expected_password = _app_credentials()
+    user_ok = secrets.compare_digest(supplied_user.encode(), expected_user.encode())
+    password_ok = secrets.compare_digest(supplied_password.encode(), expected_password.encode())
+    return user_ok and password_ok
+
+
 def validate_production_settings() -> None:
     if not IS_PRODUCTION:
         return
@@ -1173,8 +1237,7 @@ def validate_production_settings() -> None:
     if not env_bool("ENABLE_AUTH", True):
         raise RuntimeError("ENABLE_AUTH must remain enabled in production.")
     if env_bool("ENABLE_AUTH", True):
-        username = os.getenv("APP_USERNAME", "").strip()
-        password = os.getenv("APP_PASSWORD", "")
+        username, password = _app_credentials()
         insecure_passwords = {"change-this-to-a-long-password", "replace-with-at-least-12-random-characters"}
         if not username or len(password) < 12 or password.lower() in insecure_passwords or secrets.compare_digest(username.encode(), password.encode()):
             raise RuntimeError("APP_USERNAME and an APP_PASSWORD of at least 12 characters are required.")
@@ -1222,25 +1285,25 @@ if allowed_origins:
 
 @app.middleware("http")
 async def cloud_security(request: Request, call_next):
-    # Health probes remain unauthenticated. All user/data surfaces can be protected
-    # with HTTP Basic at the app layer; put SSO/OIDC at the proxy when available.
+    # Health probes and a short allowlist of static brand assets stay unauthenticated.
+    # All user/data surfaces are protected with HTTP Basic at the app layer; put SSO/OIDC
+    # at the proxy when available.
     auth_enabled = env_bool("ENABLE_AUTH", IS_PRODUCTION)
-    if auth_enabled and request.url.path not in {"/health", "/ready"}:
-        expected_user = os.getenv("APP_USERNAME", "").strip()
-        expected_password = os.getenv("APP_PASSWORD", "")
+    path = request.url.path
+    is_public = path in PUBLIC_PROBE_PATHS or (path in PUBLIC_ASSET_PATHS and request.method in {"GET", "HEAD"})
+    # A CORS preflight never carries credentials by design; CORSMiddleware answers it.
+    is_preflight = request.method == "OPTIONS" and "access-control-request-method" in request.headers
+    if auth_enabled and not is_public and not is_preflight:
+        expected_user, expected_password = _app_credentials()
         if not expected_user or len(expected_password) < 12:
             return JSONResponse(status_code=503, content={"detail": "Cloud authentication is not configured safely."})
-        header = request.headers.get("Authorization", "")
-        valid = False
-        if header.startswith("Basic "):
-            try:
-                decoded = base64.b64decode(header[6:]).decode("utf-8")
-                supplied_user, supplied_password = decoded.split(":", 1)
-                valid = secrets.compare_digest(supplied_user.encode(), expected_user.encode()) and secrets.compare_digest(supplied_password.encode(), expected_password.encode())
-            except (binascii.Error, ValueError, UnicodeDecodeError):
-                valid = False
-        if not valid:
-            response = Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Yash CRM"'})
+        if not _basic_auth_valid(request.headers.get("Authorization", "")):
+            challenge = {"WWW-Authenticate": 'Basic realm="Yash CRM", charset="UTF-8"'}
+            if path.startswith("/api/"):
+                # A body lets the SPA show "Authentication required" instead of a bare HTTP 401.
+                response: Response = JSONResponse(status_code=401, content={"detail": "Authentication required"}, headers=challenge)
+            else:
+                response = Response(status_code=401, headers=challenge)
             return add_security_headers(response, request)
     response = await call_next(request)
     return add_security_headers(response, request)
@@ -1256,6 +1319,30 @@ def add_security_headers(response: Response, request: Request) -> Response:
     if IS_PRODUCTION:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+class ApiTrailingSlashMiddleware:
+    """Serve /api/x/ exactly like /api/x.
+
+    Starlette only tries its trailing-slash redirect after every route has failed to
+    match, and the SPA catch-all matches everything, so /api/ai/exceptions/readiness/
+    (proxies, monitors, hand-typed URLs) fell into the catch-all and returned 404.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith("/api/") and len(path) > 5 and path.endswith("/"):
+                scope = dict(scope, path=path.rstrip("/"))
+                raw_path = scope.get("raw_path")
+                if raw_path:
+                    scope["raw_path"] = raw_path.rstrip(b"/")
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(ApiTrailingSlashMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
@@ -1291,12 +1378,19 @@ def route_manifest() -> FileResponse:
     return FileResponse(ROOT / "public" / "manus-routes.json", media_type="application/json")
 
 
-@app.get("/favicon.svg")
+@app.api_route("/favicon.svg", methods=["GET", "HEAD"])
 def favicon() -> FileResponse:
     return FileResponse(ROOT / "static" / "favicon.svg", media_type="image/svg+xml")
 
 
-@app.get("/manifest.webmanifest")
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"])
+def favicon_ico() -> FileResponse:
+    # Browsers request /favicon.ico unprompted. Without this route the SPA catch-all
+    # answered 200 with the HTML shell, and with auth on it answered 401.
+    return FileResponse(ROOT / "static" / "icons" / "app.ico", media_type="image/x-icon", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.api_route("/manifest.webmanifest", methods=["GET", "HEAD"])
 def web_manifest() -> FileResponse:
     return FileResponse(ROOT / "public" / "manifest.webmanifest", media_type="application/manifest+json")
 
@@ -1389,7 +1483,7 @@ def _pilot_clock(db: Session) -> tuple[OrganizationSetting, ZoneInfo, datetime]:
     setting = get_or_create_settings(db)
     try:
         timezone = ZoneInfo(setting.timezone)
-    except ZoneInfoNotFoundError as error:
+    except (ZoneInfoNotFoundError, ValueError) as error:  # ValueError: empty or malformed key
         raise HTTPException(409, detail={"code": "RULE_TIMEZONE_MISSING", "message": "Choose a valid IANA timezone in General settings before enabling quotation exceptions."}) from error
     return setting, timezone, datetime.now(timezone)
 
@@ -1569,8 +1663,16 @@ def _public_ai_error(error: Exception) -> tuple[str, str]:
 
 
 def ai_config_error() -> str | None:
-    parsed = urlsplit(AI_BASE_URL)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    # urlsplit()/.port raise ValueError on malformed input (e.g. "https://[host" or a
+    # non-numeric port). The global ValueError handler turned that into a 422 on
+    # /api/ai/status, so a status endpoint could not even report its own misconfiguration.
+    try:
+        parsed = urlsplit(AI_BASE_URL)
+        hostname = parsed.hostname
+        parsed.port  # noqa: B018 - validates the port
+    except ValueError:
+        return "YASHCRM_AI_BASE_URL must be a valid HTTP or HTTPS URL"
+    if parsed.scheme not in {"http", "https"} or not hostname:
         return "YASHCRM_AI_BASE_URL must be a valid HTTP or HTTPS URL"
     if parsed.username or parsed.password:
         return "Do not place credentials in YASHCRM_AI_BASE_URL"
@@ -1728,7 +1830,7 @@ def _ai_related_record(db: Session, related_type: str, related_id: int) -> Base:
     return record
 
 
-@app.get("/api/ai/status")
+@app.api_route("/api/ai/status", methods=["GET", "HEAD"])
 def ai_status_api() -> dict[str, Any]:
     return ai_status()
 
@@ -1746,7 +1848,7 @@ def _require_ai_csrf(request: Request) -> None:
         raise HTTPException(415, detail={"code": "JSON_REQUIRED", "message": "This action requires a JSON request."})
 
 
-@app.get("/api/ai/exceptions/readiness")
+@app.api_route("/api/ai/exceptions/readiness", methods=["GET", "HEAD"])
 def ai_exception_readiness(db: Session = Depends(get_db)) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     try:
@@ -1984,6 +2086,14 @@ def ai_chat(payload: AIChatPayload, db: Session = Depends(get_db)) -> dict[str, 
 @app.post("/api/ai/activities/approve")
 def approve_ai_activities(payload: AIActivityApprovalPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
     raise HTTPException(410, detail={"code": "LEGACY_AI_APPROVAL_DISABLED", "message": "Use the quotation exception Task review workflow. Generic AI activity creation is disabled."})
+
+
+@app.get("/api/ai/{unknown_path:path}", include_in_schema=False)
+def ai_unknown_endpoint(unknown_path: str) -> JSONResponse:
+    # Must stay after every real /api/ai/* route. Without it an unmatched GET such as
+    # /api/ai/<anything> fell through to the generic /api/{resource}/{item_id} route
+    # (item_id: int) and came back as a misleading 422 instead of a 404.
+    return JSONResponse(status_code=404, content={"detail": f"Unknown AI endpoint: /api/ai/{unknown_path}"})
 
 
 @app.get("/api/analytics/sales-performance")
