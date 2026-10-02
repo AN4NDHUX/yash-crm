@@ -2772,4 +2772,3 @@ def spa_fallback(path: str) -> FileResponse:
     if path.startswith("api/") or path.startswith("static/") or path.startswith("uploads/"):
         raise HTTPException(404, "Not found")
     return FileResponse(ROOT / "templates" / "index.html", media_type="text/html")
-    
