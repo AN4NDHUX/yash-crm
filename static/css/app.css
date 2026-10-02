@@ -1659,3 +1659,50 @@ textarea:focus-visible {
 
 /* Apex management performance report */
 .apex-performance{margin-bottom:18px;overflow:hidden}.apex-performance-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:21px 22px 17px;border-bottom:1px solid var(--border)}.apex-performance-head h2{font-size:18px}.apex-performance-head p{font-size:11px;color:var(--text-soft);margin-top:5px}.apex-performance-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:15px 22px;background:#fbfbff;border-bottom:1px solid var(--border)}.apex-performance-summary div{display:flex;flex-direction:column;gap:5px}.apex-performance-summary span{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.07em}.apex-performance-summary strong{font-family:"Space Grotesk",sans-serif;font-size:18px;letter-spacing:-.04em}.apex-performance-table th{white-space:nowrap}.apex-performance-table td{vertical-align:middle}.apex-performance-table .sub-cell{display:block;margin-top:3px}.apex-achievement{display:flex;align-items:center;gap:8px;min-width:112px}.apex-achievement .achievement-meter{flex:1}.apex-formula{margin:0 22px 20px;border:1px solid #e7e5ff;border-radius:10px;background:#fafaff}.apex-formula summary{cursor:pointer;padding:11px 13px;color:#4f46e5;font-size:11px;font-weight:700}.apex-formula div{padding:0 13px 12px}.apex-formula p{font-size:11px;color:var(--text-soft);line-height:1.5;margin-top:5px}@media(max-width:1000px){.apex-performance-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:640px){.apex-performance-head{flex-direction:column}.apex-performance-summary{grid-template-columns:repeat(2,minmax(0,1fr));padding:14px}.apex-formula{margin-left:14px;margin-right:14px}.apex-performance-table{min-width:760px}}
+/* Apex shell overrides inspired by the supplied reference interface. */
+:root {
+  --apex-navy: #071d49;
+  --apex-navy-deep: #061737;
+  --apex-navy-text: #dce7fb;
+  --apex-navy-muted: #8da4c9;
+  --apex-copilot: #2f78e8;
+}
+.sidebar {
+  background: linear-gradient(180deg, var(--apex-navy) 0%, var(--apex-navy-deep) 100%);
+  border-right: 0;
+  color: var(--apex-navy-text);
+}
+.brand-lockup { padding-bottom: 30px; }
+.brand-name { color: #fff; }
+.brand-name em { color: #8bb8ff; }
+.primary-nav a { color: var(--apex-navy-text); }
+.primary-nav a:hover { color: #fff; background: rgba(255,255,255,.08); }
+.primary-nav a.active { color: #fff; background: rgba(72,133,230,.26); }
+.primary-nav a.active::before { left: -14px; background: #67a4ff; }
+.nav-label { color: var(--apex-navy-muted); }
+.nav-count { background: rgba(101,164,255,.22); color: #cce0ff; }
+.sidebar-footer { color: var(--apex-navy-text); }
+.help-card { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); }
+.help-icon { background: rgba(101,164,255,.2); color: #a9cbff; }
+.help-card strong { color: #fff; }
+.help-card small, .help-card .arrow { color: var(--apex-navy-muted); }
+.user-mini { border-top-color: rgba(255,255,255,.12); }
+.user-mini strong, .top-profile-copy strong { color: #fff; }
+.user-mini small, .top-profile-copy small { color: var(--apex-navy-muted); }
+.user-mini .icon-button, .sidebar .icon-button { color: var(--apex-navy-muted); }
+.user-mini .icon-button:hover, .sidebar .icon-button:hover { color: #fff; background: rgba(255,255,255,.08); }
+.primary-nav a[data-route="ai"] {
+  margin-top: 10px;
+  background: linear-gradient(135deg, #2468ce, var(--apex-copilot));
+  color: #fff;
+  box-shadow: 0 7px 16px rgba(24,91,190,.28);
+  font-weight: 700;
+}
+.primary-nav a[data-route="ai"]:hover,
+.primary-nav a[data-route="ai"].active { background: linear-gradient(135deg, #347fe9, #4d91f4); color: #fff; }
+.primary-nav a[data-route="settings"] { margin-top: 6px; }
+.primary-nav a[data-route="settings"].active { background: linear-gradient(135deg, #2468ce, #347fe9); }
+.sidebar-resizer { background: rgba(255,255,255,.08); }
+@media (max-width: 1000px) {
+  .sidebar { box-shadow: 18px 0 40px rgba(3,17,47,.35); }
+}
