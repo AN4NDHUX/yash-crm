@@ -46,7 +46,7 @@ Open `http://127.0.0.1:8000`. Existing databases remain compatible: Alembic appl
 ## Remaining limitations and external dependencies
 
 - Roles, Profiles and Permission Sets are persisted configuration foundations. Per-user login sessions and per-request RBAC enforcement require OIDC/SSO or another identity layer; shared HTTP Basic remains the shipped gate.
-- Daily AI sales summaries can send through deployment-provided SMTP and record sent/failed attempts in the existing Email table. General Email Template delivery, provider-grade tracking and unsubscribe/compliance processing remain external.
+- Email Templates do not send mail. SMTP/provider credentials, delivery tracking and unsubscribe/compliance processing are external.
 - Documents store governed metadata and secure links, not uploaded binary content. Object storage and malware scanning are external.
 - Schedules and webhook deliveries require a background worker/queue. The web process records configuration and execution/queue audit events only.
 - Reports and Dashboards save definitions; arbitrary query building, scheduled distribution and chart composition are not a full BI engine.
