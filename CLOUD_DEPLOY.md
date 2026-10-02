@@ -51,29 +51,6 @@ The UI calls the API on the same origin, so `CORS_ORIGINS` should remain empty. 
 - Use `/health` for liveness and `/ready` for traffic readiness.
 - Review Render deploy logs after every Blueprint sync or migration.
 
-## Enable the quotation AI workspace
-
-The deterministic quotation-exception queue is cloud code and runs inside the CRM service. The optional model call is also cloud-to-cloud; no local model server is required.
-
-For Railway or Render, add these service variables in the provider dashboard:
-
-- `YASHCRM_AI_EXCEPTIONS_ENABLED=true`
-- `YASHCRM_AI_PROVIDER=Hugging Face Inference Providers`
-- `YASHCRM_AI_BASE_URL=https://router.huggingface.co/v1`
-- `YASHCRM_AI_MODEL=openai/gpt-oss-20b:cheapest`
-- `YASHCRM_AI_API_KEY=<fine-grained Hugging Face token>`
-- `YASHCRM_AI_TIMEOUT=90`
-
-Deploy once with the exception flag disabled first. The existing cloud entrypoint automatically applies database migration `0003_ai_revenue_exceptions`. Confirm `/ready` is healthy, enable the exception flag, and redeploy. In the authenticated CRM, open `/ai` and confirm:
-
-1. The readiness panel shows the deterministic queue ready.
-2. An eligible open quotation appears without making an AI request.
-3. **AI-ranked order** consumes one provider request and returns the exact same exception set.
-4. The Task preview shows owner, due date, priority, source, subject, and description before approval.
-5. Approving twice returns the original Task and does not create a duplicate.
-
-The queue still works when the token is absent, exhausted, or the provider is unavailable. The `:cheapest` route does not guarantee a fixed inference provider; pin an approved provider route before sending real customer data where provider identity or region matters. Do not describe the free allowance as unlimited production capacity.
-
 ## Authentication boundary
 
 The current production gate is shared HTTP Basic authentication. That is acceptable for a small, tightly controlled internal deployment, but it does not provide individual login accounts, audit-grade identity, password recovery, MFA, or role enforcement. For broader or sensitive use, put the service behind an OIDC/SSO access proxy and implement server-side authorization before treating the CRM's owner/role records as security identities.

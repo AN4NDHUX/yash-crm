@@ -35,5 +35,3 @@ services:
           envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: SEED_DEMO_DATA
         value: "false"
-      - key: YASHCRM_AI_EXCEPTIONS_ENABLED
-        value: "false"
