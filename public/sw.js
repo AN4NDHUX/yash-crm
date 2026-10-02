@@ -1,7 +1,10 @@
 // Yash CRM service worker: makes the app installable and keeps the app shell available.
 // Data is never cached: /api requests always go to the server, so the app needs the server running.
-const CACHE = "yash-crm-shell-v2";
-const SHELL = ["/", "/static/css/app.css", "/static/js/app.js", "/favicon.svg", "/static/icons/icon-192.png"];
+const CACHE = "yash-crm-shell-v3";
+// Do not prefetch the protected HTML shell during service-worker install. The
+// first authenticated navigation stores it for offline use without creating a
+// second Basic-auth challenge or caching a 401 response.
+const SHELL = ["/static/css/app.css", "/static/js/app.js", "/favicon.svg", "/static/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
