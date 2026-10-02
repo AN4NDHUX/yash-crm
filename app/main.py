@@ -1199,6 +1199,8 @@ PUBLIC_ASSET_PATHS = frozenset({
     "/static/icons/icon-512.png",
     "/static/icons/icon-maskable-512.png",
     "/static/icons/apple-touch-icon.png",
+    "/api/ai/status",
+    "/api/ai/exceptions/readiness",
 })
 
 
@@ -1398,6 +1400,13 @@ def web_manifest() -> FileResponse:
 @app.get("/sw.js")
 def service_worker() -> FileResponse:
     return FileResponse(ROOT / "public" / "sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+
+
+
+@app.get("/ai", response_class=HTMLResponse)
+def ai_spa_page() -> FileResponse:
+    """Serve the AI workspace as a single-page app."""
+    return FileResponse(ROOT / "templates" / "index.html", media_type="text/html")
 
 
 @app.get("/api/meta")
@@ -2759,6 +2768,7 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
 
 @app.get("/{path:path}", response_class=HTMLResponse)
 def spa_fallback(path: str) -> FileResponse:
-    if path.startswith("api/") or path.startswith("static/"):
+    """Serve index.html for all SPA routes. API and static must match routes above."""
+    if path.startswith("api/") or path.startswith("static/") or path.startswith("uploads/"):
         raise HTTPException(404, "Not found")
     return FileResponse(ROOT / "templates" / "index.html", media_type="text/html")
