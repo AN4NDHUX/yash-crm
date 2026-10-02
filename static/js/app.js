@@ -5,21 +5,14 @@ const state = {
   modal: null,
   confirmResolve: null,
   settingsCache: {},
-  lookups: { accounts: [], contacts: [], leads: [], deals: [], loaded: false },
-  platformLookups: {},
+  lookups: { accounts: [], contacts: [], loaded: false },
   profile: null,
   platformCatalog: { resources: {}, setup_navigation: {} },
-  aiMessages: [],
-  aiStatus: null,
-  aiExceptionView: "needs_review",
-  aiExceptionOrder: "deterministic",
-  aiRankedItems: null,
-  aiSelectedException: null,
 };
 
 const PLATFORM_MODULE_ROUTES = [
-  "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "payments",
-  "campaigns", "cases", "solutions", "documents", "site_visits", "forecasts", "reports", "dashboards", "sales_targets",
+  "site_visits", "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices",
+  "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards",
 ];
 const BRAND_ORBS_LOADER_URL = "/static/threeui/brand-orbs-loader.html?v=20261001-logo-orbs";
 
@@ -135,37 +128,10 @@ function lookupName(resource, id) {
   return item.full_name || item.name || `${item.first_name} ${item.last_name}`;
 }
 
-async function api(path, options = {}, retried = false) {
-  let response;
-  const { headers: extraHeaders, ...fetchOptions } = options;
-  const csrf = state.aiStatus?.csrf_token;
-  try {
-    // headers are merged AFTER the options spread; previously a caller-supplied `headers`
-    // replaced Content-Type and the CSRF header wholesale.
-    response = await fetch(path, { credentials: "same-origin", ...fetchOptions, headers: { "Content-Type": "application/json", ...(csrf ? { "X-Yash-CSRF": csrf } : {}), ...(extraHeaders || {}) } });
-  }
-  catch { throw new Error("Yash CRM could not reach the server. Check the connection and try again."); }
-  const raw = await response.text();
-  let body = {};
-  try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
-  if (!response.ok) {
-    const detail = body.detail && typeof body.detail === "object" ? body.detail : null;
-    // A restart/redeploy while this tab was open invalidates nothing now that the token is stable,
-    // but a rotated YASHCRM_CSRF_SECRET or APP_PASSWORD still does: refresh once, then retry.
-    // The server rejects before acting, so replaying the request cannot double-apply it.
-    if (response.status === 403 && detail?.code === "CSRF_REJECTED" && !retried && path !== "/api/ai/status") {
-      let refreshed = null;
-      try { refreshed = await api("/api/ai/status", {}, true); } catch { /* keep the original error */ }
-      if (refreshed?.csrf_token) { state.aiStatus = refreshed; return api(path, options, true); }
-    }
-    const message = response.status === 401
-      ? "You are not signed in, or your sign-in expired. Reload the page and enter your credentials again."
-      : (detail?.message || body.detail || body.message || raw.slice(0, 180) || `Request failed with HTTP ${response.status}`);
-    const error = new Error(message);
-    error.status = response.status;
-    error.code = detail?.code || body.code || null;
-    throw error;
-  }
+async function api(path, options = {}) {
+  const response = await fetch(path, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.detail || body.message || "Something went wrong");
   return body;
 }
 
@@ -184,47 +150,25 @@ function setBreadcrumb(label, parent = "Workspace") {
 
 function activeNav(route) {
   const root = route.split("/").filter(Boolean)[0] || "dashboard";
-  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === root));
-}
-
-function enhanceNavigation() {
-  const setupLink = $('[data-route="setup"]');
-  if (setupLink) setupLink.remove();
-  const settingsLink = $('[data-route="settings"]');
-  if (settingsLink) settingsLink.textContent = "Settings & General Setup";
-  const addAfter = (route, nextRoute, label) => {
-    const anchor = $(`[data-route="${route}"]`);
-    if (anchor && !$(`[data-route="${nextRoute}"]`)) anchor.insertAdjacentHTML("afterend", `<a href="/${nextRoute}" data-route="${nextRoute}">${label}</a>`);
-  };
-  addAfter("invoices", "payments", "Payments");
-  addAfter("documents", "site_visits", "Site Visits");
-  addAfter("reports", "sales_targets", "Sales Targets & Incentives");
-  addAfter("sales_targets", "ai", "AI Copilot");
+  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === (root === "settings" ? "setup" : root)));
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 
-function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-shell"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading animation" aria-hidden="true" tabindex="-1" loading="eager"></iframe><span class="yash-loading-logo" aria-hidden="true"><img src="/static/yash-crm-logo.png" alt="" /></span></div><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
+function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-shell"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading your workspace" aria-label="Loading your workspace" loading="eager"></iframe><span class="yash-loading-mark" aria-hidden="true"><i></i><b></b></span></div><span class="loading-label">Loading your workspace...</span></div>`; }
 function emptyState(icon, title, copy, button = "") { return `<div class="empty-state"><span class="empty-icon">${icon}</span><h3>${esc(title)}</h3><p>${esc(copy)}</p>${button ? `<div style="margin-top:16px">${button}</div>` : ""}</div>`; }
 
 async function ensureLookups() {
   if (state.lookups.loaded) return;
-  const [accounts, contacts, leads, deals] = await Promise.all([api("/api/accounts?limit=100"), api("/api/contacts?limit=100"), api("/api/leads?limit=100"), api("/api/deals?limit=100")]);
+  const [accounts, contacts] = await Promise.all([api("/api/accounts?limit=100"), api("/api/contacts?limit=100")]);
   state.lookups.accounts = accounts.items;
   state.lookups.contacts = contacts.items;
-  state.lookups.leads = leads.items;
-  state.lookups.deals = deals.items;
   state.lookups.loaded = true;
 }
 
-async function ensurePlatformLookup(resource) {
-  if (state.platformLookups[resource]) return;
-  state.platformLookups[resource] = (await api(`/api/platform/${resource}?limit=100&sort=name_asc`)).items;
-}
-
-function invalidateLookups() { state.lookups.loaded = false; state.platformLookups = {}; }
+function invalidateLookups() { state.lookups.loaded = false; }
 
 async function refreshMeta() {
   try { state.meta = await api("/api/meta"); } catch (error) { /* keep the previous list */ }
@@ -286,9 +230,9 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "ai") {
-      setBreadcrumb("AI Copilot", "Intelligence");
-      content.innerHTML = await aiView();
-      bindAI();
+      setBreadcrumb("AI Assistant", "Workspace");
+      content.innerHTML = await aiAssistantView();
+      bindAiAssistant();
       return;
     }
     if (parts[0] === "setup") {
@@ -353,20 +297,18 @@ async function renderRoute() {
 }
 
 async function dashboardView() {
-  const data = await api("/api/dashboard");
+  const [data, copilotData] = await Promise.all([api("/api/dashboard"), api("/api/copilot")]);
   const metrics = data.metrics;
   const maxPipeline = Math.max(...data.pipeline.map((row) => row.amount), 1);
   const maxLeads = Math.max(...data.lead_funnel.map((row) => row.count), 1);
-  const performancePanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Sales performance</h2><small>Target, collections, conversion and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${performanceTable(data.sales_performance || [])}</div></section>`;
-  const attentionPanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div></div><div class="card-body">${attentionQueue(data.attention || {})}</div></section>`;
-  return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-go="/ai"><span class="button-icon">✦</span>Ask AI</button><button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
+  return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
+    <section class="card copilot-hero"><div class="copilot-hero-copy"><span class="eyebrow">AI-enabled operations</span><h2>One source of truth, from lead to incentive.</h2><p>${esc(copilotData.answer)}</p><div class="copilot-hero-actions"><button class="button button-primary button-small" data-open-copilot>Ask Copilot</button><span class="copilot-note">Local rules-based intelligence · Free to use</span></div></div><div class="copilot-hero-stats"><div><strong>${formatMoney(copilotData.summary.achieved)}</strong><small>Achieved</small></div><div><strong>${copilotData.summary.achievement}%</strong><small>Target attainment</small></div><div><strong>${formatMoney(copilotData.summary.incentive)}</strong><small>Est. incentive</small></div></div></section>
     <div class="stats-grid">
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div><div class="stat-value">${metrics.total_leads}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Open deals</span><span class="stat-icon">◇</span></div><div class="stat-value">${metrics.open_deals}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></article>
     </div>
-    <div class="dashboard-grid management-grid">${performancePanel}${attentionPanel}</div>
     <div class="dashboard-grid">
       <div class="dashboard-column">
         <section class="card"><div class="card-head"><div class="card-head-copy"><h2>Pipeline overview</h2><small>Open opportunities by stage</small></div><button class="card-head-link" data-go="/deals">View deals ↗</button></div><div class="card-body"><div class="pipeline-chart">${data.pipeline.length ? data.pipeline.map((row) => `<div class="pipeline-row"><span class="pipeline-label">${esc(row.stage)}</span><div class="progress-track"><div class="progress-bar" style="width:${Math.max(4, row.amount / maxPipeline * 100)}%"></div></div><span class="pipeline-meta"><strong>${formatMoney(row.amount)}</strong>${row.count} deal${row.count === 1 ? "" : "s"}</span></div>`).join("") : `<p class="loading">No pipeline records yet.</p>`}</div></div></section>
@@ -379,21 +321,6 @@ async function dashboardView() {
     </div>`;
 }
 
-function performanceTable(rows) {
-  if (!rows.length) return emptyState("◎", "No active salespeople", "Add active users and targets to calculate performance.");
-  return `<div class="table-wrap"><table class="data-table performance-table"><thead><tr><th>Salesperson</th><th>Target</th><th>Achieved</th><th>Achievement</th><th>Conversions</th><th>Incentive</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${esc(row.name)}</strong><span class="sub-cell">${esc(row.role)}${row.target_configured ? "" : " · target missing"}</span></td><td>${formatMoney(row.target)}</td><td>${formatMoney(row.achieved)}</td><td><span class="achievement-meter"><i style="width:${Math.min(Number(row.achievement_percent || 0), 100)}%"></i></span><strong>${Number(row.achievement_percent || 0).toFixed(1)}%</strong></td><td>${row.conversions}</td><td>${formatMoney(row.incentive)}</td></tr>`).join("")}</tbody></table></div>`;
-}
-
-function attentionQueue(attention) {
-  const leads = attention.stuck_leads || [];
-  const quotes = attention.quotes_needing_follow_up || [];
-  const items = [
-    ...leads.map((item) => `<button class="related-item" data-go="/leads/${item.id}"><span class="related-dot">!</span><span class="related-main"><strong>${esc(item.name)}</strong><small>Lead stuck at ${esc(item.status)}${item.next_follow_up ? ` · follow-up ${formatDate(item.next_follow_up)}` : ""}</small></span><span>›</span></button>`),
-    ...quotes.map((item) => `<button class="related-item" data-go="/quotes"><span class="related-dot">₹</span><span class="related-main"><strong>${esc(item.name)}</strong><small>${esc(item.status)}${item.valid_until ? ` · valid until ${formatDate(item.valid_until)}` : " · no expiry date"}</small></span><span>›</span></button>`),
-  ];
-  return items.length ? items.join("") : emptyState("✓", "Nothing urgent", "No stale leads or quotations need immediate follow-up.");
-}
-
 function activityItem(item) {
   const rawKind = String(item.activity_type || "task").toLowerCase();
   const kind = ["call", "meeting"].includes(rawKind) ? rawKind : "task";
@@ -404,6 +331,71 @@ function activityItem(item) {
 function bindDashboard() {
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create)));
   $$('[data-go]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.go)));
+  $$('[data-open-copilot]').forEach((button) => button.addEventListener("click", openCopilot));
+}
+
+function renderCopilot(data) {
+  const answer = $("#copilot-answer");
+  if (answer) answer.innerHTML = `<strong>${esc(data.answer)}</strong>${copilotActions(data.actions)}<p>Based on ${esc(data.generated_by)}. Ask a follow-up to change the lens.</p>`;
+  const prompts = $("#copilot-prompts");
+  if (prompts) prompts.innerHTML = (data.prompts || []).map((prompt) => `<button type="button" class="copilot-prompt" data-copilot-prompt="${esc(prompt)}">${esc(prompt)}</button>`).join("");
+  const performance = $("#copilot-performance");
+  if (performance) performance.innerHTML = (data.performance || []).map((row) => `<div class="copilot-performance-row"><span class="avatar avatar-indigo">${initials(row.name)}</span><div><strong>${esc(row.name)}</strong><small>${formatMoney(row.achieved)} / ${formatMoney(row.target)} · ${row.conversions} conversion${row.conversions === 1 ? "" : "s"}</small></div><b>${row.achievement}%</b></div>`).join("") || `<p class="related-empty">Add active salespeople to see performance.</p>`;
+}
+
+async function askCopilot(question = "") {
+  const answer = $("#copilot-answer");
+  if (answer) answer.innerHTML = `<span class="copilot-loading">Reading live CRM records…</span>`;
+  try { renderCopilot(await api(`/api/ai/ask?q=${encodeURIComponent(question)}`)); } catch (error) { if (answer) answer.innerHTML = `<strong>AI Assistant unavailable</strong><p>${esc(error.message)}</p>`; }
+}
+
+function copilotActions(actions = []) {
+  if (!actions.length) return "";
+  return `<div class="ai-answer-actions">${actions.map((item) => `<button type="button" data-ai-route="/${item.resource}${item.resource === "leads" ? `/${item.id}` : ""}"><span><strong>${esc(item.label)}</strong><small>${esc(item.owner)} · ${esc(item.reason)}</small></span><b>${item.score != null ? `Score ${item.score}` : formatMoney(item.amount)}</b></button>`).join("")}</div>`;
+}
+
+async function aiAssistantView() {
+  const [status, stuck, quotes, daily] = await Promise.all([
+    api("/api/ai/status"),
+    api(`/api/ai/ask?q=${encodeURIComponent("Where are leads getting stuck?")}`),
+    api(`/api/ai/ask?q=${encodeURIComponent("Which quotations need follow-up?")}`),
+    api("/api/ai/sales-summary"),
+  ]);
+  const automation = status.daily_summary;
+  return `${pageHeader("Workspace", "AI Assistant", "Live answers and scheduled alerts based on protected CRM records.", `<button class="button button-primary" data-open-copilot>Ask AI</button>`)}
+    <section class="card ai-module-hero"><div><span class="eyebrow">Current sales signal</span><h2>${esc(stuck.answer)}</h2><p>${esc(quotes.answer)}</p></div><div class="ai-module-metrics"><strong>${daily.summary.stuck_leads}</strong><span>stuck leads</span><strong>${daily.summary.quotes_needing_follow_up}</strong><span>quotes to follow up</span></div></section>
+    <div class="ai-module-grid">
+      <section class="card ai-answer-card"><div class="card-head"><div class="card-head-copy"><h2>Stuck leads</h2><small>Prompt: Where are leads getting stuck?</small></div></div><div class="card-body"><p class="ai-answer-copy">${esc(stuck.answer)}</p>${copilotActions(stuck.actions)}</div></section>
+      <section class="card ai-answer-card"><div class="card-head"><div class="card-head-copy"><h2>Quotation follow-ups</h2><small>Prompt: Which quotations need follow-up?</small></div></div><div class="card-body"><p class="ai-answer-copy">${esc(quotes.answer)}</p>${copilotActions(quotes.actions)}</div></section>
+    </div>
+    <section class="card ai-summary-card"><div><span class="eyebrow">Daily sales summary</span><h2>${automation.enabled ? `Scheduled for ${automation.hour}:00 ${esc(automation.timezone)}` : "Automation is ready but disabled"}</h2><p>${automation.smtp_configured ? `Email alerts will go to ${esc(automation.recipients.join(", ") || "the configured recipients")}.` : "Add SMTP settings and enable SALES_SUMMARY_ENABLED to send daily alerts."}</p></div><button class="button button-primary" data-send-sales-summary ${automation.smtp_configured ? "" : "disabled"}>Send summary now</button></section>`;
+}
+
+function bindAiAssistant() {
+  $$('[data-open-copilot]').forEach((button) => button.addEventListener("click", openCopilot));
+  $('[data-send-sales-summary]')?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const result = await api("/api/ai/sales-summary/send", { method: "POST" });
+      toast("Sales summary sent", `Delivered to ${result.recipients.join(", ")}.`);
+    } catch (error) {
+      toast("Summary email failed", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+function openCopilot() {
+  const panel = $("#copilot-panel");
+  panel.classList.add("open"); panel.setAttribute("aria-hidden", "false"); $("#copilot-trigger")?.setAttribute("aria-expanded", "true"); $("#copilot-backdrop").hidden = false;
+  if (!$("#copilot-performance").children.length) askCopilot();
+  $("#copilot-input")?.focus();
+}
+
+function closeCopilot() {
+  $("#copilot-panel")?.classList.remove("open"); $("#copilot-panel")?.setAttribute("aria-hidden", "true"); $("#copilot-trigger")?.setAttribute("aria-expanded", "false"); $("#copilot-backdrop").hidden = true;
 }
 
 async function moduleView(resource) {
@@ -452,19 +444,8 @@ function platformState(resource) {
 function platformTable(resource, data) {
   const config = state.platformCatalog.resources[resource];
   if (!data.items.length) return `<section class="card">${emptyState("+", `No ${config.label.toLowerCase()} found`, "Create a record or adjust the current filters.", `<button class="button button-primary" data-platform-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
-  const visible = (config.fields || []).filter((item) => !["textarea", "json", "file"].includes(item.type)).slice(0, 4);
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Archive" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
-}
-
-function platformDisplay(field, value) {
-  const type = String(field.type || "");
-  if (type === "account" || type === "contact" || type === "lead" || type === "deal") return esc(lookupName(`${type}s`, value));
-  if (type === "user") return esc((state.meta?.users || []).find((item) => Number(item.id) === Number(value))?.name || (value ? `#${value}` : "-"));
-  if (type.startsWith("platform:")) {
-    const resource = type.split(":")[1];
-    return esc((state.platformLookups[resource] || []).find((item) => Number(item.id) === Number(value))?.name || (value ? `#${value}` : "-"));
-  }
-  return esc(value ?? "-");
+  const visible = (config.fields || []).filter((item) => !["textarea", "json"].includes(item.type)).slice(0, 4);
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : esc(row[field.key] ?? "-")}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Archive" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 async function platformPanel(resource, compact = false) {
@@ -482,12 +463,20 @@ async function platformPanel(resource, compact = false) {
 
 async function platformModuleView(resource) {
   const config = state.platformCatalog.resources[resource];
-  await Promise.all((config.fields || []).filter((field) => String(field.type || "").startsWith("platform:")).map((field) => ensurePlatformLookup(field.type.split(":")[1])));
   return `${pageHeader(config.group || "Workspace", config.label, config.description, `<button class="button button-primary" data-platform-create="${resource}">+ Add ${config.singular.toLowerCase()}</button>`)}${await platformPanel(resource)}`;
 }
 
-function setupDirectory(active) {
-  return `<section class="card settings-nav">${Object.entries(state.platformCatalog.setup_navigation || {}).map(([group, links]) => `<div><span class="eyebrow" style="display:block;padding:12px 12px 5px">${esc(group)}</span>${links.map(([resource, label]) => `<a href="/setup/${resource}" class="${active === resource ? "active" : ""}">${esc(label)}</a>`).join("")}</div>`).join("")}</section>`;
+function setupDirectory(active, settingsTab = "") {
+  const settingsLinks = [
+    ["general", "General settings"],
+    ["profile-users", "Profile & users"],
+    ["approval-process", "Approval process"],
+    ["blueprint", "Blueprint"],
+  ];
+  const setupGroups = Object.entries(state.platformCatalog.setup_navigation || {}).map(([group, links]) => (
+    `<div><span class="eyebrow" style="display:block;padding:12px 12px 5px">${esc(group)}</span>${links.map(([resource, label]) => `<a href="/setup/${resource}" class="${active === resource ? "active" : ""}">${esc(label)}</a>`).join("")}</div>`
+  )).join("");
+  return `<section class="card settings-nav"><div><span class="eyebrow" style="display:block;padding:12px 12px 5px">Settings</span>${settingsLinks.map(([id, label]) => `<a href="/settings/${id}" class="${settingsTab === id ? "active" : ""}">${esc(label)}</a>`).join("")}</div>${setupGroups}</section>`;
 }
 
 async function auditView() {
@@ -526,7 +515,7 @@ async function setupView(resource) {
   else if (resource === "duplicates") content = duplicateView();
   else if (state.platformCatalog.resources[resource]) content = `<section class="foundation-note">This is a working foundation: records persist, validate, filter, sort, export, audit and recycle. External delivery, identity-provider enforcement and background scheduling require deployment-specific workers or integrations.</section>${await platformPanel(resource, true)}`;
   else content = `<section class="card">${emptyState("!", "Unknown setup page", "Choose a setup item from the directory.")}</section>`;
-  return `${pageHeader("Setup", titleCase(resource), "Configure Yash CRM without changing its source code.")}<div class="settings-layout">${setupDirectory(resource)}<div class="settings-content">${content}</div></div>`;
+  return `${pageHeader("Administration", "Setup & Settings", "Configure Yash CRM without changing its source code.")}<div class="settings-layout">${setupDirectory(resource)}<div class="settings-content">${content}</div></div>`;
 }
 
 function tableView(resource, data) {
@@ -587,12 +576,11 @@ function bindModule(resource) {
 
 async function detailView(resource, id) {
   const [record, related] = await Promise.all([api(`/api/${resource}/${id}`), api(`/api/${resource}/${id}/related`)]);
-  if (resource === "leads") related.journey = await api(`/api/journey/leads/${id}`);
   const config = MODULES[resource];
   const title = resource === "contacts" ? record.full_name : record.name || record.subject;
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
   const details = detailFields(resource, record);
-  return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
+  return `${pageHeader(config.label, title, secondary || "Record detail", `<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
     <div class="detail-layout"><div class="dashboard-column"><section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !record.converted_contact_id ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>${resource === "deals" ? `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Stage progress</h2><small>Move the deal forward as the conversation evolves.</small></div></div><div class="card-body">${dealProgress(record)}</div></section>` : ""}</div><div class="detail-side"><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Related records</h2><small>Connected context around this ${config.singular.toLowerCase()}.</small></div><button class="card-head-link" data-create="activities">＋ Activity</button></div><div class="card-body">${relatedContent(resource, related)}</div></section><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Timeline</h2><small>Latest activity updates</small></div></div><div class="card-body"><div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p style="color:var(--text-faint);font-size:11px">No linked activity yet.</p>`}</div></div></section></div></div>`;
 }
 
@@ -611,10 +599,6 @@ function relatedContent(resource, related) {
   const addSection = (key, label, icon, rows, createResource) => {
     sections.push(`<div class="related-group"><div class="related-group-head"><strong>${label}</strong><button class="card-head-link" data-create="${createResource}">＋ Add</button></div>${rows.length ? rows.join("") : `<p class="related-empty">No ${label.toLowerCase()} yet.</p>`}</div>`);
   };
-  if (related.journey) {
-    const stages = related.journey.stages || [];
-    sections.push(`<div class="related-group journey-group"><div class="related-group-head"><strong>Customer journey</strong><span class="eyebrow">Lead to cash</span></div><div class="journey-track">${stages.map((stage) => `<span class="journey-stage ${stage.complete ? "complete" : ""}"><i>${stage.complete ? "✓" : stage.count}</i><b>${esc(stage.label)}</b></span>`).join("")}</div><div class="journey-actions"><button class="button button-small button-ghost" data-platform-create="site_visits" data-lead-id="${related.journey.lead.id}">+ Site visit</button>${related.journey.lead.converted_deal_id ? `<button class="button button-small button-ghost" data-platform-create="quotes" data-deal-id="${related.journey.lead.converted_deal_id}">+ Quotation</button>` : ""}</div></div>`);
-  }
   addSection("activities", "Open activities", "✓", (related.activities || []).filter((item) => item.status !== "Completed").map((item) => relatedRow("✓", item.subject, `${titleCase(item.activity_type)} · ${formatDateTime(item.due_at)}`, "activities", item.id)), "activities");
   addSection("notes", "Notes", "▤", (related.notes || []).map((item) => relatedRow("▤", item.title, item.content || "Open note", "notes", item.id, false)), "notes");
   addSection("products", "Products", "□", (related.products || []).map((item) => relatedRow("□", item.name, `${formatMoney(item.unit_price)} · ${item.sku || "No SKU"}`, "products", item.id)), "products");
@@ -640,7 +624,6 @@ function bindDetail(resource, id) {
   $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, { related_type: resource, related_id: id })));
-  $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate, null, { lead_id: button.dataset.leadId ? Number(button.dataset.leadId) : null, deal_id: button.dataset.dealId ? Number(button.dataset.dealId) : null })));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $("[data-convert-lead]")?.addEventListener("click", () => openConvertModal(Number(id)));
   $$('[data-stage-update]').forEach((button) => button.addEventListener("click", async () => { try { await api(`/api/deals/${button.dataset.stageUpdate}`, { method: "PATCH", body: JSON.stringify({ stage: button.dataset.stage }) }); toast("Deal updated", `Moved to ${button.dataset.stage}`); await renderRoute(); } catch (error) { toast("Could not update deal", error.message, "error"); } }));
@@ -652,33 +635,26 @@ function fieldHtml(field, value = "") {
   const required = field.required ? "required" : "";
   const hint = field.hint ? `<small style="font-size:10px;color:var(--text-faint)">${esc(field.hint)}</small>` : "";
   let input = "";
-  if (type === "file") {
-    input = `<input class="field-input" id="${id}" name="${field.key}" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg" ${required} />`;
-  }
-  else if (type === "textarea" || type === "json") {
+  if (type === "textarea" || type === "json") {
     let rendered = value || "";
     if (type === "json" && typeof rendered !== "string") rendered = JSON.stringify(rendered ?? [], null, 2);
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
     input = `<textarea class="field-textarea" id="${id}" name="${field.key}" ${type === "json" ? 'data-json="true"' : ""} ${required}>${esc(rendered)}</textarea>`;
   }
-  else if (["select", "user", "account", "contact", "lead", "deal"].includes(type) || type.startsWith("platform:")) {
+  else if (type === "select" || type === "user" || type === "account" || type === "contact") {
     let options = field.options || [];
     if (type === "user") options = (state.meta?.users || []).map((user) => ({ value: user.id, label: user.name }));
     if (type === "account") options = state.lookups.accounts.map((item) => ({ value: item.id, label: item.name }));
     if (type === "contact") options = state.lookups.contacts.map((item) => ({ value: item.id, label: item.full_name || `${item.first_name} ${item.last_name}` }));
-    if (type === "lead") options = state.lookups.leads.map((item) => ({ value: item.id, label: `${item.name}${item.company ? ` · ${item.company}` : ""}` }));
-    if (type === "deal") options = state.lookups.deals.map((item) => ({ value: item.id, label: `${item.name} · ${formatMoney(item.amount)}` }));
-    if (type.startsWith("platform:")) options = (state.platformLookups[type.split(":")[1]] || []).map((item) => ({ value: item.id, label: item.name }));
     const normalized = options.map((option) => typeof option === "string" ? { value: option, label: option } : option);
-    const numeric = type !== "select" ? 'data-numeric="true"' : "";
-    input = `<select class="field-select" id="${id}" name="${field.key}" ${numeric} ${required}><option value="">Select ${esc(field.label.toLowerCase())}</option>${normalized.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(value ?? "") ? "selected" : ""}>${esc(option.label)}</option>`).join("")}</select>`;
+    input = `<select class="field-select" id="${id}" name="${field.key}" ${required}><option value="">Select ${esc(field.label.toLowerCase())}</option>${normalized.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(value ?? "") ? "selected" : ""}>${esc(option.label)}</option>`).join("")}</select>`;
   } else {
     let rendered = value ?? "";
     if (type === "datetime-local" && rendered) rendered = String(rendered).slice(0, 16);
     if (type === "date" && rendered) rendered = String(rendered).slice(0, 10);
     if (field.key === "tags" && Array.isArray(rendered)) rendered = rendered.join(", ");
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
-    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
+    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any"' : ""} ${required} />`;
   }
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
 }
@@ -698,12 +674,11 @@ async function openRecordModal(resource, id = null, preset = {}) {
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
 }
 
-async function openPlatformModal(resource, id = null, preset = {}) {
+async function openPlatformModal(resource, id = null) {
   const config = state.platformCatalog.resources[resource];
   if (!config) return;
-  if ((config.fields || []).some((field) => ["account", "contact", "lead", "deal"].includes(field.type))) await ensureLookups();
-  await Promise.all((config.fields || []).filter((field) => String(field.type || "").startsWith("platform:")).map((field) => ensurePlatformLookup(field.type.split(":")[1])));
-  let record = { ...preset };
+  if ((config.fields || []).some((field) => ["account", "contact"].includes(field.type))) await ensureLookups();
+  let record = {};
   if (id) record = await api(`/api/platform/${resource}/${id}`);
   state.modal = { resource, id, platform: true };
   $("#modal-eyebrow").textContent = id ? `Edit ${config.singular}` : `New ${config.singular}`;
@@ -727,9 +702,8 @@ function settingsResourceConfig(resource) {
 function readForm(form) {
   const data = {};
   $$('[name]', form).forEach((input) => {
-    if (input.type === "file") return;
     let value = input.value;
-    if (input.dataset.numeric === "true" || ["owner_id", "account_id", "contact_id", "deal_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
+    if (["owner_id", "account_id", "contact_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
     else if (["tags"].includes(input.name)) value = value ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
     else if (input.dataset.json === "true" || ["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(input.name)) {
       try { value = value ? JSON.parse(value) : []; } catch { throw new Error(`${titleCase(input.name)} must be valid JSON. Check the brackets and quotes.`); }
@@ -770,20 +744,7 @@ async function submitPlatformRecord(form) {
   try {
     const data = readForm(form);
     submit.disabled = true;
-    const upload = resource === "documents" ? form.querySelector('input[type="file"]')?.files?.[0] : null;
-    if (upload) {
-      if (id) throw new Error("Upload a new document as a separate record; existing file history remains unchanged.");
-      const body = new FormData();
-      body.append("file", upload);
-      Object.entries(data).forEach(([key, value]) => { if (value !== null && value !== "") body.append(key, String(value)); });
-      const response = await fetch("/api/documents/upload", { method: "POST", body });
-      const raw = await response.text();
-      let result = {}; try { result = raw ? JSON.parse(raw) : {}; } catch { result = {}; }
-      if (!response.ok) throw new Error(result.detail || raw.slice(0, 180) || `Upload failed with HTTP ${response.status}`);
-    } else {
-      await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
-    }
-    invalidateLookups();
+    await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
     closeModal();
     toast(`${id ? "Updated" : "Created"} ${config.singular}`);
     await renderRoute();
@@ -876,6 +837,7 @@ function bindGlobal() {
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[href]");
     if (link && !link.hasAttribute("download") && !link.getAttribute("href").startsWith("/api/") && !event.metaKey && !event.ctrlKey && !event.shiftKey && link.origin === window.location.origin && link.getAttribute("href").startsWith("/")) { event.preventDefault(); navigate(link.getAttribute("href")); return; }
+    const aiRoute = event.target.closest("[data-ai-route]"); if (aiRoute) { closeCopilot(); navigate(aiRoute.dataset.aiRoute); return; }
     const retry = event.target.closest("[data-retry]"); if (retry) renderRoute();
   });
   window.addEventListener("popstate", renderRoute);
@@ -885,192 +847,26 @@ function bindGlobal() {
   $("#confirm-close").addEventListener("click", () => closeConfirm(false)); $("#confirm-cancel").addEventListener("click", () => closeConfirm(false)); $("#confirm-action").addEventListener("click", () => closeConfirm(true));
   $("#confirm-backdrop").addEventListener("click", (event) => { if (event.target.id === "confirm-backdrop") closeConfirm(false); });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { if (!$("#confirm-backdrop").hidden) closeConfirm(false); else if (!$("#modal-backdrop").hidden) closeModal(); else $("#search-results").classList.remove("open"); }
+    if (event.key === "Escape") { if (!$("#confirm-backdrop").hidden) closeConfirm(false); else if (!$("#modal-backdrop").hidden) closeModal(); else if ($("#copilot-panel")?.classList.contains("open")) closeCopilot(); else $("#search-results").classList.remove("open"); }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); $("#global-search").focus(); }
   });
   $("#record-form").addEventListener("submit", submitRecord);
+  $("#copilot-trigger")?.addEventListener("click", openCopilot); $("#copilot-close")?.addEventListener("click", closeCopilot); $("#copilot-backdrop")?.addEventListener("click", closeCopilot);
+  $("#copilot-form")?.addEventListener("submit", (event) => { event.preventDefault(); const input = $("#copilot-input"); askCopilot(input.value); input.value = ""; });
+  document.addEventListener("click", (event) => { const prompt = event.target.closest("[data-copilot-prompt]"); if (prompt) askCopilot(prompt.dataset.copilotPrompt); });
   $("#top-profile").addEventListener("click", () => navigate("/settings/profile-users")); $("#profile-shortcut").addEventListener("click", () => navigate("/settings/profile-users"));
   const searchInput = $("#global-search"); let searchTimer;
   searchInput.addEventListener("input", () => { clearTimeout(searchTimer); if (!searchInput.value.trim()) { $("#search-results").classList.remove("open"); return; } searchTimer = setTimeout(async () => { try { const data = await api(`/api/search?q=${encodeURIComponent(searchInput.value)}`); const result = $("#search-results"); result.innerHTML = data.results.length ? data.results.map((item) => `<button class="search-result" data-search-route="/${item.resource}/${item.id}"><span class="result-icon">${MODULES[item.resource]?.icon || "◈"}</span><span><strong>${esc(item.label)}</strong><small>${esc(titleCase(item.resource))} · ${esc(item.meta || "")}</small></span></button>`).join("") : `<p style="padding:10px;color:var(--text-faint);font-size:11px">No matching records.</p>`; result.classList.add("open"); } catch (error) { /* search is best effort */ } }, 240); });
   document.addEventListener("click", (event) => { const result = event.target.closest("[data-search-route]"); if (result) { $("#search-results").classList.remove("open"); searchInput.value = ""; navigate(result.dataset.searchRoute); } else if (!event.target.closest("#global-search-wrap")) $("#search-results").classList.remove("open"); });
 }
 
-async function aiView() {
-  // Status and readiness are advisory panels: if one fails (anything but a lost sign-in) the
-  // deterministic queue must still render, so degrade them instead of failing the whole view.
-  const soft = (request, fallback) => request.catch((error) => (error.status === 401 ? Promise.reject(error) : fallback(error)));
-  const [status, readiness, deterministic] = await Promise.all([
-    soft(api("/api/ai/status"), (error) => ({ configured: false, available: false, model: "unavailable", detail: error.message, csrf_token: state.aiStatus?.csrf_token })),
-    soft(api("/api/ai/exceptions/readiness"), (error) => ({ deterministic_ready: false, approval_ready: false, ai_ready: false, checks: [{ key: "readiness", ready: false, detail: error.message }] })),
-    api(`/api/ai/exceptions?view=${encodeURIComponent(state.aiExceptionView)}`),
-  ]);
-  state.aiStatus = status;
-  const ranked = state.aiExceptionOrder === "ai_ranked" && state.aiRankedItems;
-  const data = ranked ? { ...deterministic, items: state.aiRankedItems, order: "ai_ranked" } : deterministic;
-  const viewLabels = { needs_review: "Needs review", acted_on: "Acted on", clarification: "Needs clarification", corrections: "Data corrections", dismissed: "Dismissed", all: "All active" };
-  const views = Object.entries(viewLabels).map(([key, label]) => `<button class="ai-view-tab ${state.aiExceptionView === key ? "active" : ""}" data-ai-view="${key}">${esc(label)}</button>`).join("");
-  const rows = data.items.length ? data.items.map((item) => {
-    const selected = state.aiSelectedException === item.id;
-    return `<article class="ai-exception-row ${selected ? "selected" : ""}" data-ai-exception="${esc(item.id)}">
-      <div class="ai-trigger"><strong>${esc(item.trigger_label)}</strong><small>${esc(item.actionability.replaceAll("_", " "))}</small></div>
-      <div class="ai-quote"><b>${esc(item.quote_label)}</b><small>${esc(item.owner_name || "Owner unavailable")} · ${item.valid_until ? formatDate(item.valid_until) : "No valid date"}</small></div>
-      <div class="ai-amount"><strong>${formatMoney(item.amount)}</strong><small>${esc(item.review_state.replaceAll("_", " "))}</small></div>
-      <button class="button button-small button-ghost" data-ai-review="${esc(item.id)}">Review</button>
-    </article>`;
-  }).join("") : `<div class="ai-empty"><span>✓</span><h3>${state.aiExceptionView === "needs_review" ? "No quotation exceptions need review" : "Nothing in this view"}</h3><p>Evaluated using ${esc(data.rule_version)}. Change the view or review the source quotations if this looks wrong.</p></div>`;
-  const selected = data.items.find((item) => item.id === state.aiSelectedException) || null;
-  const proposal = selected?.proposal;
-  const detail = selected ? `<aside class="card ai-exception-detail" aria-labelledby="ai-detail-title">
-    <div class="card-head"><div class="card-head-copy"><h2 id="ai-detail-title" tabindex="-1">${esc(selected.quote_label)}</h2><small>${esc(selected.trigger_label)} · ${esc(selected.rule_version)}</small></div><button class="card-head-link" data-ai-close-detail>Close</button></div>
-    <div class="card-body ai-detail-body">
-      <dl class="ai-facts"><div><dt>Owner</dt><dd>${esc(selected.owner_name || "Unavailable")}</dd></div><div><dt>Amount at risk</dt><dd>${formatMoney(selected.amount)}</dd></div><div><dt>Validity</dt><dd>${selected.valid_until ? formatDate(selected.valid_until) : "Missing"}</dd></div><div><dt>Source updated</dt><dd>${formatDateTime(selected.source_updated_at)}</dd></div></dl>
-      <p class="ai-rule-reason">Included because ${esc(selected.trigger_label.toLowerCase())}. The CRM rule determined this exception; AI did not.</p>
-      ${selected.rationale ? `<section class="ai-rationale"><strong>Why AI placed it here</strong><p>${esc(selected.rationale)}</p></section>` : ""}
-      ${proposal ? `<section class="ai-task-preview"><span class="eyebrow">Exact Task preview</span><h3>${esc(proposal.subject)}</h3><dl><div><dt>Owner</dt><dd>${esc(proposal.owner_name || `#${proposal.owner_id}`)}</dd></div><div><dt>Priority</dt><dd>${esc(proposal.priority)}</dd></div><div><dt>Due</dt><dd>${formatDateTime(proposal.due_at)}</dd></div><div><dt>Status</dt><dd>Open</dd></div><div><dt>Source</dt><dd>${esc(proposal.source)}</dd></div></dl><p>${esc(proposal.description || "No drafted description")}</p><button class="button button-primary" data-ai-approve-proposal="${esc(proposal.id)}">Create Task</button></section>` : selected.actionability === "actionable" ? `<div class="ai-setup"><strong>Generate a Task proposal</strong><p>Switch to AI-ranked order to request a bounded explanation and exact Task draft.</p></div>` : `<div class="ai-setup"><strong>Task creation is blocked</strong><p>Resolve the ${esc(selected.actionability.replaceAll("_", " "))} condition in the source quotation first.</p></div>`}
-      <div class="ai-review-actions"><button class="button button-ghost button-small" data-ai-review-state="dismissed">Dismiss for 7 days</button><button class="button button-ghost button-small" data-ai-review-state="corrected">Report data/rule issue</button><button class="button button-ghost button-small" data-ai-review-state="unclear">Mark unclear</button><a class="button button-ghost button-small" href="${esc(selected.quote_path || "/quotes")}">Open quotation</a></div>
-    </div>
-  </aside>` : "";
-  const checks = readiness.checks.map((item) => `<li class="${item.ready ? "ready" : "blocked"}"><b>${item.ready ? "✓" : "!"}</b><span>${esc(titleCase(item.key))}<small>${esc(item.detail)}</small></span></li>`).join("");
-  const orderLabel = data.order === "ai_ranked" ? `AI-ranked · ${status.model}` : "Deterministic order";
-  return `${pageHeader("Revenue operations", "Quotation Follow-up Exceptions", `Open quotations with missing, elapsed or upcoming validity dates within 7 days. Evaluated ${formatDateTime(data.evaluated_at)} in ${esc(data.timezone)}.`, `<span class="ai-status ${readiness.deterministic_ready ? "ready" : "offline"}"><i></i>${esc(orderLabel)}</span>`)}
-    <section class="ai-exception-summary"><div><strong>${data.matching_count}</strong><span>matching exceptions</span></div><div><strong>${data.counts.open || 0}</strong><span>need review</span></div><div><strong>${data.actionable_count}</strong><span>Task eligible</span></div><div><strong>${esc(data.rule_version)}</strong><span>rule version</span></div></section>
-    <div class="ai-exception-toolbar card"><div class="ai-view-tabs">${views}</div><div class="ai-order-actions"><button class="button button-ghost button-small ${data.order === "deterministic" ? "active" : ""}" data-ai-deterministic>Deterministic order</button><button class="button button-primary button-small" data-ai-rank ${!readiness.ai_ready || !data.items.length ? "disabled" : ""}>AI-ranked order · 1 request</button></div></div>
-    ${!readiness.ai_ready ? `<div class="ai-fallback-note"><strong>Queue ready · AI ranking unavailable</strong><span>${esc(status.detail)}. All deterministic records remain available.</span></div>` : ""}
-    <div class="ai-exception-layout"><section class="card ai-exception-list" aria-live="polite">${rows}</section>${detail}</div>
-    <details class="card ai-readiness"><summary>Readiness and cloud boundary</summary><div class="card-body"><ul>${checks}</ul><p>Only opaque references, trigger facts, amount, currency, date and owner-active status are sent for ranking. Customer names, notes, messages, attachments and credentials are excluded.</p></div></details>`;
-}
-
-function aiMessageHtml(message, messageIndex) {
-  if (message.role === "user") return `<article class="ai-message user"><span>You</span><p>${esc(message.text)}</p></article>`;
-  const result = message.result;
-  const actions = (result.actions || []).length ? `<div class="ai-result-list"><strong>Recommended actions</strong><ol>${result.actions.map((item) => `<li>${esc(item)}</li>`).join("")}</ol></div>` : "";
-  const risks = (result.risks || []).length ? `<div class="ai-result-list risks"><strong>Risks and gaps</strong><ul>${result.risks.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : "";
-  const proposals = (result.proposed_activities || []).length ? `<div class="ai-proposals"><div class="ai-proposals-head"><div><strong>Proposed CRM activities</strong><small>Review each item. Approval writes selected activities to the CRM and audit history.</small></div></div>${result.proposed_activities.map((item, index) => `<label class="ai-proposal"><input type="checkbox" data-ai-proposal-index="${index}" checked ${result.approval_result ? "disabled" : ""}/><span><b>${esc(item.activity_type)} · ${esc(item.subject)}</b><small>${esc(titleCase(item.priority))} · due ${formatDateTime(item.due_at)} · ${esc(titleCase(item.related_type))} #${item.related_id}${item.owner_id ? ` · owner #${item.owner_id}` : ""}</small><em>${esc(item.reason)}</em></span></label>`).join("")}<div class="ai-approval-row">${result.approval_result ? `<span class="ai-approved">✓ ${result.approval_result.created.length} created · ${result.approval_result.skipped.length} duplicate${result.approval_result.skipped.length === 1 ? "" : "s"} skipped</span>` : `<button class="button button-primary button-small" data-ai-approve="${messageIndex}">Review and approve selected</button>`}</div></div>` : "";
-  const sources = (result.sources || []).map((item) => `<span>${esc(item)}</span>`).join("");
-  return `<article class="ai-message assistant" data-ai-message="${messageIndex}"><div class="ai-message-head"><span>Yash AI</span><small>${esc(result.model)} · ${esc(result.confidence)} confidence</small></div><p>${esc(result.answer).replace(/\n/g, "<br>")}</p>${actions}${risks}${proposals}<div class="ai-sources"><strong>CRM context used</strong>${sources}</div><small class="ai-disclaimer">${esc(result.disclaimer)}</small></article>`;
-}
-
-function renderAIConversation() {
-  const conversation = $("#ai-conversation");
-  if (!conversation) return;
-  conversation.innerHTML = state.aiMessages.map(aiMessageHtml).join("");
-  bindAIProposalActions();
-  conversation.scrollTop = conversation.scrollHeight;
-}
-
-function bindAIProposalActions() {
-  $$('[data-ai-approve]').forEach((button) => button.addEventListener("click", async () => {
-    const messageIndex = Number(button.dataset.aiApprove);
-    const message = state.aiMessages[messageIndex];
-    if (!message?.result) return;
-    const card = button.closest("[data-ai-message]");
-    const indexes = $$('[data-ai-proposal-index]:checked', card).map((input) => Number(input.dataset.aiProposalIndex));
-    const activities = indexes.map((index) => message.result.proposed_activities[index]).filter(Boolean);
-    if (!activities.length) { toast("Nothing selected", "Select at least one proposed activity.", "error"); return; }
-    const confirmed = await confirmAction("Create selected AI activities?", `This will create ${activities.length} open CRM activit${activities.length === 1 ? "y" : "ies"}. Every item will be recorded in audit history.`, "Create activities");
-    if (!confirmed) return;
-    button.disabled = true;
-    try {
-      const approval = await api("/api/ai/activities/approve", { method: "POST", body: JSON.stringify({ request_id: message.result.request_id, activities }) });
-      message.result.approval_result = approval;
-      toast("AI activities processed", `${approval.created.length} created; ${approval.skipped.length} duplicate${approval.skipped.length === 1 ? "" : "s"} skipped.`);
-      renderAIConversation();
-    } catch (error) { button.disabled = false; toast("Could not create AI activities", error.message, "error"); }
-  }));
-}
-
-function bindAI() {
-  $$('[data-ai-view]').forEach((button) => button.addEventListener("click", async () => {
-    state.aiExceptionView = button.dataset.aiView;
-    state.aiExceptionOrder = "deterministic";
-    state.aiRankedItems = null;
-    state.aiSelectedException = null;
-    await renderRoute();
-  }));
-  $$('[data-ai-review]').forEach((button) => button.addEventListener("click", async () => {
-    state.aiSelectedException = button.dataset.aiReview;
-    await renderRoute();
-    $("#ai-detail-title")?.focus();
-  }));
-  $("[data-ai-close-detail]")?.addEventListener("click", async () => {
-    const previous = state.aiSelectedException;
-    state.aiSelectedException = null;
-    await renderRoute();
-    $(`[data-ai-review="${previous}"]`)?.focus();
-  });
-  $("[data-ai-deterministic]")?.addEventListener("click", async () => {
-    state.aiExceptionOrder = "deterministic";
-    await renderRoute();
-  });
-  $("[data-ai-rank]")?.addEventListener("click", async (event) => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    button.textContent = "Ranking complete set…";
-    try {
-      const current = await api(`/api/ai/exceptions?view=${encodeURIComponent(state.aiExceptionView)}`);
-      const result = await api("/api/ai/exceptions/rank", { method: "POST", body: JSON.stringify({ occurrence_ids: current.items.map((item) => item.id) }) });
-      state.aiRankedItems = result.items;
-      state.aiExceptionOrder = "ai_ranked";
-      if (state.aiSelectedException && !result.items.some((item) => item.id === state.aiSelectedException)) state.aiSelectedException = null;
-      await renderRoute();
-      toast("AI ranking applied", `Validated all ${result.items.length} exception references. Deterministic order remains available.`);
-    } catch (error) {
-      state.aiExceptionOrder = "deterministic";
-      state.aiRankedItems = null;
-      toast("AI ranking unavailable", error.message, "error");
-      await renderRoute();
-    }
-  });
-  $("[data-ai-approve-proposal]")?.addEventListener("click", async (event) => {
-    const proposalId = event.currentTarget.dataset.aiApproveProposal;
-    const confirmed = await confirmAction("Create this Task?", "This creates one persistent CRM Task using the exact owner, due date, priority, source and text shown above. The action is audited.", "Create Task");
-    if (!confirmed) return;
-    event.currentTarget.disabled = true;
-    try {
-      const result = await api(`/api/ai/proposals/${encodeURIComponent(proposalId)}/approve`, { method: "POST", body: "{}" });
-      state.aiExceptionOrder = "deterministic";
-      state.aiRankedItems = null;
-      state.aiSelectedException = null;
-      await renderRoute();
-      toast(result.duplicate ? "Existing Task returned" : "Task created", `${result.activity.subject} · Task #${result.activity.id}`);
-    } catch (error) {
-      event.currentTarget.disabled = false;
-      toast(error.code === "APPROVAL_NEEDS_RECONCILIATION" ? "Task outcome needs checking" : "Task was not created", error.message, "error");
-    }
-  });
-  $$('[data-ai-review-state]').forEach((button) => button.addEventListener("click", async () => {
-    const label = titleCase(button.dataset.aiReviewState);
-    const reason = window.prompt(`${label}: enter a short reason or note.`);
-    if (!reason?.trim()) return;
-    button.disabled = true;
-    try {
-      await api(`/api/ai/exceptions/${encodeURIComponent(state.aiSelectedException)}/review`, { method: "PATCH", body: JSON.stringify({ state: button.dataset.aiReviewState, reason: reason.trim() }) });
-      state.aiSelectedException = null;
-      state.aiRankedItems = null;
-      state.aiExceptionOrder = "deterministic";
-      await renderRoute();
-      toast("Review recorded", `${label} was written to the exception audit history.`);
-    } catch (error) { button.disabled = false; toast("Could not record review", error.message, "error"); }
-  }));
-}
-
 async function settingsView(tab) {
-  const tabs = [{ id: "general", label: "General settings", icon: "⚙" }, { id: "profile-users", label: "Profile & users", icon: "◎" }, { id: "approval-process", label: "Approval process", icon: "✓" }, { id: "blueprint", label: "Blueprint", icon: "◇" }];
-  const nav = `<section class="card settings-nav">${tabs.map((item) => `<a href="/settings/${item.id}" class="${tab === item.id ? "active" : ""}"><span>${item.icon}</span>${item.label}</a>`).join("")}</section>`;
   let content = "";
-  if (tab === "general") content = `${await generalSettingsView()}${await settingsPlatformSummary("company_details", "Company details")}${await settingsPlatformSummary("fiscal_years", "Fiscal years")}`;
+  if (tab === "general") content = await generalSettingsView();
   if (tab === "profile-users") content = await profileUsersView();
   if (tab === "approval-process") content = await approvalSettingsView();
   if (tab === "blueprint") content = await blueprintSettingsView();
-  return `${pageHeader("Manage", "Settings", "Shape how Yash CRM works for your team.")}<div class="settings-layout">${nav}<div class="settings-content">${content}</div></div>`;
-}
-
-async function settingsPlatformSummary(resource, title) {
-  const config = state.platformCatalog.resources[resource];
-  if (!config) return "";
-  const data = await api(`/api/platform/${resource}?limit=100&sort=name_asc`);
-  const add = config.singleton && data.total ? "" : `<button class="button button-primary button-small" data-platform-create="${resource}">+ Add ${esc(config.singular.toLowerCase())}</button>`;
-  return `<section class="card settings-section"><div class="settings-section-head settings-heading-row"><div><h2>${esc(title)}</h2><p>${esc(config.description)}</p></div>${add}</div>${platformTable(resource, data)}</section>`;
+  return `${pageHeader("Administration", "Setup & Settings", "Shape how Yash CRM works for your team.")}<div class="settings-layout">${setupDirectory("", tab)}<div class="settings-content">${content}</div></div>`;
 }
 
 async function generalSettingsView() {
@@ -1110,9 +906,6 @@ function bindSettings() {
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create)));
   $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
-  $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate)));
-  $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
-  $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   $$('[data-setting-toggle]').forEach((button) => button.addEventListener("click", () => button.classList.toggle("on")));
   $$('[data-toggle-user]').forEach((button) => button.addEventListener("click", async () => { try { const status = button.dataset.status === "Active" ? "Inactive" : "Active"; await api(`/api/users/${button.dataset.toggleUser}`, { method: "PATCH", body: JSON.stringify({ status }) }); await refreshMeta(); toast("User status updated", `${status} user`); await renderRoute(); } catch (error) { toast("Could not update user", error.message, "error"); } }));
   $$('[data-toggle-blueprint]').forEach((button) => button.addEventListener("click", async () => { try { const active = button.dataset.active !== "true"; await api(`/api/blueprints/${button.dataset.toggleBlueprint}`, { method: "PATCH", body: JSON.stringify({ active }) }); toast("Blueprint updated", active ? "Blueprint is active" : "Blueprint is inactive"); await renderRoute(); } catch (error) { toast("Could not update blueprint", error.message, "error"); } }));
@@ -1129,7 +922,6 @@ async function openConvertModal(id) {
 async function init() {
   bindGlobal();
   try { await ensurePlatformCatalog(); } catch (error) { toast("Module catalog unavailable", error.message, "error"); }
-  enhanceNavigation();
   try { state.meta = await api("/api/meta"); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
   try { state.settingsCache = await api("/api/settings/general"); } catch (error) { /* use defaults until settings load */ }
   try { state.profile = await api("/api/settings/profile"); applyProfile(); } catch (error) { /* keep the shell usable */ }
