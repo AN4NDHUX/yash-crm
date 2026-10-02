@@ -1,0 +1,22 @@
+{
+  "name": "Apex CRM",
+  "short_name": "Apex CRM",
+  "description": "An AI-enabled workspace for customer relationships, support and revenue.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Dashboard", "url": "/dashboard" },
+    { "name": "Apex Helpdesk", "url": "/ai" },
+    { "name": "Leads", "url": "/leads" },
+    { "name": "Deals", "url": "/deals" }
+  ]
+}
