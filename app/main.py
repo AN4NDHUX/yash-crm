@@ -1199,8 +1199,6 @@ PUBLIC_ASSET_PATHS = frozenset({
     "/static/icons/icon-512.png",
     "/static/icons/icon-maskable-512.png",
     "/static/icons/apple-touch-icon.png",
-    "/api/ai/status",
-    "/api/ai/exceptions/readiness",
 })
 
 
@@ -1402,13 +1400,6 @@ def service_worker() -> FileResponse:
     return FileResponse(ROOT / "public" / "sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
 
 
-
-@app.get("/ai", response_class=HTMLResponse)
-def ai_spa_page() -> FileResponse:
-    """Serve the AI workspace as a single-page app."""
-    return FileResponse(ROOT / "templates" / "index.html", media_type="text/html")
-
-
 @app.get("/api/meta")
 def meta(db: Session = Depends(get_db)) -> dict[str, Any]:
     users = db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
@@ -1426,7 +1417,21 @@ def dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
     lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False).group_by(Lead.status)).all()
     recent = db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc()).limit(6)).all()
     performance = sales_performance(db)
-    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
+    platform_rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == False)).all()
+    by_resource = {}
+    for row in platform_rows:
+        by_resource.setdefault(row.resource, []).append(row)
+    journey = {
+        "leads": int(total_leads),
+        "visits": len(by_resource.get("site_visits", [])),
+        "visits_completed": sum(1 for row in by_resource.get("site_visits", []) if row.status == "Completed"),
+        "quotes": len(by_resource.get("quotes", [])),
+        "quotes_converted": sum(1 for row in by_resource.get("quotes", []) if row.status in {"Accepted", "Closed"}),
+        "invoices": len(by_resource.get("invoices", [])),
+        "payments": len(by_resource.get("payments", [])),
+        "collected": float(performance["totals"]["achieved"]),
+    }
+    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "journey": journey, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
 
 
 def _date_value(value: Any) -> date | None:
@@ -1463,7 +1468,7 @@ def sales_performance(db: Session) -> dict[str, Any]:
         threshold = float(target_data.get("threshold_percent") or 80)
         incentive = round(achieved * rate / 100, 2) if achievement >= threshold else 0.0
         conversions = db.scalar(select(func.count()).select_from(Lead).where(Lead.owner_id == user.id, Lead.status == "Converted", Lead.archived == False, Lead.updated_at >= datetime.combine(start, datetime.min.time()), Lead.updated_at <= datetime.combine(end, datetime.max.time()))) or 0
-        people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "period_start": start.isoformat(), "period_end": end.isoformat(), "target_configured": target_record is not None})
+        people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "remaining_to_target": max(target_amount - achieved, 0.0), "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "incentive_rate": rate, "threshold_percent": threshold, "eligible_for_incentive": bool(target_record and achievement >= threshold), "period_start": start.isoformat(), "period_end": end.isoformat(), "target_name": target_record.title if target_record else None, "target_configured": target_record is not None})
 
     stuck_leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]), or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
     open_quotes = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False, PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]))).all()
@@ -1842,6 +1847,36 @@ def _ai_related_record(db: Session, related_type: str, related_id: int) -> Base:
 @app.api_route("/api/ai/status", methods=["GET", "HEAD"])
 def ai_status_api() -> dict[str, Any]:
     return ai_status()
+
+
+@app.get("/api/ai/performance")
+def ai_performance(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Return the auditable performance snapshot used by Apex's management view.
+
+    Financial truth stays server-side: achieved revenue comes only from Received/Cleared
+    payments inside the active target period, while incentive eligibility is derived from
+    the configured threshold and rate.
+    """
+    performance = sales_performance(db)
+    people = performance["people"]
+    return {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "calculation_basis": {
+            "achieved": "Received or Cleared payments owned by the salesperson within the active target period",
+            "achievement": "achieved / target × 100",
+            "incentive": "achieved × incentive rate / 100 when achievement meets the threshold; otherwise ₹0",
+            "conversions": "Converted leads owned by the salesperson updated within the active target period",
+        },
+        "people": people,
+        "totals": {
+            "salespeople": len(people),
+            "target": performance["totals"]["target"],
+            "achieved": performance["totals"]["achieved"],
+            "achievement_percent": round((performance["totals"]["achieved"] / performance["totals"]["target"] * 100), 1) if performance["totals"]["target"] else 0.0,
+            "incentive": performance["totals"]["incentive"],
+            "conversions": sum(item["conversions"] for item in people),
+        },
+    }
 
 
 def _require_ai_csrf(request: Request) -> None:
@@ -2768,7 +2803,6 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
 
 @app.get("/{path:path}", response_class=HTMLResponse)
 def spa_fallback(path: str) -> FileResponse:
-    """Serve index.html for all SPA routes. API and static must match routes above."""
-    if path.startswith("api/") or path.startswith("static/") or path.startswith("uploads/"):
+    if path.startswith("api/") or path.startswith("static/"):
         raise HTTPException(404, "Not found")
     return FileResponse(ROOT / "templates" / "index.html", media_type="text/html")
