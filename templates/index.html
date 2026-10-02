@@ -33,10 +33,12 @@
       <nav class="primary-nav expanded-nav" aria-label="Primary navigation">
         <span class="nav-label nav-label-settings">Workspace</span>
         <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
+        <a class="ai-nav-link" href="/ai" data-route="ai">AI Copilot <span class="nav-pill">Assistant</span></a>
         <a href="/leads" data-route="leads">Leads <span class="nav-count" id="nav-leads-count">1</span></a>
         <a href="/contacts" data-route="contacts">Contacts</a>
         <a href="/accounts" data-route="accounts">Accounts</a>
-        <a href="/deals" data-route="deals">Deals</a>
+          <a href="/deals" data-route="deals">Deals</a>
+          <a href="/site_visits" data-route="site_visits">Site visits</a>
 
         <span class="nav-label nav-label-settings">Activities</span>
         <a href="/activities/tasks" data-route="activities">Tasks</a>
@@ -62,9 +64,8 @@
         <a href="/forecasts" data-route="forecasts">Forecasts</a>
         <a href="/reports" data-route="reports">Reports</a>
 
-        <span class="nav-label nav-label-settings">Setup</span>
-        <a href="/setup/company_details" data-route="setup">General Setup</a>
-        <a href="/settings/general" data-route="settings">Settings</a>
+        <span class="nav-label nav-label-settings">Administration</span>
+        <a href="/settings/general" data-route="setup">Setup &amp; Settings</a>
       </nav>
 
       <div class="sidebar-footer">
@@ -96,6 +97,7 @@
             <kbd></kbd>
             <div class="search-results" id="search-results" role="listbox" aria-label="Search results"></div>
           </div>
+          <button class="copilot-trigger" id="copilot-trigger" type="button" aria-controls="copilot-panel" aria-expanded="false"><span class="copilot-spark">✦</span><span>Ask AI</span></button>
           <button class="icon-button top-icon" aria-label="Notifications"><span class="notification-dot"></span></button>
           <button class="top-profile" id="top-profile" aria-label="Open profile">
             <span class="avatar avatar-indigo"></span>
@@ -193,6 +195,11 @@
   </div>
 
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <aside class="copilot-panel" id="copilot-panel" aria-label="Yash CRM Copilot" aria-hidden="true">
+    <div class="copilot-panel-head"><div><span class="eyebrow">Built into Yash CRM</span><h2>AI Assistant</h2><p>Ask about stuck leads, quotation follow-ups, sales performance, or payments.</p></div><button class="icon-button" id="copilot-close" type="button" aria-label="Close AI Assistant">×</button></div>
+    <div class="copilot-body"><div class="copilot-answer" id="copilot-answer"><strong>Live workspace intelligence</strong><p>I read your CRM records locally and turn them into clear next actions. No paid AI key required.</p></div><div class="copilot-prompts" id="copilot-prompts"></div><form class="copilot-form" id="copilot-form"><input id="copilot-input" type="text" placeholder="Ask Copilot anything..." autocomplete="off" /><button class="button button-primary button-small" type="submit">Ask</button></form><div class="copilot-mini-title">Performance snapshot</div><div class="copilot-performance" id="copilot-performance"></div></div>
+  </aside>
+  <button class="copilot-backdrop" id="copilot-backdrop" type="button" aria-label="Close Copilot" hidden></button>
   <script type="module" src="/static/js/app.js"></script>
   <script>
     (() => {
