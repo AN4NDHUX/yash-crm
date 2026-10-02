@@ -200,7 +200,7 @@ function enhanceNavigation() {
   addAfter("invoices", "payments", "Payments");
   addAfter("documents", "site_visits", "Site Visits");
   addAfter("reports", "sales_targets", "Sales Targets & Incentives");
-  addAfter("sales_targets", "ai", "AI Copilot");
+  addAfter("sales_targets", "ai", "Apex Copilot");
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
@@ -287,7 +287,7 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "ai") {
-      setBreadcrumb("AI Copilot", "Intelligence");
+      setBreadcrumb("Apex Copilot", "Intelligence");
       content.innerHTML = await aiView();
       bindAI();
       return;
@@ -368,7 +368,7 @@ async function dashboardView() {
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></article>
     </div>
-    <section class="dashboard-journey card"><div class="dashboard-journey-head"><div><span class="eyebrow">Revenue operations</span><h2>Complete customer journey</h2><small>One source of truth from lead received to incentive earned.</small></div><button class="card-head-link" data-go="/ai">Open Apex helpdesk →</button></div><div class="dashboard-journey-track">${[["Leads", journey.leads || metrics.total_leads, "/leads"], ["Visits", journey.visits || 0, "/site_visits"], ["Quotations", journey.quotes || 0, "/quotes"], ["Invoices", journey.invoices || 0, "/invoices"], ["Payments", journey.payments || 0, "/payments"]].map(([label, count, href], index, items) => `<a href="${href}" class="dashboard-journey-step"><span class="journey-step-number">0${index + 1}</span><strong>${count}</strong><small>${label}</small>${index < items.length - 1 ? `<i>→</i>` : ""}</a>`).join("")}</div></section>
+    <section class="dashboard-journey card"><div class="dashboard-journey-head"><div><span class="eyebrow">Revenue operations</span><h2>Complete customer journey</h2><small>One source of truth from lead received to incentive earned.</small></div><button class="card-head-link" data-go="/ai">Open Apex Copilot →</button></div><div class="dashboard-journey-track">${[["Leads", journey.leads || metrics.total_leads, "/leads"], ["Visits", journey.visits || 0, "/site_visits"], ["Quotations", journey.quotes || 0, "/quotes"], ["Invoices", journey.invoices || 0, "/invoices"], ["Payments", journey.payments || 0, "/payments"]].map(([label, count, href], index, items) => `<a href="${href}" class="dashboard-journey-step"><span class="journey-step-number">0${index + 1}</span><strong>${count}</strong><small>${label}</small>${index < items.length - 1 ? `<i>→</i>` : ""}</a>`).join("")}</div></section>
     <div class="dashboard-grid management-grid">${performancePanel}${attentionPanel}</div>
     <div class="dashboard-grid">
       <div class="dashboard-column">
@@ -1023,7 +1023,7 @@ async function settingsView(tab) {
   if (tab === "profile-users") content = await profileUsersView();
   if (tab === "approval-process") content = await approvalSettingsView();
   if (tab === "blueprint") content = await blueprintSettingsView();
-  return `${pageHeader("Manage", "Settings", "Shape how Apex CRM works for your team.")}<div class="settings-layout">${nav}<div class="settings-content">${content}</div></div>`;
+  return `${pageHeader("Manage", "Settings", "Shape how Yash CRM works for your team.")}<div class="settings-layout">${nav}<div class="settings-content">${content}</div></div>`;
 }
 
 async function settingsPlatformSummary(resource, title) {
