@@ -9,6 +9,12 @@ const state = {
   platformLookups: {},
   profile: null,
   platformCatalog: { resources: {}, setup_navigation: {} },
+  aiMessages: [],
+  aiStatus: null,
+  aiExceptionView: "needs_review",
+  aiExceptionOrder: "deterministic",
+  aiRankedItems: null,
+  aiSelectedException: null,
 };
 
 const PLATFORM_MODULE_ROUTES = [
@@ -131,12 +137,18 @@ function lookupName(resource, id) {
 
 async function api(path, options = {}) {
   let response;
-  try { response = await fetch(path, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options }); }
+  const csrf = state.aiStatus?.csrf_token;
+  try { response = await fetch(path, { headers: { "Content-Type": "application/json", ...(csrf ? { "X-Yash-CSRF": csrf } : {}), ...(options.headers || {}) }, ...options }); }
   catch { throw new Error("Yash CRM could not reach the server. Check the connection and try again."); }
   const raw = await response.text();
   let body = {};
   try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
-  if (!response.ok) throw new Error(body.detail || body.message || raw.slice(0, 180) || `Request failed with HTTP ${response.status}`);
+  if (!response.ok) {
+    const detail = typeof body.detail === "object" ? body.detail : null;
+    const error = new Error(detail?.message || body.detail || body.message || raw.slice(0, 180) || `Request failed with HTTP ${response.status}`);
+    error.code = detail?.code || body.code || null;
+    throw error;
+  }
   return body;
 }
 
@@ -170,6 +182,7 @@ function enhanceNavigation() {
   addAfter("invoices", "payments", "Payments");
   addAfter("documents", "site_visits", "Site Visits");
   addAfter("reports", "sales_targets", "Sales Targets & Incentives");
+  addAfter("sales_targets", "ai", "AI Copilot");
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
@@ -255,6 +268,12 @@ async function renderRoute() {
       bindDashboard();
       return;
     }
+    if (parts[0] === "ai") {
+      setBreadcrumb("AI Copilot", "Intelligence");
+      content.innerHTML = await aiView();
+      bindAI();
+      return;
+    }
     if (parts[0] === "setup") {
       const resource = parts[1] || "company_details";
       setBreadcrumb(titleCase(resource), "Setup");
@@ -323,7 +342,7 @@ async function dashboardView() {
   const maxLeads = Math.max(...data.lead_funnel.map((row) => row.count), 1);
   const performancePanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Sales performance</h2><small>Target, collections, conversion and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${performanceTable(data.sales_performance || [])}</div></section>`;
   const attentionPanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div></div><div class="card-body">${attentionQueue(data.attention || {})}</div></section>`;
-  return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
+  return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-go="/ai"><span class="button-icon">✦</span>Ask AI</button><button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
     <div class="stats-grid">
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div><div class="stat-value">${metrics.total_leads}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Open deals</span><span class="stat-icon">◇</span></div><div class="stat-value">${metrics.open_deals}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
@@ -556,7 +575,7 @@ async function detailView(resource, id) {
   const title = resource === "contacts" ? record.full_name : record.name || record.subject;
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
   const details = detailFields(resource, record);
-  return `${pageHeader(config.label, title, secondary || "Record detail", `<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
+  return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
     <div class="detail-layout"><div class="dashboard-column"><section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !record.converted_contact_id ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>${resource === "deals" ? `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Stage progress</h2><small>Move the deal forward as the conversation evolves.</small></div></div><div class="card-body">${dealProgress(record)}</div></section>` : ""}</div><div class="detail-side"><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Related records</h2><small>Connected context around this ${config.singular.toLowerCase()}.</small></div><button class="card-head-link" data-create="activities">＋ Activity</button></div><div class="card-body">${relatedContent(resource, related)}</div></section><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Timeline</h2><small>Latest activity updates</small></div></div><div class="card-body"><div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p style="color:var(--text-faint);font-size:11px">No linked activity yet.</p>`}</div></div></section></div></div>`;
 }
 
@@ -857,6 +876,161 @@ function bindGlobal() {
   const searchInput = $("#global-search"); let searchTimer;
   searchInput.addEventListener("input", () => { clearTimeout(searchTimer); if (!searchInput.value.trim()) { $("#search-results").classList.remove("open"); return; } searchTimer = setTimeout(async () => { try { const data = await api(`/api/search?q=${encodeURIComponent(searchInput.value)}`); const result = $("#search-results"); result.innerHTML = data.results.length ? data.results.map((item) => `<button class="search-result" data-search-route="/${item.resource}/${item.id}"><span class="result-icon">${MODULES[item.resource]?.icon || "◈"}</span><span><strong>${esc(item.label)}</strong><small>${esc(titleCase(item.resource))} · ${esc(item.meta || "")}</small></span></button>`).join("") : `<p style="padding:10px;color:var(--text-faint);font-size:11px">No matching records.</p>`; result.classList.add("open"); } catch (error) { /* search is best effort */ } }, 240); });
   document.addEventListener("click", (event) => { const result = event.target.closest("[data-search-route]"); if (result) { $("#search-results").classList.remove("open"); searchInput.value = ""; navigate(result.dataset.searchRoute); } else if (!event.target.closest("#global-search-wrap")) $("#search-results").classList.remove("open"); });
+}
+
+async function aiView() {
+  const [status, readiness, deterministic] = await Promise.all([
+    api("/api/ai/status"), api("/api/ai/exceptions/readiness"),
+    api(`/api/ai/exceptions?view=${encodeURIComponent(state.aiExceptionView)}`),
+  ]);
+  state.aiStatus = status;
+  const ranked = state.aiExceptionOrder === "ai_ranked" && state.aiRankedItems;
+  const data = ranked ? { ...deterministic, items: state.aiRankedItems, order: "ai_ranked" } : deterministic;
+  const viewLabels = { needs_review: "Needs review", acted_on: "Acted on", clarification: "Needs clarification", corrections: "Data corrections", dismissed: "Dismissed", all: "All active" };
+  const views = Object.entries(viewLabels).map(([key, label]) => `<button class="ai-view-tab ${state.aiExceptionView === key ? "active" : ""}" data-ai-view="${key}">${esc(label)}</button>`).join("");
+  const rows = data.items.length ? data.items.map((item) => {
+    const selected = state.aiSelectedException === item.id;
+    return `<article class="ai-exception-row ${selected ? "selected" : ""}" data-ai-exception="${esc(item.id)}">
+      <div class="ai-trigger"><strong>${esc(item.trigger_label)}</strong><small>${esc(item.actionability.replaceAll("_", " "))}</small></div>
+      <div class="ai-quote"><b>${esc(item.quote_label)}</b><small>${esc(item.owner_name || "Owner unavailable")} · ${item.valid_until ? formatDate(item.valid_until) : "No valid date"}</small></div>
+      <div class="ai-amount"><strong>${formatMoney(item.amount)}</strong><small>${esc(item.review_state.replaceAll("_", " "))}</small></div>
+      <button class="button button-small button-ghost" data-ai-review="${esc(item.id)}">Review</button>
+    </article>`;
+  }).join("") : `<div class="ai-empty"><span>✓</span><h3>${state.aiExceptionView === "needs_review" ? "No quotation exceptions need review" : "Nothing in this view"}</h3><p>Evaluated using ${esc(data.rule_version)}. Change the view or review the source quotations if this looks wrong.</p></div>`;
+  const selected = data.items.find((item) => item.id === state.aiSelectedException) || null;
+  const proposal = selected?.proposal;
+  const detail = selected ? `<aside class="card ai-exception-detail" aria-labelledby="ai-detail-title">
+    <div class="card-head"><div class="card-head-copy"><h2 id="ai-detail-title" tabindex="-1">${esc(selected.quote_label)}</h2><small>${esc(selected.trigger_label)} · ${esc(selected.rule_version)}</small></div><button class="card-head-link" data-ai-close-detail>Close</button></div>
+    <div class="card-body ai-detail-body">
+      <dl class="ai-facts"><div><dt>Owner</dt><dd>${esc(selected.owner_name || "Unavailable")}</dd></div><div><dt>Amount at risk</dt><dd>${formatMoney(selected.amount)}</dd></div><div><dt>Validity</dt><dd>${selected.valid_until ? formatDate(selected.valid_until) : "Missing"}</dd></div><div><dt>Source updated</dt><dd>${formatDateTime(selected.source_updated_at)}</dd></div></dl>
+      <p class="ai-rule-reason">Included because ${esc(selected.trigger_label.toLowerCase())}. The CRM rule determined this exception; AI did not.</p>
+      ${selected.rationale ? `<section class="ai-rationale"><strong>Why AI placed it here</strong><p>${esc(selected.rationale)}</p></section>` : ""}
+      ${proposal ? `<section class="ai-task-preview"><span class="eyebrow">Exact Task preview</span><h3>${esc(proposal.subject)}</h3><dl><div><dt>Owner</dt><dd>${esc(proposal.owner_name || `#${proposal.owner_id}`)}</dd></div><div><dt>Priority</dt><dd>${esc(proposal.priority)}</dd></div><div><dt>Due</dt><dd>${formatDateTime(proposal.due_at)}</dd></div><div><dt>Status</dt><dd>Open</dd></div><div><dt>Source</dt><dd>${esc(proposal.source)}</dd></div></dl><p>${esc(proposal.description || "No drafted description")}</p><button class="button button-primary" data-ai-approve-proposal="${esc(proposal.id)}">Create Task</button></section>` : selected.actionability === "actionable" ? `<div class="ai-setup"><strong>Generate a Task proposal</strong><p>Switch to AI-ranked order to request a bounded explanation and exact Task draft.</p></div>` : `<div class="ai-setup"><strong>Task creation is blocked</strong><p>Resolve the ${esc(selected.actionability.replaceAll("_", " "))} condition in the source quotation first.</p></div>`}
+      <div class="ai-review-actions"><button class="button button-ghost button-small" data-ai-review-state="dismissed">Dismiss for 7 days</button><button class="button button-ghost button-small" data-ai-review-state="corrected">Report data/rule issue</button><button class="button button-ghost button-small" data-ai-review-state="unclear">Mark unclear</button><a class="button button-ghost button-small" href="${esc(selected.quote_path || "/quotes")}">Open quotation</a></div>
+    </div>
+  </aside>` : "";
+  const checks = readiness.checks.map((item) => `<li class="${item.ready ? "ready" : "blocked"}"><b>${item.ready ? "✓" : "!"}</b><span>${esc(titleCase(item.key))}<small>${esc(item.detail)}</small></span></li>`).join("");
+  const orderLabel = data.order === "ai_ranked" ? `AI-ranked · ${status.model}` : "Deterministic order";
+  return `${pageHeader("Revenue operations", "Quotation Follow-up Exceptions", `Open quotations with missing, elapsed or upcoming validity dates within 7 days. Evaluated ${formatDateTime(data.evaluated_at)} in ${esc(data.timezone)}.`, `<span class="ai-status ${readiness.deterministic_ready ? "ready" : "offline"}"><i></i>${esc(orderLabel)}</span>`)}
+    <section class="ai-exception-summary"><div><strong>${data.matching_count}</strong><span>matching exceptions</span></div><div><strong>${data.counts.open || 0}</strong><span>need review</span></div><div><strong>${data.actionable_count}</strong><span>Task eligible</span></div><div><strong>${esc(data.rule_version)}</strong><span>rule version</span></div></section>
+    <div class="ai-exception-toolbar card"><div class="ai-view-tabs">${views}</div><div class="ai-order-actions"><button class="button button-ghost button-small ${data.order === "deterministic" ? "active" : ""}" data-ai-deterministic>Deterministic order</button><button class="button button-primary button-small" data-ai-rank ${!readiness.ai_ready || !data.items.length ? "disabled" : ""}>AI-ranked order · 1 request</button></div></div>
+    ${!readiness.ai_ready ? `<div class="ai-fallback-note"><strong>Queue ready · AI ranking unavailable</strong><span>${esc(status.detail)}. All deterministic records remain available.</span></div>` : ""}
+    <div class="ai-exception-layout"><section class="card ai-exception-list" aria-live="polite">${rows}</section>${detail}</div>
+    <details class="card ai-readiness"><summary>Readiness and cloud boundary</summary><div class="card-body"><ul>${checks}</ul><p>Only opaque references, trigger facts, amount, currency, date and owner-active status are sent for ranking. Customer names, notes, messages, attachments and credentials are excluded.</p></div></details>`;
+}
+
+function aiMessageHtml(message, messageIndex) {
+  if (message.role === "user") return `<article class="ai-message user"><span>You</span><p>${esc(message.text)}</p></article>`;
+  const result = message.result;
+  const actions = (result.actions || []).length ? `<div class="ai-result-list"><strong>Recommended actions</strong><ol>${result.actions.map((item) => `<li>${esc(item)}</li>`).join("")}</ol></div>` : "";
+  const risks = (result.risks || []).length ? `<div class="ai-result-list risks"><strong>Risks and gaps</strong><ul>${result.risks.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : "";
+  const proposals = (result.proposed_activities || []).length ? `<div class="ai-proposals"><div class="ai-proposals-head"><div><strong>Proposed CRM activities</strong><small>Review each item. Approval writes selected activities to the CRM and audit history.</small></div></div>${result.proposed_activities.map((item, index) => `<label class="ai-proposal"><input type="checkbox" data-ai-proposal-index="${index}" checked ${result.approval_result ? "disabled" : ""}/><span><b>${esc(item.activity_type)} · ${esc(item.subject)}</b><small>${esc(titleCase(item.priority))} · due ${formatDateTime(item.due_at)} · ${esc(titleCase(item.related_type))} #${item.related_id}${item.owner_id ? ` · owner #${item.owner_id}` : ""}</small><em>${esc(item.reason)}</em></span></label>`).join("")}<div class="ai-approval-row">${result.approval_result ? `<span class="ai-approved">✓ ${result.approval_result.created.length} created · ${result.approval_result.skipped.length} duplicate${result.approval_result.skipped.length === 1 ? "" : "s"} skipped</span>` : `<button class="button button-primary button-small" data-ai-approve="${messageIndex}">Review and approve selected</button>`}</div></div>` : "";
+  const sources = (result.sources || []).map((item) => `<span>${esc(item)}</span>`).join("");
+  return `<article class="ai-message assistant" data-ai-message="${messageIndex}"><div class="ai-message-head"><span>Yash AI</span><small>${esc(result.model)} · ${esc(result.confidence)} confidence</small></div><p>${esc(result.answer).replace(/\n/g, "<br>")}</p>${actions}${risks}${proposals}<div class="ai-sources"><strong>CRM context used</strong>${sources}</div><small class="ai-disclaimer">${esc(result.disclaimer)}</small></article>`;
+}
+
+function renderAIConversation() {
+  const conversation = $("#ai-conversation");
+  if (!conversation) return;
+  conversation.innerHTML = state.aiMessages.map(aiMessageHtml).join("");
+  bindAIProposalActions();
+  conversation.scrollTop = conversation.scrollHeight;
+}
+
+function bindAIProposalActions() {
+  $$('[data-ai-approve]').forEach((button) => button.addEventListener("click", async () => {
+    const messageIndex = Number(button.dataset.aiApprove);
+    const message = state.aiMessages[messageIndex];
+    if (!message?.result) return;
+    const card = button.closest("[data-ai-message]");
+    const indexes = $$('[data-ai-proposal-index]:checked', card).map((input) => Number(input.dataset.aiProposalIndex));
+    const activities = indexes.map((index) => message.result.proposed_activities[index]).filter(Boolean);
+    if (!activities.length) { toast("Nothing selected", "Select at least one proposed activity.", "error"); return; }
+    const confirmed = await confirmAction("Create selected AI activities?", `This will create ${activities.length} open CRM activit${activities.length === 1 ? "y" : "ies"}. Every item will be recorded in audit history.`, "Create activities");
+    if (!confirmed) return;
+    button.disabled = true;
+    try {
+      const approval = await api("/api/ai/activities/approve", { method: "POST", body: JSON.stringify({ request_id: message.result.request_id, activities }) });
+      message.result.approval_result = approval;
+      toast("AI activities processed", `${approval.created.length} created; ${approval.skipped.length} duplicate${approval.skipped.length === 1 ? "" : "s"} skipped.`);
+      renderAIConversation();
+    } catch (error) { button.disabled = false; toast("Could not create AI activities", error.message, "error"); }
+  }));
+}
+
+function bindAI() {
+  $$('[data-ai-view]').forEach((button) => button.addEventListener("click", async () => {
+    state.aiExceptionView = button.dataset.aiView;
+    state.aiExceptionOrder = "deterministic";
+    state.aiRankedItems = null;
+    state.aiSelectedException = null;
+    await renderRoute();
+  }));
+  $$('[data-ai-review]').forEach((button) => button.addEventListener("click", async () => {
+    state.aiSelectedException = button.dataset.aiReview;
+    await renderRoute();
+    $("#ai-detail-title")?.focus();
+  }));
+  $("[data-ai-close-detail]")?.addEventListener("click", async () => {
+    const previous = state.aiSelectedException;
+    state.aiSelectedException = null;
+    await renderRoute();
+    $(`[data-ai-review="${previous}"]`)?.focus();
+  });
+  $("[data-ai-deterministic]")?.addEventListener("click", async () => {
+    state.aiExceptionOrder = "deterministic";
+    await renderRoute();
+  });
+  $("[data-ai-rank]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Ranking complete set…";
+    try {
+      const current = await api(`/api/ai/exceptions?view=${encodeURIComponent(state.aiExceptionView)}`);
+      const result = await api("/api/ai/exceptions/rank", { method: "POST", body: JSON.stringify({ occurrence_ids: current.items.map((item) => item.id) }) });
+      state.aiRankedItems = result.items;
+      state.aiExceptionOrder = "ai_ranked";
+      if (state.aiSelectedException && !result.items.some((item) => item.id === state.aiSelectedException)) state.aiSelectedException = null;
+      await renderRoute();
+      toast("AI ranking applied", `Validated all ${result.items.length} exception references. Deterministic order remains available.`);
+    } catch (error) {
+      state.aiExceptionOrder = "deterministic";
+      state.aiRankedItems = null;
+      toast("AI ranking unavailable", error.message, "error");
+      await renderRoute();
+    }
+  });
+  $("[data-ai-approve-proposal]")?.addEventListener("click", async (event) => {
+    const proposalId = event.currentTarget.dataset.aiApproveProposal;
+    const confirmed = await confirmAction("Create this Task?", "This creates one persistent CRM Task using the exact owner, due date, priority, source and text shown above. The action is audited.", "Create Task");
+    if (!confirmed) return;
+    event.currentTarget.disabled = true;
+    try {
+      const result = await api(`/api/ai/proposals/${encodeURIComponent(proposalId)}/approve`, { method: "POST", body: "{}" });
+      state.aiExceptionOrder = "deterministic";
+      state.aiRankedItems = null;
+      state.aiSelectedException = null;
+      await renderRoute();
+      toast(result.duplicate ? "Existing Task returned" : "Task created", `${result.activity.subject} · Task #${result.activity.id}`);
+    } catch (error) {
+      event.currentTarget.disabled = false;
+      toast(error.code === "APPROVAL_NEEDS_RECONCILIATION" ? "Task outcome needs checking" : "Task was not created", error.message, "error");
+    }
+  });
+  $$('[data-ai-review-state]').forEach((button) => button.addEventListener("click", async () => {
+    const label = titleCase(button.dataset.aiReviewState);
+    const reason = window.prompt(`${label}: enter a short reason or note.`);
+    if (!reason?.trim()) return;
+    button.disabled = true;
+    try {
+      await api(`/api/ai/exceptions/${encodeURIComponent(state.aiSelectedException)}/review`, { method: "PATCH", body: JSON.stringify({ state: button.dataset.aiReviewState, reason: reason.trim() }) });
+      state.aiSelectedException = null;
+      state.aiRankedItems = null;
+      state.aiExceptionOrder = "deterministic";
+      await renderRoute();
+      toast("Review recorded", `${label} was written to the exception audit history.`);
+    } catch (error) { button.disabled = false; toast("Could not record review", error.message, "error"); }
+  }));
 }
 
 async function settingsView(tab) {

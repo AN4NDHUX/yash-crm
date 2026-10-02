@@ -59,6 +59,9 @@ def read_checks() -> None:
         assert get(f"/api/{resource}?limit=1")["total"] >= 1, resource
     assert get("/api/settings/general")["org_name"]
     assert get("/api/settings/profile")["name"]
+    ai_status = get("/api/ai/status")
+    assert {"configured", "available", "provider", "base_url", "model", "detail", "approval_required", "data_location"} <= set(ai_status), ai_status
+    assert ai_status["approval_required"] is True and "api_key" not in ai_status, ai_status
     catalog = get("/api/platform/catalog")
     for resource in ("price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "payments", "site_visits", "sales_targets", "campaigns", "cases", "solutions", "documents", "forecasts", "reports", "dashboards", "roles", "profiles", "permissions", "workflow_rules", "integration_settings"):
         assert resource in catalog["resources"], resource
