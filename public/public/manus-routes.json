@@ -1,36 +1,159 @@
 {
   "routes": [
-    { "path": "/", "title": "Apex CRM Home" },
-    { "path": "/dashboard", "title": "Home" },
-    { "path": "/leads", "title": "Leads" },
-    { "path": "/contacts", "title": "Contacts" },
-    { "path": "/accounts", "title": "Accounts" },
-    { "path": "/deals", "title": "Deals" },
-    { "path": "/activities/tasks", "title": "Tasks" },
-    { "path": "/activities/meetings", "title": "Meetings" },
-    { "path": "/activities/calls", "title": "Calls" },
-    { "path": "/products", "title": "Products" },
-    { "path": "/price_books", "title": "Price Books" },
-    { "path": "/vendors", "title": "Vendors" },
-    { "path": "/quotes", "title": "Quotes" },
-    { "path": "/sales_orders", "title": "Sales Orders" },
-    { "path": "/purchase_orders", "title": "Purchase Orders" },
-    { "path": "/invoices", "title": "Invoices" },
-    { "path": "/payments", "title": "Payments" },
-    { "path": "/campaigns", "title": "Campaigns" },
-    { "path": "/cases", "title": "Cases" },
-    { "path": "/solutions", "title": "Solutions" },
-    { "path": "/documents", "title": "Documents" },
-    { "path": "/site_visits", "title": "Site Visits" },
-    { "path": "/forecasts", "title": "Forecasts" },
-    { "path": "/reports", "title": "Reports" },
-    { "path": "/dashboards", "title": "Dashboards" },
-    { "path": "/sales_targets", "title": "Sales Targets & Incentives" },
-    { "path": "/ai", "title": "Apex Helpdesk" },
-    { "path": "/setup/company_details", "title": "Setup" },
-    { "path": "/setup/roles", "title": "Security Roles" },
-    { "path": "/setup/workflow_rules", "title": "Workflow Rules" },
-    { "path": "/setup/recycle_bin", "title": "Recycle Bin" },
-    { "path": "/setup/audit_log", "title": "Audit History" }
+    {
+      "path": "/",
+      "title": "Yash CRM Home"
+    },
+    {
+      "path": "/dashboard",
+      "title": "Home"
+    },
+    {
+      "path": "/leads",
+      "title": "Leads"
+    },
+    {
+      "path": "/contacts",
+      "title": "Contacts"
+    },
+    {
+      "path": "/accounts",
+      "title": "Accounts"
+    },
+    {
+      "path": "/deals",
+      "title": "Deals"
+    },
+    {
+      "path": "/activities/tasks",
+      "title": "Tasks"
+    },
+    {
+      "path": "/activities/meetings",
+      "title": "Meetings"
+    },
+    {
+      "path": "/activities/calls",
+      "title": "Calls"
+    },
+    {
+      "path": "/products",
+      "title": "Products"
+    },
+    {
+      "path": "/price_books",
+      "title": "Price Books"
+    },
+    {
+      "path": "/vendors",
+      "title": "Vendors"
+    },
+    {
+      "path": "/quotes",
+      "title": "Quotes"
+    },
+    {
+      "path": "/sales_orders",
+      "title": "Sales Orders"
+    },
+    {
+      "path": "/purchase_orders",
+      "title": "Purchase Orders"
+    },
+    {
+      "path": "/invoices",
+      "title": "Invoices"
+    },
+    {
+      "path": "/campaigns",
+      "title": "Campaigns"
+    },
+    {
+      "path": "/cases",
+      "title": "Cases"
+    },
+    {
+      "path": "/solutions",
+      "title": "Solutions"
+    },
+    {
+      "path": "/documents",
+      "title": "Documents"
+    },
+    {
+      "path": "/forecasts",
+      "title": "Forecasts"
+    },
+    {
+      "path": "/reports",
+      "title": "Reports"
+    },
+    {
+      "path": "/dashboards",
+      "title": "Dashboards"
+    },
+    {
+      "path": "/setup/company_details",
+      "title": "Setup"
+    },
+    {
+      "path": "/setup/roles",
+      "title": "Security Roles"
+    },
+    {
+      "path": "/setup/workflow_rules",
+      "title": "Workflow Rules"
+    },
+    {
+      "path": "/setup/recycle_bin",
+      "title": "Recycle Bin"
+    },
+    {
+      "path": "/setup/audit_log",
+      "title": "Audit History"
+    },
+    {
+      "path": "/ai",
+      "name": "Apex AI",
+      "title": "Apex AI",
+      "icon": "sparkles",
+      "workspace": "ai",
+      "category": "Intelligence"
+    },
+    {
+      "path": "/ai/performance",
+      "name": "Performance Tracking",
+      "icon": "chart-bar",
+      "workspace": "ai",
+      "category": "Analytics"
+    },
+    {
+      "path": "/settings",
+      "name": "Settings",
+      "icon": "cog",
+      "category": "System",
+      "sections": [
+        {
+          "id": "general",
+          "name": "General",
+          "items": [
+            "Organization",
+            "Users",
+            "Timezone",
+            "Email Settings"
+          ]
+        },
+        {
+          "id": "customization",
+          "name": "Customization",
+          "items": [
+            "Modules and Fields",
+            "Wizards",
+            "Customize Home Page",
+            "Templates"
+          ]
+        }
+      ]
+    }
   ]
 }
