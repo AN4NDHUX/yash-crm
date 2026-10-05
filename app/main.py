@@ -1364,6 +1364,84 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "yash-crm"}
 
 
+def sales_performance(db: Session) -> dict[str, Any]:
+    today = date.today()
+    users = db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
+    targets = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "sales_targets", PlatformRecord.archived == False)).all()
+    payments = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "payments", PlatformRecord.archived == False, PlatformRecord.status.in_(["Received", "Cleared"]))).all()
+    people: list[dict[str, Any]] = []
+    for user in users:
+        candidates = []
+        for target in targets:
+            data = target.data or {}
+            start, end = _date_value(data.get("period_start")), _date_value(data.get("period_end"))
+            if target.owner_id == user.id and start and end and start <= today <= end and target.status == "Active":
+                candidates.append((start, end, target))
+        candidates.sort(key=lambda item: (item[0], item[2].id), reverse=True)
+        target_record = candidates[0][2] if candidates else None
+        target_data = dict(target_record.data or {}) if target_record else {}
+        start = _date_value(target_data.get("period_start")) or date(today.year, today.month, 1)
+        end = _date_value(target_data.get("period_end")) or today
+        achieved = sum(float(item.amount or 0) for item in payments if item.owner_id == user.id and start <= (_date_value((item.data or {}).get("payment_date")) or item.created_at.date()) <= end)
+        target_amount = float(target_data.get("target_amount") or 0)
+        achievement = round((achieved / target_amount * 100), 1) if target_amount else 0.0
+        rate = float(target_data.get("incentive_rate") or 0)
+        threshold = float(target_data.get("threshold_percent") or 80)
+        incentive = round(achieved * rate / 100, 2) if achievement >= threshold else 0.0
+        conversions = db.scalar(select(func.count()).select_from(Lead).where(Lead.owner_id == user.id, Lead.status == "Converted", Lead.archived == False, Lead.updated_at >= datetime.combine(start, datetime.min.time()), Lead.updated_at <= datetime.combine(end, datetime.max.time()))) or 0
+        people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "remaining_to_target": max(target_amount - achieved, 0.0), "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "incentive_rate": rate, "threshold_percent": threshold, "eligible_for_incentive": bool(target_record and achievement >= threshold), "period_start": start.isoformat(), "period_end": end.isoformat(), "target_name": target_record.title if target_record else None, "target_configured": target_record is not None})
+
+    stuck_leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]), or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
+    open_quotes = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False, PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]))).all()
+    quote_attention = []
+    for quote in open_quotes:
+        valid_until = _date_value((quote.data or {}).get("valid_until"))
+        if valid_until is None or valid_until <= today + timedelta(days=7):
+            quote_attention.append({"id": quote.id, "name": quote.title, "status": quote.status, "valid_until": valid_until.isoformat() if valid_until else None, "owner_id": quote.owner_id})
+    attention = {
+        "stuck_leads": [{"id": lead.id, "name": lead.name, "status": lead.status, "next_follow_up": lead.next_follow_up.isoformat() if lead.next_follow_up else None, "owner_id": lead.owner_id} for lead in stuck_leads],
+        "quotes_needing_follow_up": quote_attention[:8],
+    }
+    return {"people": people, "attention": attention, "totals": {"target": sum(item["target"] for item in people), "achieved": sum(item["achieved"] for item in people), "incentive": sum(item["incentive"] for item in people)}}
+
+
+
+
+AI_EXCEPTION_RULE = "quotation-follow-up/v1"
+AI_INCLUDED_QUOTE_STATUSES = {"draft", "pending approval", "approved", "sent"}
+AI_REVIEW_STATES = {"open", "acted_on", "dismissed", "corrected", "unclear", "resolved"}
+
+
+@app.get("/api/ai/performance")
+def ai_performance(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Return the auditable performance snapshot used by Apex's management view.
+
+    Financial truth stays server-side: achieved revenue comes only from Received/Cleared
+    payments inside the active target period, while incentive eligibility is derived from
+    the configured threshold and rate.
+    """
+    performance = sales_performance(db)
+    people = performance["people"]
+    return {
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "calculation_basis": {
+            "achieved": "Received or Cleared payments owned by the salesperson within the active target period",
+            "achievement": "achieved / target × 100",
+            "incentive": "achieved × incentive rate / 100 when achievement meets the threshold; otherwise ₹0",
+            "conversions": "Converted leads owned by the salesperson updated within the active target period",
+        },
+        "people": people,
+        "totals": {
+            "salespeople": len(people),
+            "target": performance["totals"]["target"],
+            "achieved": performance["totals"]["achieved"],
+            "achievement_percent": round((performance["totals"]["achieved"] / performance["totals"]["target"] * 100), 1) if performance["totals"]["target"] else 0.0,
+            "incentive": performance["totals"]["incentive"],
+            "conversions": sum(item["conversions"] for item in people),
+        },
+    }
+
+
 @app.get("/ready")
 def ready(db: Session = Depends(get_db)) -> dict[str, str]:
     try:
@@ -1417,21 +1495,7 @@ def dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
     lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False).group_by(Lead.status)).all()
     recent = db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc()).limit(6)).all()
     performance = sales_performance(db)
-    platform_rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == False)).all()
-    by_resource = {}
-    for row in platform_rows:
-        by_resource.setdefault(row.resource, []).append(row)
-    journey = {
-        "leads": int(total_leads),
-        "visits": len(by_resource.get("site_visits", [])),
-        "visits_completed": sum(1 for row in by_resource.get("site_visits", []) if row.status == "Completed"),
-        "quotes": len(by_resource.get("quotes", [])),
-        "quotes_converted": sum(1 for row in by_resource.get("quotes", []) if row.status in {"Accepted", "Closed"}),
-        "invoices": len(by_resource.get("invoices", [])),
-        "payments": len(by_resource.get("payments", [])),
-        "collected": float(performance["totals"]["achieved"]),
-    }
-    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "journey": journey, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
+    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
 
 
 def _date_value(value: Any) -> date | None:
@@ -1468,7 +1532,7 @@ def sales_performance(db: Session) -> dict[str, Any]:
         threshold = float(target_data.get("threshold_percent") or 80)
         incentive = round(achieved * rate / 100, 2) if achievement >= threshold else 0.0
         conversions = db.scalar(select(func.count()).select_from(Lead).where(Lead.owner_id == user.id, Lead.status == "Converted", Lead.archived == False, Lead.updated_at >= datetime.combine(start, datetime.min.time()), Lead.updated_at <= datetime.combine(end, datetime.max.time()))) or 0
-        people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "remaining_to_target": max(target_amount - achieved, 0.0), "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "incentive_rate": rate, "threshold_percent": threshold, "eligible_for_incentive": bool(target_record and achievement >= threshold), "period_start": start.isoformat(), "period_end": end.isoformat(), "target_name": target_record.title if target_record else None, "target_configured": target_record is not None})
+        people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "period_start": start.isoformat(), "period_end": end.isoformat(), "target_configured": target_record is not None})
 
     stuck_leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]), or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
     open_quotes = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False, PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]))).all()
@@ -1847,36 +1911,6 @@ def _ai_related_record(db: Session, related_type: str, related_id: int) -> Base:
 @app.api_route("/api/ai/status", methods=["GET", "HEAD"])
 def ai_status_api() -> dict[str, Any]:
     return ai_status()
-
-
-@app.get("/api/ai/performance")
-def ai_performance(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Return the auditable performance snapshot used by Apex's management view.
-
-    Financial truth stays server-side: achieved revenue comes only from Received/Cleared
-    payments inside the active target period, while incentive eligibility is derived from
-    the configured threshold and rate.
-    """
-    performance = sales_performance(db)
-    people = performance["people"]
-    return {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
-        "calculation_basis": {
-            "achieved": "Received or Cleared payments owned by the salesperson within the active target period",
-            "achievement": "achieved / target × 100",
-            "incentive": "achieved × incentive rate / 100 when achievement meets the threshold; otherwise ₹0",
-            "conversions": "Converted leads owned by the salesperson updated within the active target period",
-        },
-        "people": people,
-        "totals": {
-            "salespeople": len(people),
-            "target": performance["totals"]["target"],
-            "achieved": performance["totals"]["achieved"],
-            "achievement_percent": round((performance["totals"]["achieved"] / performance["totals"]["target"] * 100), 1) if performance["totals"]["target"] else 0.0,
-            "incentive": performance["totals"]["incentive"],
-            "conversions": sum(item["conversions"] for item in people),
-        },
-    }
 
 
 def _require_ai_csrf(request: Request) -> None:
