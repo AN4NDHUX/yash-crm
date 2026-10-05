@@ -9,12 +9,14 @@ Apex CRM is a browser-based FastAPI CRM with core sales, inventory, service, mar
 - Price Books, Vendors, Quotes, Sales Orders, Purchase Orders and Invoices
 - Campaigns, Cases, Solutions and Documents
 - Forecasts, saved Reports and configurable Dashboards
+- Teamspaces with membership management and a notification center
 - Setup for company/personal settings, users, roles, profiles, permissions, sharing rules and audit history
 - Module, field, layout, pipeline, validation-rule and custom-view configuration
 - Workflow, assignment, approval, blueprint, scoring, schedule and webhook configuration foundations
 - Email, quote and invoice templates
 - CSV import/export, duplicate detection and recycle/restore
 - API client, webhook and integration metadata without storing raw secrets
+- Versioned read REST endpoints under `/api/v1` for module discovery and record access
 - Cloud AI Copilot using an OpenAI-compatible open-weight model provider, with live CRM journey analysis and approval-controlled activity creation
 
 Expanded modules use a shared typed platform-record engine. Common relationships, ownership, amount, due date, status, timestamps and archival state are queryable columns; module-specific and custom values are stored as JSON. This avoids a new migration for every custom field while retaining database-enforced links to users, accounts, contacts and deals.
