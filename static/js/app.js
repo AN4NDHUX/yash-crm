@@ -15,7 +15,6 @@ const state = {
   aiExceptionOrder: "deterministic",
   aiRankedItems: null,
   aiSelectedException: null,
-  aiConversationStarted: false,
 };
 
 const PLATFORM_MODULE_ROUTES = [
@@ -200,7 +199,7 @@ function enhanceNavigation() {
   addAfter("invoices", "payments", "Payments");
   addAfter("documents", "site_visits", "Site Visits");
   addAfter("reports", "sales_targets", "Sales Targets & Incentives");
-  addAfter("sales_targets", "ai", "Apex Copilot");
+  addAfter("sales_targets", "ai", "AI Copilot");
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
@@ -287,7 +286,7 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "ai") {
-      setBreadcrumb("Apex Copilot", "Intelligence");
+      setBreadcrumb("Apex AI", "Intelligence");
       content.innerHTML = await aiView();
       bindAI();
       return;
@@ -356,7 +355,6 @@ async function renderRoute() {
 async function dashboardView() {
   const data = await api("/api/dashboard");
   const metrics = data.metrics;
-  const journey = data.journey || {};
   const maxPipeline = Math.max(...data.pipeline.map((row) => row.amount), 1);
   const maxLeads = Math.max(...data.lead_funnel.map((row) => row.count), 1);
   const performancePanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Sales performance</h2><small>Target, collections, conversion and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${performanceTable(data.sales_performance || [])}</div></section>`;
@@ -368,7 +366,6 @@ async function dashboardView() {
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></article>
       <article class="card stat-card"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></article>
     </div>
-    <section class="dashboard-journey card"><div class="dashboard-journey-head"><div><span class="eyebrow">Revenue operations</span><h2>Complete customer journey</h2><small>One source of truth from lead received to incentive earned.</small></div><button class="card-head-link" data-go="/ai">Open Apex Copilot →</button></div><div class="dashboard-journey-track">${[["Leads", journey.leads || metrics.total_leads, "/leads"], ["Visits", journey.visits || 0, "/site_visits"], ["Quotations", journey.quotes || 0, "/quotes"], ["Invoices", journey.invoices || 0, "/invoices"], ["Payments", journey.payments || 0, "/payments"]].map(([label, count, href], index, items) => `<a href="${href}" class="dashboard-journey-step"><span class="journey-step-number">0${index + 1}</span><strong>${count}</strong><small>${label}</small>${index < items.length - 1 ? `<i>→</i>` : ""}</a>`).join("")}</div></section>
     <div class="dashboard-grid management-grid">${performancePanel}${attentionPanel}</div>
     <div class="dashboard-grid">
       <div class="dashboard-column">
@@ -899,48 +896,48 @@ function bindGlobal() {
 }
 
 async function aiView() {
-  const [status, dashboard, performanceReport] = await Promise.all([
-    api("/api/ai/status").catch((error) => ({ configured: false, available: false, model: "offline", detail: error.message, csrf_token: state.aiStatus?.csrf_token })),
-    api("/api/dashboard").catch(() => ({ journey: {}, sales_performance: [], attention: {} })),
-    api("/api/ai/performance").catch(() => ({ people: [], totals: {}, calculation_basis: {} })),
+  // Status and readiness are advisory panels: if one fails (anything but a lost sign-in) the
+  // deterministic queue must still render, so degrade them instead of failing the whole view.
+  const soft = (request, fallback) => request.catch((error) => (error.status === 401 ? Promise.reject(error) : fallback(error)));
+  const [status, readiness, deterministic] = await Promise.all([
+    soft(api("/api/ai/status"), (error) => ({ configured: false, available: false, model: "unavailable", detail: error.message, csrf_token: state.aiStatus?.csrf_token })),
+    soft(api("/api/ai/exceptions/readiness"), (error) => ({ deterministic_ready: false, approval_ready: false, ai_ready: false, checks: [{ key: "readiness", ready: false, detail: error.message }] })),
+    api(`/api/ai/exceptions?view=${encodeURIComponent(state.aiExceptionView)}`),
   ]);
   state.aiStatus = status;
-  if (!state.aiMessages.length) {
-    state.aiMessages = [{ role: "assistant", result: { answer: "I’m Apex, your CRM helpdesk copilot. I can help you triage a customer request, find the next best action, or surface where a revenue journey is getting stuck.", actions: ["Summarize today’s pipeline and stuck leads", "What should I follow up on next?", "Show me who is close to target"], risks: ["I never change invoices, payments, assignments, or incentives without an explicit human approval."], confidence: "high", model: "Apex guardrails", sources: ["Live CRM workspace"], disclaimer: "Apex uses CRM data as context. Verify important decisions before acting." } }];
-  }
-  const journey = dashboard.journey || {};
-  const journeyStages = [
-    ["Leads", journey.leads || 0, "/leads", "✦"], ["Visits", journey.visits || 0, "/site_visits", "◷"], ["Quotes", journey.quotes || 0, "/quotes", "▤"], ["Invoices", journey.invoices || 0, "/invoices", "▣"], ["Payments", journey.payments || 0, "/payments", "₹"],
-  ];
-  const prompts = ["Summarize today’s pipeline and stuck leads", "What should I follow up on next?", "Show me who is close to target", "Draft a safe customer reply for a delayed quotation"];
-  const analytics = (() => { try { return JSON.parse(localStorage.getItem("apex-helpdesk-analytics") || "{}"); } catch { return {}; } })();
-  const intentChips = prompts.map((prompt) => `<button class="apex-prompt" data-apex-prompt="${esc(prompt)}">${esc(prompt)}</button>`).join("");
-  return `${pageHeader("Apex intelligence", "Helpdesk command center", "Triage conversations quickly, keep permissions explicit, and move every customer journey forward.", `<span class="ai-status ${status.available ? "ready" : "offline"}"><i></i>${status.available ? "AI online" : "Safe fallback mode"}</span>`)}
-    <section class="apex-journey card"><div class="apex-journey-head"><div><span class="eyebrow">One source of truth</span><h2>Lead → payment journey</h2></div><small>${journey.collected ? `${formatMoney(journey.collected)} collected from cleared payments` : "Live CRM stage counts"}</small></div><div class="apex-journey-track">${journeyStages.map(([label, count, href, icon], index) => `<a class="apex-stage" href="${href}"><span class="apex-stage-icon">${icon}</span><span><strong>${count}</strong><small>${label}</small></span>${index < journeyStages.length - 1 ? `<b class="apex-stage-line"></b>` : ""}</a>`).join("")}</div></section>
-    ${apexPerformanceMarkup(performanceReport)}
-    <div class="apex-layout"><section class="card apex-chat"><div class="apex-chat-head"><div class="apex-avatar">A</div><div><h2>Ask Apex</h2><small>${status.available ? `Connected to ${esc(status.provider || "your AI provider")}` : "Local helpdesk answers stay available while cloud AI is offline"}</small></div><span class="apex-live-dot"></span></div><div class="apex-conversation" id="apex-conversation">${state.aiMessages.map(aiMessageHtml).join("")}</div><div class="apex-suggestions"><span>Try asking</span>${intentChips}</div><form class="apex-composer" id="apex-composer"><textarea id="apex-question" rows="2" placeholder="Ask about a lead, follow-up, quote, payment, or salesperson…" aria-label="Ask Apex"></textarea><button class="button button-primary" type="submit"><span>Send</span><b>↗</b></button></form><div class="apex-composer-foot"><span>⌘ Enter to send</span><span>Usage today: ${Number(analytics.messages || 0)} messages</span><span class="apex-permission">Human approval required for write actions</span></div></section>
-      <aside class="apex-side"><section class="card apex-side-card"><span class="eyebrow">Triage playbook</span><h3>What Apex can do</h3><div class="apex-capability"><b>01</b><span><strong>Understand intent</strong><small>Classify support, follow-up, payment, and performance questions.</small></span></div><div class="apex-capability"><b>02</b><span><strong>Use live context</strong><small>Connect conversations back to owners, visits, quotations, invoices, and payments.</small></span></div><div class="apex-capability"><b>03</b><span><strong>Escalate safely</strong><small>Suggest a human handoff when evidence is missing, sensitive, or ambiguous.</small></span></div></section><section class="card apex-side-card apex-attention"><div class="apex-side-title"><div><span class="eyebrow">Needs attention</span><h3>Keep revenue moving</h3></div><a href="/dashboard">View all →</a></div>${attentionQueue(dashboard.attention || {})}</section></aside></div>`;
-}
-
-function apexPerformanceMarkup(report) {
-  const people = report.people || [];
-  const totals = report.totals || {};
-  const basis = report.calculation_basis || {};
-  const rows = people.length ? people.map((row) => `<tr><td><strong>${esc(row.name)}</strong><span class="sub-cell">${esc(row.role || "Salesperson")} · ${row.target_configured ? esc(row.period_start) + " to " + esc(row.period_end) : "target not configured"}</span></td><td><strong>${formatMoney(row.target)}</strong><span class="sub-cell">${row.target_name ? esc(row.target_name) : "No active target"}</span></td><td><strong>${formatMoney(row.achieved)}</strong><span class="sub-cell">${formatMoney(row.remaining_to_target)} remaining</span></td><td><div class="apex-achievement"><span class="achievement-meter"><i style="width:${Math.min(Number(row.achievement_percent || 0), 100)}%"></i></span><strong>${Number(row.achievement_percent || 0).toFixed(1)}%</strong></div><span class="sub-cell">${row.eligible_for_incentive ? "Eligible" : `Needs ${Number(row.threshold_percent || 0).toFixed(0)}%`}</span></td><td>${row.conversions}</td><td><strong>${formatMoney(row.incentive)}</strong><span class="sub-cell">${Number(row.incentive_rate || 0).toFixed(2)}% rate</span></td></tr>`).join("") : `<tr><td colspan="6"><div class="empty-state"><span class="empty-icon">◎</span><h3>No active salesperson targets</h3><p>Add targets in Sales Targets & Incentives to generate this report.</p></div></td></tr>`;
-  return `<section class="card apex-performance"><div class="apex-performance-head"><div><span class="eyebrow">Management intelligence</span><h2>Sales performance & incentive report</h2><p>Generated from live CRM payments, converted leads, and active target rules.</p></div><button class="button button-ghost button-small" data-apex-performance-refresh>↻ Recalculate</button></div><div class="apex-performance-summary"><div><span>Team target</span><strong>${formatMoney(totals.target)}</strong></div><div><span>Achieved</span><strong>${formatMoney(totals.achieved)}</strong></div><div><span>Achievement</span><strong>${Number(totals.achievement_percent || 0).toFixed(1)}%</strong></div><div><span>Incentive earned</span><strong>${formatMoney(totals.incentive)}</strong></div><div><span>Conversions</span><strong>${totals.conversions || 0}</strong></div></div><div class="table-wrap"><table class="data-table apex-performance-table"><thead><tr><th>Salesperson</th><th>Target</th><th>Achieved</th><th>Achievement</th><th>Conversions</th><th>Incentive</th></tr></thead><tbody>${rows}</tbody></table></div><details class="apex-formula"><summary>How Apex calculates incentive</summary><div><p><strong>Achieved:</strong> ${esc(basis.achieved || "Received or Cleared payments in the active target period")}</p><p><strong>Achievement:</strong> ${esc(basis.achievement || "achieved / target × 100")}</p><p><strong>Incentive:</strong> ${esc(basis.incentive || "achieved × rate / 100 when threshold is met")}</p><p><strong>Conversions:</strong> ${esc(basis.conversions || "Converted leads in the active target period")}</p></div></details></section>`;
-}
-
-function apexFallback(question, dashboard) {
-  const q = question.toLowerCase();
-  const performance = dashboard.sales_performance || [];
-  if (q.includes("target") || q.includes("achievement") || q.includes("incentive") || q.includes("perform") || q.includes("salesperson")) {
-    const ranked = [...performance].sort((a, b) => Number(b.achievement_percent || 0) - Number(a.achievement_percent || 0));
-    const breakdown = ranked.length ? ranked.map((row) => `${row.name}: ${Number(row.achievement_percent || 0).toFixed(1)}% achieved (${formatMoney(row.achieved)} / ${formatMoney(row.target)}), ${row.conversions} conversions, incentive ${formatMoney(row.incentive)}${row.remaining_to_target ? `, ${formatMoney(row.remaining_to_target)} remaining` : ""}.`).join(" ") : "No active salesperson targets are configured.";
-    return { answer: `Here is the current salesperson breakdown. ${breakdown}`, actions: ["Open Sales Targets & Incentives", "Review the full calculation formula"], risks: ["Incentives are calculated from cleared payments and the active target period only. A salesperson becomes eligible only after reaching the configured threshold."], confidence: ranked.length ? "high" : "medium", model: "Apex fallback", sources: ["Sales performance", "Cleared payments", "Converted leads"], disclaimer: "This answer uses the CRM snapshot available in the browser. Recalculate the report after recording new payments or conversions." };
-  }
-  if (q.includes("follow") || q.includes("stuck") || q.includes("next")) return { answer: "I found the highest-value next step in the AI action queue: review stale leads and quotations nearing validity. Open an item to see its owner, date, and the exact activity Apex recommends. Any task creation stays approval-controlled.", actions: ["Review AI action queue", "Open quotation exceptions"], risks: ["A missing follow-up date is treated as a risk signal, not proof that a customer was ignored."], confidence: "high", model: "Apex fallback", sources: ["Live CRM action queue"], disclaimer: "Verify the record before contacting a customer." };
-  if (q.includes("reply") || q.includes("customer") || q.includes("support") || q.includes("help")) return { answer: "Here is a safe starting point: ‘Thanks for reaching out. I’m checking the latest status with our team and will confirm the next step shortly.’ I can help locate the related lead or quotation, but a human should review any customer-facing message before sending.", actions: ["Find the related lead", "Create a review task"], risks: ["Do not share payment, pricing, or delivery commitments until the CRM record is verified."], confidence: "medium", model: "Apex fallback", sources: ["Helpdesk playbook"], disclaimer: "Draft only — human review required before sending." };
-  return { answer: "I can help with leads, customer conversations, site visits, quotations, invoices, payments, salesperson targets, achievement, and incentives. Try one of the prompts below or ask me to find where a journey is stuck.", actions: ["Summarize today’s pipeline", "Show close-to-target salespeople", "Review quotation follow-ups"], risks: ["If a request involves a financial commitment or permission change, Apex will stop and ask for a human review."], confidence: "medium", model: "Apex fallback", sources: ["Apex helpdesk playbook"], disclaimer: "Apex is decision support, not an autonomous operator." };
+  const ranked = state.aiExceptionOrder === "ai_ranked" && state.aiRankedItems;
+  const data = ranked ? { ...deterministic, items: state.aiRankedItems, order: "ai_ranked" } : deterministic;
+  const viewLabels = { needs_review: "Needs review", acted_on: "Acted on", clarification: "Needs clarification", corrections: "Data corrections", dismissed: "Dismissed", all: "All active" };
+  const views = Object.entries(viewLabels).map(([key, label]) => `<button class="ai-view-tab ${state.aiExceptionView === key ? "active" : ""}" data-ai-view="${key}">${esc(label)}</button>`).join("");
+  const rows = data.items.length ? data.items.map((item) => {
+    const selected = state.aiSelectedException === item.id;
+    return `<article class="ai-exception-row ${selected ? "selected" : ""}" data-ai-exception="${esc(item.id)}">
+      <div class="ai-trigger"><strong>${esc(item.trigger_label)}</strong><small>${esc(item.actionability.replaceAll("_", " "))}</small></div>
+      <div class="ai-quote"><b>${esc(item.quote_label)}</b><small>${esc(item.owner_name || "Owner unavailable")} · ${item.valid_until ? formatDate(item.valid_until) : "No valid date"}</small></div>
+      <div class="ai-amount"><strong>${formatMoney(item.amount)}</strong><small>${esc(item.review_state.replaceAll("_", " "))}</small></div>
+      <button class="button button-small button-ghost" data-ai-review="${esc(item.id)}">Review</button>
+    </article>`;
+  }).join("") : `<div class="ai-empty"><span>✓</span><h3>${state.aiExceptionView === "needs_review" ? "No quotation exceptions need review" : "Nothing in this view"}</h3><p>Evaluated using ${esc(data.rule_version)}. Change the view or review the source quotations if this looks wrong.</p></div>`;
+  const selected = data.items.find((item) => item.id === state.aiSelectedException) || null;
+  const proposal = selected?.proposal;
+  const detail = selected ? `<aside class="card ai-exception-detail" aria-labelledby="ai-detail-title">
+    <div class="card-head"><div class="card-head-copy"><h2 id="ai-detail-title" tabindex="-1">${esc(selected.quote_label)}</h2><small>${esc(selected.trigger_label)} · ${esc(selected.rule_version)}</small></div><button class="card-head-link" data-ai-close-detail>Close</button></div>
+    <div class="card-body ai-detail-body">
+      <dl class="ai-facts"><div><dt>Owner</dt><dd>${esc(selected.owner_name || "Unavailable")}</dd></div><div><dt>Amount at risk</dt><dd>${formatMoney(selected.amount)}</dd></div><div><dt>Validity</dt><dd>${selected.valid_until ? formatDate(selected.valid_until) : "Missing"}</dd></div><div><dt>Source updated</dt><dd>${formatDateTime(selected.source_updated_at)}</dd></div></dl>
+      <p class="ai-rule-reason">Included because ${esc(selected.trigger_label.toLowerCase())}. The CRM rule determined this exception; AI did not.</p>
+      ${selected.rationale ? `<section class="ai-rationale"><strong>Why AI placed it here</strong><p>${esc(selected.rationale)}</p></section>` : ""}
+      ${proposal ? `<section class="ai-task-preview"><span class="eyebrow">Exact Task preview</span><h3>${esc(proposal.subject)}</h3><dl><div><dt>Owner</dt><dd>${esc(proposal.owner_name || `#${proposal.owner_id}`)}</dd></div><div><dt>Priority</dt><dd>${esc(proposal.priority)}</dd></div><div><dt>Due</dt><dd>${formatDateTime(proposal.due_at)}</dd></div><div><dt>Status</dt><dd>Open</dd></div><div><dt>Source</dt><dd>${esc(proposal.source)}</dd></div></dl><p>${esc(proposal.description || "No drafted description")}</p><button class="button button-primary" data-ai-approve-proposal="${esc(proposal.id)}">Create Task</button></section>` : selected.actionability === "actionable" ? `<div class="ai-setup"><strong>Generate a Task proposal</strong><p>Switch to AI-ranked order to request a bounded explanation and exact Task draft.</p></div>` : `<div class="ai-setup"><strong>Task creation is blocked</strong><p>Resolve the ${esc(selected.actionability.replaceAll("_", " "))} condition in the source quotation first.</p></div>`}
+      <div class="ai-review-actions"><button class="button button-ghost button-small" data-ai-review-state="dismissed">Dismiss for 7 days</button><button class="button button-ghost button-small" data-ai-review-state="corrected">Report data/rule issue</button><button class="button button-ghost button-small" data-ai-review-state="unclear">Mark unclear</button><a class="button button-ghost button-small" href="${esc(selected.quote_path || "/quotes")}">Open quotation</a></div>
+    </div>
+  </aside>` : "";
+  const checks = readiness.checks.map((item) => `<li class="${item.ready ? "ready" : "blocked"}"><b>${item.ready ? "✓" : "!"}</b><span>${esc(titleCase(item.key))}<small>${esc(item.detail)}</small></span></li>`).join("");
+  const orderLabel = data.order === "ai_ranked" ? `AI-ranked · ${status.model}` : "Deterministic order";
+  return `${pageHeader("Apex AI · Revenue operations", "Quotation Follow-up Exceptions", `Apex AI monitors quotation validity, explains the next best action, and keeps every review auditable. Evaluated ${formatDateTime(data.evaluated_at)} in ${esc(data.timezone)}.`, `<span class="ai-status ${readiness.deterministic_ready ? "ready" : "offline"}"><i></i>${esc(orderLabel)}</span>`)}
+    <section class="ai-exception-summary"><div><strong>${data.matching_count}</strong><span>matching exceptions</span></div><div><strong>${data.counts.open || 0}</strong><span>need review</span></div><div><strong>${data.actionable_count}</strong><span>Task eligible</span></div><div><strong>${esc(data.rule_version)}</strong><span>rule version</span></div></section>
+    <div class="ai-exception-toolbar card"><div class="ai-view-tabs">${views}</div><div class="ai-order-actions"><button class="button button-ghost button-small ${data.order === "deterministic" ? "active" : ""}" data-ai-deterministic>Deterministic order</button><button class="button button-primary button-small" data-ai-rank ${!readiness.ai_ready || !data.items.length ? "disabled" : ""}>AI-ranked order · 1 request</button></div></div>
+    ${!readiness.ai_ready ? `<div class="ai-fallback-note"><strong>Queue ready · AI ranking unavailable</strong><span>${esc(status.detail)}. All deterministic records remain available.</span></div>` : ""}
+    <div class="ai-exception-layout"><section class="card ai-exception-list" aria-live="polite">${rows}</section>${detail}</div>
+    <details class="card ai-readiness"><summary>Readiness and cloud boundary</summary><div class="card-body"><ul>${checks}</ul><p>Only opaque references, trigger facts, amount, currency, date and owner-active status are sent for ranking. Customer names, notes, messages, attachments and credentials are excluded.</p></div></details>`;
 }
 
 function aiMessageHtml(message, messageIndex) {
@@ -950,7 +947,7 @@ function aiMessageHtml(message, messageIndex) {
   const risks = (result.risks || []).length ? `<div class="ai-result-list risks"><strong>Risks and gaps</strong><ul>${result.risks.map((item) => `<li>${esc(item)}</li>`).join("")}</ul></div>` : "";
   const proposals = (result.proposed_activities || []).length ? `<div class="ai-proposals"><div class="ai-proposals-head"><div><strong>Proposed CRM activities</strong><small>Review each item. Approval writes selected activities to the CRM and audit history.</small></div></div>${result.proposed_activities.map((item, index) => `<label class="ai-proposal"><input type="checkbox" data-ai-proposal-index="${index}" checked ${result.approval_result ? "disabled" : ""}/><span><b>${esc(item.activity_type)} · ${esc(item.subject)}</b><small>${esc(titleCase(item.priority))} · due ${formatDateTime(item.due_at)} · ${esc(titleCase(item.related_type))} #${item.related_id}${item.owner_id ? ` · owner #${item.owner_id}` : ""}</small><em>${esc(item.reason)}</em></span></label>`).join("")}<div class="ai-approval-row">${result.approval_result ? `<span class="ai-approved">✓ ${result.approval_result.created.length} created · ${result.approval_result.skipped.length} duplicate${result.approval_result.skipped.length === 1 ? "" : "s"} skipped</span>` : `<button class="button button-primary button-small" data-ai-approve="${messageIndex}">Review and approve selected</button>`}</div></div>` : "";
   const sources = (result.sources || []).map((item) => `<span>${esc(item)}</span>`).join("");
-  return `<article class="ai-message assistant" data-ai-message="${messageIndex}"><div class="ai-message-head"><span>Apex</span><small>${esc(result.model)} · ${esc(result.confidence)} confidence</small></div><p>${esc(result.answer).replace(/\n/g, "<br>")}</p>${actions}${risks}${proposals}<div class="ai-sources"><strong>CRM context used</strong>${sources}</div><small class="ai-disclaimer">${esc(result.disclaimer)}</small></article>`;
+  return `<article class="ai-message assistant" data-ai-message="${messageIndex}"><div class="ai-message-head"><span>Yash AI</span><small>${esc(result.model)} · ${esc(result.confidence)} confidence</small></div><p>${esc(result.answer).replace(/\n/g, "<br>")}</p>${actions}${risks}${proposals}<div class="ai-sources"><strong>CRM context used</strong>${sources}</div><small class="ai-disclaimer">${esc(result.disclaimer)}</small></article>`;
 }
 
 function renderAIConversation() {
@@ -983,36 +980,78 @@ function bindAIProposalActions() {
 }
 
 function bindAI() {
-  const conversation = $("#apex-conversation");
-  const form = $("#apex-composer");
-  const question = $("#apex-question");
-  if (!form || !conversation) return;
-  const submit = async (text) => {
-    const value = String(text || "").trim();
-    if (value.length < 3) return;
-    state.aiMessages.push({ role: "user", text: value });
-    conversation.innerHTML = state.aiMessages.map(aiMessageHtml).join("") + `<div class="apex-thinking"><i></i><span>Apex is checking CRM context…</span></div>`;
-    conversation.scrollTop = conversation.scrollHeight;
-    question.value = "";
-    const dashboard = await api("/api/dashboard").catch(() => ({ sales_performance: [], attention: {} }));
-    let result;
+  $$('[data-ai-view]').forEach((button) => button.addEventListener("click", async () => {
+    state.aiExceptionView = button.dataset.aiView;
+    state.aiExceptionOrder = "deterministic";
+    state.aiRankedItems = null;
+    state.aiSelectedException = null;
+    await renderRoute();
+  }));
+  $$('[data-ai-review]').forEach((button) => button.addEventListener("click", async () => {
+    state.aiSelectedException = button.dataset.aiReview;
+    await renderRoute();
+    $("#ai-detail-title")?.focus();
+  }));
+  $("[data-ai-close-detail]")?.addEventListener("click", async () => {
+    const previous = state.aiSelectedException;
+    state.aiSelectedException = null;
+    await renderRoute();
+    $(`[data-ai-review="${previous}"]`)?.focus();
+  });
+  $("[data-ai-deterministic]")?.addEventListener("click", async () => {
+    state.aiExceptionOrder = "deterministic";
+    await renderRoute();
+  });
+  $("[data-ai-rank]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = "Ranking complete set…";
     try {
-      const response = await api("/api/ai/chat", { method: "POST", body: JSON.stringify({ question: value }) });
-      result = { ...response, model: response.model || "Apex", sources: response.sources || ["Live CRM workspace"] };
+      const current = await api(`/api/ai/exceptions?view=${encodeURIComponent(state.aiExceptionView)}`);
+      const result = await api("/api/ai/exceptions/rank", { method: "POST", body: JSON.stringify({ occurrence_ids: current.items.map((item) => item.id) }) });
+      state.aiRankedItems = result.items;
+      state.aiExceptionOrder = "ai_ranked";
+      if (state.aiSelectedException && !result.items.some((item) => item.id === state.aiSelectedException)) state.aiSelectedException = null;
+      await renderRoute();
+      toast("AI ranking applied", `Validated all ${result.items.length} exception references. Deterministic order remains available.`);
     } catch (error) {
-      result = apexFallback(value, dashboard);
-      result.disclaimer = `${result.disclaimer} Cloud response unavailable: ${error.message}`;
+      state.aiExceptionOrder = "deterministic";
+      state.aiRankedItems = null;
+      toast("AI ranking unavailable", error.message, "error");
+      await renderRoute();
     }
-    state.aiMessages.push({ role: "assistant", result });
-    try { const stats = JSON.parse(localStorage.getItem("apex-helpdesk-analytics") || "{}"); stats.messages = Number(stats.messages || 0) + 1; stats.last_intent = value.slice(0, 80); localStorage.setItem("apex-helpdesk-analytics", JSON.stringify(stats)); } catch {}
-    conversation.innerHTML = state.aiMessages.map(aiMessageHtml).join("");
-    bindAIProposalActions();
-    conversation.scrollTop = conversation.scrollHeight;
-  };
-  form.addEventListener("submit", (event) => { event.preventDefault(); submit(question.value); });
-  question.addEventListener("keydown", (event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") { event.preventDefault(); submit(question.value); } });
-  $$('[data-apex-prompt]').forEach((button) => button.addEventListener("click", () => submit(button.dataset.apexPrompt)));
-  $("[data-apex-performance-refresh]")?.addEventListener("click", () => navigate("/ai"));
+  });
+  $("[data-ai-approve-proposal]")?.addEventListener("click", async (event) => {
+    const proposalId = event.currentTarget.dataset.aiApproveProposal;
+    const confirmed = await confirmAction("Create this Task?", "This creates one persistent CRM Task using the exact owner, due date, priority, source and text shown above. The action is audited.", "Create Task");
+    if (!confirmed) return;
+    event.currentTarget.disabled = true;
+    try {
+      const result = await api(`/api/ai/proposals/${encodeURIComponent(proposalId)}/approve`, { method: "POST", body: "{}" });
+      state.aiExceptionOrder = "deterministic";
+      state.aiRankedItems = null;
+      state.aiSelectedException = null;
+      await renderRoute();
+      toast(result.duplicate ? "Existing Task returned" : "Task created", `${result.activity.subject} · Task #${result.activity.id}`);
+    } catch (error) {
+      event.currentTarget.disabled = false;
+      toast(error.code === "APPROVAL_NEEDS_RECONCILIATION" ? "Task outcome needs checking" : "Task was not created", error.message, "error");
+    }
+  });
+  $$('[data-ai-review-state]').forEach((button) => button.addEventListener("click", async () => {
+    const label = titleCase(button.dataset.aiReviewState);
+    const reason = window.prompt(`${label}: enter a short reason or note.`);
+    if (!reason?.trim()) return;
+    button.disabled = true;
+    try {
+      await api(`/api/ai/exceptions/${encodeURIComponent(state.aiSelectedException)}/review`, { method: "PATCH", body: JSON.stringify({ state: button.dataset.aiReviewState, reason: reason.trim() }) });
+      state.aiSelectedException = null;
+      state.aiRankedItems = null;
+      state.aiExceptionOrder = "deterministic";
+      await renderRoute();
+      toast("Review recorded", `${label} was written to the exception audit history.`);
+    } catch (error) { button.disabled = false; toast("Could not record review", error.message, "error"); }
+  }));
 }
 
 async function settingsView(tab) {
@@ -1102,4 +1141,225 @@ init();
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || ["localhost", "127.0.0.1"].includes(location.hostname))) {
   navigator.serviceWorker.register("/sw.js").catch(() => { /* installability is optional */ });
+
+// =============================================================================
+// UI RESTRUCTURING - Related Records to Left, Settings Consolidation
+// =============================================================================
+
+// Reposition related records to left side
+function initializeLeftSidebar() {
+  const relatedPanels = document.querySelectorAll('.related-list, .related-panel, [data-related]');
+  relatedPanels.forEach(panel => {
+    panel.classList.add('sidebar-left');
+    const mainContent = panel.closest('.record-detail');
+    if (mainContent) {
+      mainContent.style.gridTemplateColumns = '300px 1fr';
+      mainContent.style.gridGap = '2rem';
+      panel.style.order = '-1';
+      panel.style.gridColumn = '1';
+    }
+  });
+}
+
+// Consolidate settings navigation
+function consolidateSettingsNav() {
+  const generalSetup = document.querySelector('[href*="/general-setup"], [data-setup="general"]');
+  const settings = document.querySelector('[href*="/settings"], [data-setup="settings"]');
+  
+  if (generalSetup || settings) {
+    const navContainer = document.createElement('nav');
+    navContainer.className = 'settings-nav-consolidated';
+    
+    const sections = [
+      { name: 'General', id: 'general', items: ['Organization', 'Users', 'Timezone', 'Email'] },
+      { name: 'Customization', id: 'customization', items: ['Modules & Fields', 'Wizards', 'Home Page', 'Templates'] }
+    ];
+    
+    const navHtml = sections.map(section => `
+      <div class="settings-section-nav">
+        <h3>${section.name}</h3>
+        <ul>
+          ${section.items.map(item => `<li><a href="#${section.id}-${item.toLowerCase().replace(/\s/g, '-')}">${item}</a></li>`).join('')}
+        </ul>
+      </div>
+    `).join('');
+    
+    navContainer.innerHTML = navHtml;
+    const settingsPage = document.querySelector('[data-page="settings"]');
+    if (settingsPage) {
+      settingsPage.prepend(navContainer);
+    }
+  }
+}
+
+// Initialize customization section
+function initializeCustomization() {
+  const customizationPanel = document.querySelector('[data-section="customization"]');
+  if (customizationPanel) {
+    customizationPanel.classList.add('customization-section');
+    
+    const customizations = [
+      {
+        id: 'modules-fields',
+        title: 'Modules and Fields',
+        icon: 'grid',
+        description: 'Create and manage custom modules and fields',
+        features: [
+          'Create custom modules',
+          'Add custom fields',
+          'Define field types',
+          'Manage permissions',
+          'Set default values'
+        ]
+      },
+      {
+        id: 'wizards',
+        title: 'Wizards',
+        icon: 'wand',
+        description: 'Create step-by-step automation workflows',
+        features: [
+          'Create module wizards',
+          'Define workflow steps',
+          'Conditional logic',
+          'Field mapping',
+          'Test flows'
+        ]
+      },
+      {
+        id: 'home-page',
+        title: 'Customize Home Page',
+        icon: 'home',
+        description: 'Personalize your dashboard and widgets',
+        features: [
+          'Drag-drop widgets',
+          'Analytics dashboards',
+          'Quick shortcuts',
+          'Notifications',
+          'Performance metrics'
+        ]
+      },
+      {
+        id: 'templates',
+        title: 'Templates',
+        icon: 'document',
+        description: 'Manage email and document templates',
+        features: [
+          'Email templates',
+          'Document templates',
+          'Template variables',
+          'Permissions',
+          'Multi-language'
+        ]
+      }
+    ];
+    
+    const cardsHtml = customizations.map(item => `
+      <div class="customization-card" data-custom-type="${item.id}">
+        <h3>${item.title}</h3>
+        <p>${item.description}</p>
+        <ul class="feature-list">
+          ${item.features.map(feat => `<li>• ${feat}</li>`).join('')}
+        </ul>
+        <button class="btn btn-secondary" onclick="openCustomizationForm('${item.id}')">Configure</button>
+      </div>
+    `).join('');
+    
+    customizationPanel.innerHTML = cardsHtml;
+  }
+}
+
+// Open customization form
+function openCustomizationForm(customType) {
+  const formModal = document.createElement('div');
+  formModal.className = 'modal customization-modal';
+  formModal.innerHTML = `
+    <div class="modal-content">
+      <h2>Configure ${customType.replace('-', ' ').toUpperCase()}</h2>
+      <p>Customization form for ${customType} will load here.</p>
+      <div class="modal-actions">
+        <button class="btn btn-primary">Save</button>
+        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(formModal);
+}
+
+// Performance tracking UI
+function loadPerformanceMetrics() {
+  const performancePanel = document.querySelector('[data-section="performance"]');
+  if (performancePanel) {
+    fetch('/api/ai/performance')
+      .then(r => r.json())
+      .then(data => renderPerformanceMetrics(data, performancePanel))
+      .catch(err => console.error('Performance metrics error:', err));
+  }
+}
+
+function renderPerformanceMetrics(data, container) {
+  const totals = data.totals || {};
+  const metricsHtml = `
+    <div class="performance-metrics">
+      <div class="metric-card">
+        <div class="metric-label">Salespeople</div>
+        <div class="metric-value">${totals.salespeople || 0}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Team Target</div>
+        <div class="metric-value">₹${(totals.target || 0).toFixed(0)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Achieved</div>
+        <div class="metric-value">₹${(totals.achieved || 0).toFixed(0)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Achievement %</div>
+        <div class="metric-value">${(totals.achievement_percent || 0).toFixed(1)}%</div>
+      </div>
+    </div>
+  `;
+  
+  const tableHtml = `
+    <table class="performance-table">
+      <thead>
+        <tr>
+          <th>Salesperson</th>
+          <th>Target</th>
+          <th>Achieved</th>
+          <th>%</th>
+          <th>Conversions</th>
+          <th>Incentive</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(data.people || []).map(person => `
+          <tr>
+            <td>${person.name}</td>
+            <td>₹${(person.target || 0).toFixed(0)}</td>
+            <td>₹${(person.achieved || 0).toFixed(0)}</td>
+            <td>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: ${Math.min(person.achievement_percent, 100)}%"></div>
+              </div>
+              ${(person.achievement_percent || 0).toFixed(1)}%
+            </td>
+            <td>${person.conversions || 0}</td>
+            <td>₹${(person.incentive || 0).toFixed(2)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+  
+  container.innerHTML = metricsHtml + tableHtml;
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', () => {
+  initializeLeftSidebar();
+  consolidateSettingsNav();
+  initializeCustomization();
+  loadPerformanceMetrics();
+});
+
 }
