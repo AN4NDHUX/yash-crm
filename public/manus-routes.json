@@ -114,46 +114,19 @@
     },
     {
       "path": "/ai",
-      "name": "Apex AI",
-      "title": "Apex AI",
+      "name": "Apex AI Copilot",
+      "title": "Apex AI Copilot",
       "icon": "sparkles",
       "workspace": "ai",
       "category": "Intelligence"
     },
     {
-      "path": "/ai/performance",
-      "name": "Performance Tracking",
-      "icon": "chart-bar",
+      "path": "/ai/exceptions",
+      "name": "Quotation Exceptions",
+      "title": "Quotation Exceptions",
+      "icon": "alert-triangle",
       "workspace": "ai",
-      "category": "Analytics"
-    },
-    {
-      "path": "/settings",
-      "name": "Settings",
-      "icon": "cog",
-      "category": "System",
-      "sections": [
-        {
-          "id": "general",
-          "name": "General",
-          "items": [
-            "Organization",
-            "Users",
-            "Timezone",
-            "Email Settings"
-          ]
-        },
-        {
-          "id": "customization",
-          "name": "Customization",
-          "items": [
-            "Modules and Fields",
-            "Wizards",
-            "Customize Home Page",
-            "Templates"
-          ]
-        }
-      ]
+      "category": "Intelligence"
     }
   ]
 }

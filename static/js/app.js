@@ -286,9 +286,15 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "ai") {
-      setBreadcrumb("Apex AI", "Intelligence");
-      content.innerHTML = await aiView();
-      bindAI();
+      if (parts[1] === "exceptions") {
+        setBreadcrumb("Quotation Exceptions", "Apex AI Copilot");
+        content.innerHTML = await aiView();
+        bindAI();
+      } else {
+        setBreadcrumb("AI Copilot", "Intelligence");
+        content.innerHTML = await aiDashboardView();
+        bindDashboard();
+      }
       return;
     }
     if (parts[0] === "setup") {
@@ -895,6 +901,28 @@ function bindGlobal() {
   document.addEventListener("click", (event) => { const result = event.target.closest("[data-search-route]"); if (result) { $("#search-results").classList.remove("open"); searchInput.value = ""; navigate(result.dataset.searchRoute); } else if (!event.target.closest("#global-search-wrap")) $("#search-results").classList.remove("open"); });
 }
 
+async function aiDashboardView() {
+  const data = await api("/api/ai/dashboard");
+  const totals = data.totals || {};
+  const journey = data.journey || [];
+  const performance = data.performance || {};
+  const insight = data.insight;
+  const stat = (label, value, detail, tone = "") => `<article class="card ai-cockpit-stat ${tone}"><span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(detail)}</small></article>`;
+  const journeyHtml = journey.map((item, index) => `<button class="ai-journey-stage" data-go="/${esc(item.key === "leads" ? "leads" : item.key === "conversations" ? "activities/tasks" : item.key)}"><span class="ai-journey-index">${index + 1}</span><strong>${esc(item.label)}</strong><small>${item.count} · ${esc(item.detail)}</small></button>`).join('<span class="ai-journey-arrow" aria-hidden="true">→</span>');
+  const people = performance.people || [];
+  const attention = performance.attention || {};
+  const blockers = [
+    ...(attention.stuck_leads || []).map((item) => `<button class="related-item" data-go="/leads/${item.id}"><span class="related-dot">!</span><span class="related-main"><strong>${esc(item.name)}</strong><small>Lead stuck at ${esc(item.status)}${item.next_follow_up ? ` · follow-up ${formatDate(item.next_follow_up)}` : ""}</small></span><span>›</span></button>`),
+    ...(attention.quotes_needing_follow_up || []).map((item) => `<button class="related-item" data-go="/quotes"><span class="related-dot">₹</span><span class="related-main"><strong>${esc(item.name)}</strong><small>${esc(item.status)} · quotation needs follow-up</small></span><span>›</span></button>`),
+  ].join("");
+  const insightHtml = insight ? `<div class="ai-copilot-answer"><span class="eyebrow">GPT-4o mini · ${esc(insight.confidence || "advisory")} confidence</span><p>${esc(insight.answer || "").replace(/\n/g, "<br>")}</p>${(insight.actions || []).length ? `<strong>Recommended next actions</strong><ul>${insight.actions.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${(insight.risks || []).length ? `<strong>Risks and gaps</strong><ul>${insight.risks.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}</div>` : `<div class="ai-copilot-answer ai-copilot-muted"><strong>GPT-4o mini is not connected</strong><p>${esc(data.insight_error || "Add the OpenAI configuration in Railway variables to enable management readouts.")}</p></div>`;
+  return `${pageHeader("Intelligence", "Apex AI Copilot", "One source of truth for the complete Lead → Visit → Quotation → Invoice → Payment → Incentive journey.", `<button class="button button-ghost" data-go="/ai/exceptions">Quotation exceptions</button><button class="button button-primary" data-go="/settings/general">Settings &amp; General Setup</button>`)}
+    <section class="ai-cockpit-stats">${stat("Leads received", totals.leads || 0, `${totals.assigned_leads || 0} assigned`)}${stat("Conversations", totals.conversations || 0, `${totals.open_followups || 0} open follow-ups`)}${stat("Team target", formatMoney(performance.totals?.target || 0), "active sales targets", "blue")}${stat("Achieved", formatMoney(performance.totals?.achieved || 0), "from cleared payments", "green")}${stat("Collected", formatMoney(totals.collected || 0), "received and cleared", "green")}${stat("Incentives", formatMoney(performance.totals?.incentive || 0), "earned by performance", "amber")}</section>
+    <section class="card ai-journey-card"><div class="card-head"><div class="card-head-copy"><h2>Complete revenue journey</h2><small>Live counts from every connected CRM module</small></div><span class="ai-live-pill"><i></i>Live data</span></div><div class="ai-journey-track">${journeyHtml}</div></section>
+    <div class="dashboard-grid management-grid"><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Management readout</h2><small>GPT-4o mini analysis grounded in CRM records</small></div><span class="ai-model-badge">gpt-4o-mini</span></div><div class="card-body">${insightHtml}</div></section><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Attention queue</h2><small>Where revenue is getting stuck</small></div></div><div class="card-body">${blockers || emptyState("✓", "Nothing urgent", "Leads and quotations are up to date.")}</div></section></div>
+    <section class="card"><div class="card-head"><div class="card-head-copy"><h2>Individual sales performance</h2><small>Target vs achievement, conversions and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${people.length ? performanceTable(people) : emptyState("◎", "No active salespeople", "Add active users and sales targets to see performance.")}</div></section>`;
+}
+
 async function aiView() {
   // Status and readiness are advisory panels: if one fails (anything but a lost sign-in) the
   // deterministic queue must still render, so degrade them instead of failing the whole view.
@@ -932,7 +960,7 @@ async function aiView() {
   </aside>` : "";
   const checks = readiness.checks.map((item) => `<li class="${item.ready ? "ready" : "blocked"}"><b>${item.ready ? "✓" : "!"}</b><span>${esc(titleCase(item.key))}<small>${esc(item.detail)}</small></span></li>`).join("");
   const orderLabel = data.order === "ai_ranked" ? `AI-ranked · ${status.model}` : "Deterministic order";
-  return `${pageHeader("Apex AI · Revenue operations", "Quotation Follow-up Exceptions", `Apex AI monitors quotation validity, explains the next best action, and keeps every review auditable. Evaluated ${formatDateTime(data.evaluated_at)} in ${esc(data.timezone)}.`, `<span class="ai-status ${readiness.deterministic_ready ? "ready" : "offline"}"><i></i>${esc(orderLabel)}</span>`)}
+  return `${pageHeader("Revenue operations", "Quotation Follow-up Exceptions", `Open quotations with missing, elapsed or upcoming validity dates within 7 days. Evaluated ${formatDateTime(data.evaluated_at)} in ${esc(data.timezone)}.`, `<span class="ai-status ${readiness.deterministic_ready ? "ready" : "offline"}"><i></i>${esc(orderLabel)}</span>`)}
     <section class="ai-exception-summary"><div><strong>${data.matching_count}</strong><span>matching exceptions</span></div><div><strong>${data.counts.open || 0}</strong><span>need review</span></div><div><strong>${data.actionable_count}</strong><span>Task eligible</span></div><div><strong>${esc(data.rule_version)}</strong><span>rule version</span></div></section>
     <div class="ai-exception-toolbar card"><div class="ai-view-tabs">${views}</div><div class="ai-order-actions"><button class="button button-ghost button-small ${data.order === "deterministic" ? "active" : ""}" data-ai-deterministic>Deterministic order</button><button class="button button-primary button-small" data-ai-rank ${!readiness.ai_ready || !data.items.length ? "disabled" : ""}>AI-ranked order · 1 request</button></div></div>
     ${!readiness.ai_ready ? `<div class="ai-fallback-note"><strong>Queue ready · AI ranking unavailable</strong><span>${esc(status.detail)}. All deterministic records remain available.</span></div>` : ""}
@@ -1141,225 +1169,4 @@ init();
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || ["localhost", "127.0.0.1"].includes(location.hostname))) {
   navigator.serviceWorker.register("/sw.js").catch(() => { /* installability is optional */ });
-
-// =============================================================================
-// UI RESTRUCTURING - Related Records to Left, Settings Consolidation
-// =============================================================================
-
-// Reposition related records to left side
-function initializeLeftSidebar() {
-  const relatedPanels = document.querySelectorAll('.related-list, .related-panel, [data-related]');
-  relatedPanels.forEach(panel => {
-    panel.classList.add('sidebar-left');
-    const mainContent = panel.closest('.record-detail');
-    if (mainContent) {
-      mainContent.style.gridTemplateColumns = '300px 1fr';
-      mainContent.style.gridGap = '2rem';
-      panel.style.order = '-1';
-      panel.style.gridColumn = '1';
-    }
-  });
-}
-
-// Consolidate settings navigation
-function consolidateSettingsNav() {
-  const generalSetup = document.querySelector('[href*="/general-setup"], [data-setup="general"]');
-  const settings = document.querySelector('[href*="/settings"], [data-setup="settings"]');
-  
-  if (generalSetup || settings) {
-    const navContainer = document.createElement('nav');
-    navContainer.className = 'settings-nav-consolidated';
-    
-    const sections = [
-      { name: 'General', id: 'general', items: ['Organization', 'Users', 'Timezone', 'Email'] },
-      { name: 'Customization', id: 'customization', items: ['Modules & Fields', 'Wizards', 'Home Page', 'Templates'] }
-    ];
-    
-    const navHtml = sections.map(section => `
-      <div class="settings-section-nav">
-        <h3>${section.name}</h3>
-        <ul>
-          ${section.items.map(item => `<li><a href="#${section.id}-${item.toLowerCase().replace(/\s/g, '-')}">${item}</a></li>`).join('')}
-        </ul>
-      </div>
-    `).join('');
-    
-    navContainer.innerHTML = navHtml;
-    const settingsPage = document.querySelector('[data-page="settings"]');
-    if (settingsPage) {
-      settingsPage.prepend(navContainer);
-    }
-  }
-}
-
-// Initialize customization section
-function initializeCustomization() {
-  const customizationPanel = document.querySelector('[data-section="customization"]');
-  if (customizationPanel) {
-    customizationPanel.classList.add('customization-section');
-    
-    const customizations = [
-      {
-        id: 'modules-fields',
-        title: 'Modules and Fields',
-        icon: 'grid',
-        description: 'Create and manage custom modules and fields',
-        features: [
-          'Create custom modules',
-          'Add custom fields',
-          'Define field types',
-          'Manage permissions',
-          'Set default values'
-        ]
-      },
-      {
-        id: 'wizards',
-        title: 'Wizards',
-        icon: 'wand',
-        description: 'Create step-by-step automation workflows',
-        features: [
-          'Create module wizards',
-          'Define workflow steps',
-          'Conditional logic',
-          'Field mapping',
-          'Test flows'
-        ]
-      },
-      {
-        id: 'home-page',
-        title: 'Customize Home Page',
-        icon: 'home',
-        description: 'Personalize your dashboard and widgets',
-        features: [
-          'Drag-drop widgets',
-          'Analytics dashboards',
-          'Quick shortcuts',
-          'Notifications',
-          'Performance metrics'
-        ]
-      },
-      {
-        id: 'templates',
-        title: 'Templates',
-        icon: 'document',
-        description: 'Manage email and document templates',
-        features: [
-          'Email templates',
-          'Document templates',
-          'Template variables',
-          'Permissions',
-          'Multi-language'
-        ]
-      }
-    ];
-    
-    const cardsHtml = customizations.map(item => `
-      <div class="customization-card" data-custom-type="${item.id}">
-        <h3>${item.title}</h3>
-        <p>${item.description}</p>
-        <ul class="feature-list">
-          ${item.features.map(feat => `<li>• ${feat}</li>`).join('')}
-        </ul>
-        <button class="btn btn-secondary" onclick="openCustomizationForm('${item.id}')">Configure</button>
-      </div>
-    `).join('');
-    
-    customizationPanel.innerHTML = cardsHtml;
-  }
-}
-
-// Open customization form
-function openCustomizationForm(customType) {
-  const formModal = document.createElement('div');
-  formModal.className = 'modal customization-modal';
-  formModal.innerHTML = `
-    <div class="modal-content">
-      <h2>Configure ${customType.replace('-', ' ').toUpperCase()}</h2>
-      <p>Customization form for ${customType} will load here.</p>
-      <div class="modal-actions">
-        <button class="btn btn-primary">Save</button>
-        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Cancel</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(formModal);
-}
-
-// Performance tracking UI
-function loadPerformanceMetrics() {
-  const performancePanel = document.querySelector('[data-section="performance"]');
-  if (performancePanel) {
-    fetch('/api/ai/performance')
-      .then(r => r.json())
-      .then(data => renderPerformanceMetrics(data, performancePanel))
-      .catch(err => console.error('Performance metrics error:', err));
-  }
-}
-
-function renderPerformanceMetrics(data, container) {
-  const totals = data.totals || {};
-  const metricsHtml = `
-    <div class="performance-metrics">
-      <div class="metric-card">
-        <div class="metric-label">Salespeople</div>
-        <div class="metric-value">${totals.salespeople || 0}</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Team Target</div>
-        <div class="metric-value">₹${(totals.target || 0).toFixed(0)}</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Achieved</div>
-        <div class="metric-value">₹${(totals.achieved || 0).toFixed(0)}</div>
-      </div>
-      <div class="metric-card">
-        <div class="metric-label">Achievement %</div>
-        <div class="metric-value">${(totals.achievement_percent || 0).toFixed(1)}%</div>
-      </div>
-    </div>
-  `;
-  
-  const tableHtml = `
-    <table class="performance-table">
-      <thead>
-        <tr>
-          <th>Salesperson</th>
-          <th>Target</th>
-          <th>Achieved</th>
-          <th>%</th>
-          <th>Conversions</th>
-          <th>Incentive</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${(data.people || []).map(person => `
-          <tr>
-            <td>${person.name}</td>
-            <td>₹${(person.target || 0).toFixed(0)}</td>
-            <td>₹${(person.achieved || 0).toFixed(0)}</td>
-            <td>
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: ${Math.min(person.achievement_percent, 100)}%"></div>
-              </div>
-              ${(person.achievement_percent || 0).toFixed(1)}%
-            </td>
-            <td>${person.conversions || 0}</td>
-            <td>₹${(person.incentive || 0).toFixed(2)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
-  
-  container.innerHTML = metricsHtml + tableHtml;
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
-  initializeLeftSidebar();
-  consolidateSettingsNav();
-  initializeCustomization();
-  loadPerformanceMetrics();
-});
-
 }

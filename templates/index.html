@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="preload" href="/static/threeui/brand-orbs-loader.html?v=20261001-logo-orbs" as="document" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261001-brand-orbs-fallback" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261005-apex-ai-copilot" />
 </head>
 <body>
   <div class="app-shell">
@@ -63,10 +63,10 @@
         <a href="/reports" data-route="reports">Reports</a>
 
         <span class="nav-label nav-label-settings">Intelligence</span>
-        <a href="/ai" data-route="ai"><span aria-hidden="true">✦</span> Apex AI</a>
-        <span class="nav-label nav-label-settings">Setup</span>
-        <a href="/setup/company_details" data-route="setup">General Setup</a>
-        <a href="/settings/general" data-route="settings">Settings</a>
+        <a href="/ai" data-route="ai"><span aria-hidden="true">✦</span> Apex AI Copilot</a>
+
+        <span class="nav-label nav-label-settings">Administration</span>
+        <a href="/settings/general" data-route="settings">Settings &amp; General Setup</a>
       </nav>
 
       <div class="sidebar-footer">
@@ -195,7 +195,7 @@
   </div>
 
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/app.js?v=20261005-apex-ai-copilot"></script>
   <script>
     (() => {
       const syncSidebarRoute = () => {
@@ -342,9 +342,5 @@
       });
     })();
   </script>
-
-<div id="customization-section" data-section="customization" class="customization-section">
-  <!-- Customization cards will be populated by JavaScript -->
-</div>
 </body>
 </html>
