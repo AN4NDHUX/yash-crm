@@ -5279,13 +5279,13 @@ def _cpq_rule_matches(rule: PlatformRecord, product: Product, quantity: float, c
 
 
 @app.get("/api/cpq/catalog")
-def cpq_catalog(db: Session = Depends(get_db)) -> dict[str, Any]:
+def cpq_catalog(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     products = db.scalars(select(Product).where(Product.archived == False, Product.status == "Active").order_by(Product.name)).all()
     return {"products": [serialize(item, db) for item in products], "configurators": _developer_records(db, "product_configurators"), "price_rules": _developer_records(db, "price_rules"), "guided_selling": _developer_records(db, "guided_selling")}
 
 
 @app.post("/api/cpq/price")
-def cpq_price(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def cpq_price(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     raw_lines = payload.get("lines") or []
     context = payload.get("context") or {}
     if not isinstance(raw_lines, list) or not raw_lines:
@@ -5323,27 +5323,28 @@ def cpq_price(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[st
 
 
 @app.post("/api/cpq/quotes", status_code=201)
-def create_cpq_quote(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
-    priced = cpq_price(payload, db)
+def create_cpq_quote(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_record_limit(db, actor)
+    priced = cpq_price(payload, db, actor)
     values = {"name": str(payload.get("name") or "CPQ quote").strip(), "amount": priced["total"], "status": "Draft", "terms": payload.get("terms") or "Prices valid for 30 days.", "line_items": priced["lines"], "tax_rate": priced["tax_rate"], "subtotal": priced["subtotal"], "currency": priced["currency"]}
-    record = PlatformRecord(resource="quotes", title=values["name"], status="Draft", amount=priced["total"], data=values)
+    record = PlatformRecord(resource="quotes", title=values["name"], status="Draft", amount=priced["total"], owner_id=actor.id, data=values)
     db.add(record)
     db.flush()
     ensure_transaction_number(record)
-    add_audit(db, "cpq_quote_created", "quotes", record.id, f"Created CPQ quote '{record.title}'", after=serialize_platform(record, db))
+    add_audit(db, "cpq_quote_created", "quotes", record.id, f"Created CPQ quote '{record.title}'", after=serialize_platform(record, db, actor), actor_id=actor.id)
     db.commit()
     db.refresh(record)
-    return {"quote": serialize_platform(record, db), "pricing": priced}
+    return {"quote": serialize_platform(record, db, actor), "pricing": priced}
 
 
 @app.get("/api/admin/security/profiles")
-def list_permission_profiles(db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_permission_profiles(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
     items = db.scalars(select(PermissionProfile).order_by(PermissionProfile.name)).all()
     return {"items": [serialize(item) for item in items], "total": len(items)}
 
 
 @app.post("/api/admin/security/profiles", status_code=201)
-def create_permission_profile(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_permission_profile(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
     name = str(payload.get("name") or "").strip()
     if not name:
         raise HTTPException(422, "Profile name is required")
@@ -5352,14 +5353,14 @@ def create_permission_profile(payload: dict[str, Any], db: Session = Depends(get
     item = PermissionProfile(name=name, description=payload.get("description"), grants=payload.get("grants") or {})
     db.add(item)
     db.flush()
-    add_audit(db, "create", "permission_profiles", item.id, f"Created permission profile '{item.name}'", after=serialize(item))
+    add_audit(db, "create", "permission_profiles", item.id, f"Created permission profile '{item.name}'", after=serialize(item), actor_id=actor.id)
     db.commit()
     db.refresh(item)
     return serialize(item)
 
 
 @app.get("/api/admin/security/sharing")
-def list_sharing_policies(db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_sharing_policies(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
     items = db.scalars(select(SharingPolicy).order_by(SharingPolicy.module, SharingPolicy.name)).all()
     return {"items": [serialize(item) for item in items], "total": len(items)}
 
@@ -5382,19 +5383,17 @@ def serialize_teamspace(teamspace: Teamspace, db: Session) -> dict[str, Any]:
 
 
 @app.get("/api/teamspaces")
-def list_teamspaces(db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_teamspaces(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     rows = db.scalars(select(Teamspace).where(Teamspace.archived == False).order_by(Teamspace.name)).all()
     return {"items": [serialize_teamspace(row, db) for row in rows]}
 
 
 @app.post("/api/teamspaces", status_code=201)
-def create_teamspace(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_teamspace(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     name = str(payload.get("name") or "").strip()
     if not name:
         raise HTTPException(422, "Teamspace name is required")
-    owner_id = int(payload.get("owner_id") or (db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)) or 0))
-    if not db.get(User, owner_id):
-        raise HTTPException(422, "Select a valid owner")
+    owner_id = actor.id
     teamspace = Teamspace(name=name, icon=str(payload.get("icon") or "◈")[:40], description=payload.get("description"), owner_id=owner_id, modules=list(payload.get("modules") or []), folders=list(payload.get("folders") or []))
     db.add(teamspace)
     db.flush()
@@ -5406,7 +5405,7 @@ def create_teamspace(payload: dict[str, Any], db: Session = Depends(get_db)) -> 
 
 
 @app.get("/api/teamspaces/{teamspace_id}")
-def get_teamspace(teamspace_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_teamspace(teamspace_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     teamspace = db.scalar(select(Teamspace).where(Teamspace.id == teamspace_id, Teamspace.archived == False))
     if teamspace is None:
         raise HTTPException(404, "Teamspace not found")
@@ -5414,7 +5413,7 @@ def get_teamspace(teamspace_id: int, db: Session = Depends(get_db)) -> dict[str,
 
 
 @app.patch("/api/teamspaces/{teamspace_id}")
-def update_teamspace(teamspace_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_teamspace(teamspace_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     teamspace = db.get(Teamspace, teamspace_id)
     if teamspace is None or teamspace.archived:
         raise HTTPException(404, "Teamspace not found")
@@ -5431,11 +5430,13 @@ def update_teamspace(teamspace_id: int, payload: dict[str, Any], db: Session = D
 
 
 @app.post("/api/teamspaces/{teamspace_id}/members")
-def add_teamspace_member(teamspace_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def add_teamspace_member(teamspace_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     teamspace = db.get(Teamspace, teamspace_id)
     user_id = int(payload.get("user_id") or 0)
-    if teamspace is None or teamspace.archived or not db.get(User, user_id):
-        raise HTTPException(404, "Teamspace or user not found")
+    if teamspace is None or teamspace.archived or teamspace.owner_id != actor.id:
+        raise HTTPException(404, "Teamspace not found")
+    if user_id != actor.id:
+        raise HTTPException(422, "Private workspaces cannot add accounts from another tenant")
     member = db.scalar(select(TeamspaceMember).where(TeamspaceMember.teamspace_id == teamspace_id, TeamspaceMember.user_id == user_id))
     if member is None:
         member = TeamspaceMember(teamspace_id=teamspace_id, user_id=user_id, membership_role=str(payload.get("role") or "Member"))
@@ -5447,7 +5448,12 @@ def add_teamspace_member(teamspace_id: int, payload: dict[str, Any], db: Session
 
 
 @app.delete("/api/teamspaces/{teamspace_id}/members/{user_id}")
-def remove_teamspace_member(teamspace_id: int, user_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def remove_teamspace_member(teamspace_id: int, user_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    teamspace = db.get(Teamspace, teamspace_id)
+    if teamspace is None or teamspace.owner_id != actor.id:
+        raise HTTPException(404, "Teamspace not found")
+    if user_id == actor.id:
+        raise HTTPException(409, "The teamspace owner cannot remove their own membership")
     member = db.scalar(select(TeamspaceMember).where(TeamspaceMember.teamspace_id == teamspace_id, TeamspaceMember.user_id == user_id))
     if member is None:
         raise HTTPException(404, "Teamspace member not found")
@@ -5457,17 +5463,18 @@ def remove_teamspace_member(teamspace_id: int, user_id: int, db: Session = Depen
 
 
 @app.get("/api/notifications")
-def list_notifications(unread_only: bool = False, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
-    query = select(Notification).order_by(Notification.created_at.desc()).limit(limit)
+def list_notifications(unread_only: bool = False, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    query = select(Notification).where(Notification.user_id == actor.id).order_by(Notification.created_at.desc()).limit(limit)
     if unread_only:
         query = query.where(Notification.read_at.is_(None))
     rows = db.scalars(query).all()
-    return {"items": [{"id": row.id, "user_id": row.user_id, "kind": row.kind, "title": row.title, "body": row.body, "resource": row.resource, "record_id": row.record_id, "read_at": row.read_at.isoformat() if row.read_at else None, "created_at": row.created_at.isoformat()} for row in rows], "unread": db.scalar(select(func.count()).select_from(Notification).where(Notification.read_at.is_(None))) or 0}
+    unread = db.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == actor.id, Notification.read_at.is_(None))) or 0
+    return {"items": [{"id": row.id, "user_id": row.user_id, "kind": row.kind, "title": row.title, "body": row.body, "resource": row.resource, "record_id": row.record_id, "read_at": row.read_at.isoformat() if row.read_at else None, "created_at": row.created_at.isoformat()} for row in rows], "unread": unread}
 
 
 @app.post("/api/notifications/{notification_id}/read")
-def mark_notification_read(notification_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
-    row = db.get(Notification, notification_id)
+def mark_notification_read(notification_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    row = db.scalar(select(Notification).where(Notification.id == notification_id, Notification.user_id == actor.id))
     if row is None:
         raise HTTPException(404, "Notification not found")
     row.read_at = row.read_at or datetime.utcnow()
@@ -5735,8 +5742,11 @@ def blueprint_transition_history(blueprint_id: int, record_id: int | None = None
 
 
 @app.get("/api/v1/modules")
-def versioned_modules() -> dict[str, Any]:
-    core = [{"api_name": key, "label": key.replace("_", " ").title(), "type": "standard"} for key in RESOURCE_MAP if key not in {"notes", "attachments", "emails"}]
+def versioned_modules(actor: User = Depends(current_actor)) -> dict[str, Any]:
+    hidden = {"notes", "attachments", "emails"}
+    if str(actor.role or "").lower() != "administrator":
+        hidden.add("users")
+    core = [{"api_name": key, "label": key.replace("_", " ").title(), "type": "standard"} for key in RESOURCE_MAP if key not in hidden]
     custom = [{"api_name": key, "label": value.get("label"), "type": "platform", "fields": value.get("fields", [])} for key, value in PLATFORM_RESOURCES.items()]
     return {"version": "v1", "modules": core + custom}
 
@@ -5771,24 +5781,18 @@ def setup_search(q: str = "") -> dict[str, Any]:
 
 
 @app.get("/api/administration/storage")
-def storage_usage(db: Session = Depends(get_db)) -> dict[str, Any]:
+def storage_usage(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     platform_records = db.scalar(select(func.count()).select_from(PlatformRecord)) or 0
     core_counts = {name: int(db.scalar(select(func.count()).select_from(model)) or 0) for name, model in RESOURCE_MAP.items() if name in {"leads", "contacts", "accounts", "deals", "products", "activities", "notes", "attachments", "emails"}}
     attachment_bytes = 0
-    document_bytes = 0
-    if UPLOAD_ROOT.exists():
-        for file_path in UPLOAD_ROOT.rglob("*"):
-            if file_path.is_file():
-                size = file_path.stat().st_size
-                attachment_bytes += size
-                if DOCUMENT_UPLOAD_ROOT in file_path.parents:
-                    document_bytes += size
+    document_bytes = int(db.scalar(select(func.coalesce(func.sum(DocumentBlob.file_size), 0))) or 0)
     db_bytes = 0
-    url = os.getenv("DATABASE_URL", "")
-    if url.startswith("sqlite:///"):
-        candidate = Path(url.removeprefix("sqlite:///"))
-        if candidate.exists():
-            db_bytes = candidate.stat().st_size
+    if str(actor.role or "").lower() == "administrator":
+        url = os.getenv("DATABASE_URL", "")
+        if url.startswith("sqlite:///"):
+            candidate = Path(url.removeprefix("sqlite:///"))
+            if candidate.exists():
+                db_bytes = candidate.stat().st_size
     return {
         "database_bytes": db_bytes,
         "attachment_bytes": attachment_bytes,
@@ -5816,7 +5820,7 @@ def configuration_backup(db: Session = Depends(get_db), actor: User | None = Dep
 
 
 @app.post("/api/webforms/{form_id}/submit", status_code=201)
-def submit_webform(form_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def submit_webform(form_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     form = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == "webforms", PlatformRecord.id == form_id, PlatformRecord.archived == False))
     if form is None or str(form.status).lower() not in {"active", "enabled"}:
         raise HTTPException(404, "Webform not found or not active")
@@ -5830,7 +5834,7 @@ def submit_webform(form_id: int, payload: dict[str, Any], db: Session = Depends(
     if isinstance(defaults, dict):
         for key, value in defaults.items():
             incoming.setdefault(key, value)
-    owner = db.scalar(select(User).where(User.status == "Active").order_by(User.id))
+    owner = actor
     if target == "Leads":
         name = str(incoming.get("name") or incoming.get("full_name") or incoming.get("last_name") or "Webform Lead").strip()
         record = Lead(name=name, company=incoming.get("company"), email=incoming.get("email"), phone=incoming.get("phone"), source=incoming.get("source") or f"Webform: {form.title}", status="New", owner_id=owner.id if owner else None, notes=incoming.get("notes"))
@@ -5845,6 +5849,7 @@ def submit_webform(form_id: int, payload: dict[str, Any], db: Session = Depends(
         if platform_resource not in PLATFORM_RESOURCES:
             raise HTTPException(422, "Webform target module is not supported")
         values = incoming
+        values["owner_id"] = actor.id
         values.setdefault("name", str(incoming.get("subject") or incoming.get("name") or f"Webform {target}"))
         validate_platform_values(platform_resource, values)
         record = PlatformRecord(resource=platform_resource, title=str(values["name"]), data={})
@@ -6158,7 +6163,7 @@ def export_csv(resource: str, db: Session = Depends(get_db), actor: User | None 
 
 
 @app.post("/api/import/{resource}")
-async def import_csv(resource: str, file: UploadFile = File(...), db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+async def import_csv(resource: str, file: UploadFile = File(...), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     is_platform = resource in PLATFORM_RESOURCES
     is_core = resource in {"leads", "contacts", "accounts", "deals", "products", "activities"}
     if not is_platform and not is_core:
@@ -6229,7 +6234,7 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
 
 
 @app.get("/api/import-jobs")
-def import_jobs(db: Session = Depends(get_db)) -> dict[str, Any]:
+def import_jobs(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     rows = db.scalars(select(ImportJob).order_by(ImportJob.created_at.desc()).limit(100)).all()
     return {"items": [{"id": row.id, "resource": row.resource, "filename": row.filename, "status": row.status, "total_rows": row.total_rows, "imported_rows": row.imported_rows, "error_rows": row.error_rows, "errors": row.errors, "created_at": row.created_at.isoformat()} for row in rows]}
 
