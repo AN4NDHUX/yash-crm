@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import smtplib
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
@@ -42,6 +43,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    event,
     func,
     or_,
     select,
@@ -49,7 +51,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker, with_loader_criteria
 
 from app.platform_catalog import PLATFORM_RESOURCES, SETUP_NAVIGATION, public_catalog
 
@@ -773,6 +775,26 @@ if not DB_URL.startswith("sqlite"):
     engine_options.update(pool_size=int(os.getenv("DB_POOL_SIZE", "5")), max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")))
 engine = create_engine(DB_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+
+TENANT_ACTOR_ID: ContextVar[int | None] = ContextVar("yashcrm_tenant_actor_id", default=None)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _apply_tenant_scope(execute_state: Any) -> None:
+    """Automatically scope every SELECT on owner-aware tables to the signed-in account."""
+    actor_id = TENANT_ACTOR_ID.get()
+    if not actor_id or not execute_state.is_select:
+        return
+    statement = execute_state.statement
+    for mapper in Base.registry.mappers:
+        model = mapper.class_
+        if model is User or not hasattr(model, "owner_id"):
+            continue
+        statement = statement.options(
+            with_loader_criteria(model, lambda cls: cls.owner_id == actor_id, include_aliases=True)
+        )
+    execute_state.statement = statement
 
 
 def ensure_additive_schema() -> None:
@@ -2229,7 +2251,15 @@ async def cloud_security(request: Request, call_next):
                 return add_security_headers(JSONResponse(status_code=401, content={"detail": "Sign in to continue"}), request)
             next_path = path if path.startswith("/") else "/dashboard"
             return add_security_headers(RedirectResponse(url=f"/login?next={next_path}", status_code=303), request)
-    response = await call_next(request)
+    tenant_token = None
+    actor_id = getattr(request.state, "actor_id", None)
+    if actor_id:
+        tenant_token = TENANT_ACTOR_ID.set(int(actor_id))
+    try:
+        response = await call_next(request)
+    finally:
+        if tenant_token is not None:
+            TENANT_ACTOR_ID.reset(tenant_token)
     return add_security_headers(response, request)
 
 
