@@ -2349,3 +2349,110 @@ button, a, input, select, textarea { touch-action: manipulation; }
   .uploaded-loader-spinner { width: 142px; height: 142px; inset: -13px; }
   .uploaded-loader-logo { width: 66px; height: 66px; }
 }
+
+
+/* Reliable in-app loader: CSS radial spokes + uploaded Yash logo. */
+.yash-radial-loader {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.yash-loader-spokes {
+  position: absolute;
+  inset: 0;
+  display: block;
+  animation: yash-radial-spin 1.45s linear infinite;
+}
+
+.yash-loader-spokes i {
+  --angle: calc(var(--i) * 30deg);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 25px;
+  margin-left: -2px;
+  margin-top: -50px;
+  border-radius: 999px;
+  transform-origin: 2px 50px;
+  transform: rotate(var(--angle));
+  background: linear-gradient(180deg, rgba(80,150,255,.95), rgba(171,211,255,.45));
+  box-shadow: 0 0 9px rgba(75,148,255,.25);
+  opacity: calc(.28 + (var(--i) * .045));
+}
+
+.yash-loader-spokes i:nth-child(3n) {
+  height: 30px;
+  margin-top: -55px;
+}
+
+.yash-loader-spokes i:nth-child(even) {
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(109,173,255,.58));
+}
+
+.yash-radial-loader .uploaded-loader-logo {
+  position: relative;
+  z-index: 2;
+  width: 64px !important;
+  height: 64px !important;
+  object-fit: contain;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 6px 14px rgba(35,62,104,.12));
+  animation: yash-center-logo-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes yash-radial-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes yash-center-logo-pulse {
+  0%,100% { transform: scale(.98); }
+  50% { transform: scale(1.025); }
+}
+
+/* Old uploaded spinner is retired; keep it impossible to render accidentally. */
+.uploaded-loader-spinner { display: none !important; }
+
+/* Setup toolbar: search is the only top-level control. */
+.setup-toolbar.setup-toolbar-search-only {
+  grid-template-columns: minmax(260px, 1fr) !important;
+}
+
+.setup-toolbar.setup-toolbar-search-only .setup-toolbar-search {
+  width: 100%;
+  max-width: none;
+}
+
+@media (max-width: 720px) {
+  .yash-radial-loader { width: 116px; height: 116px; }
+  .yash-loader-spokes i {
+    height: 21px;
+    margin-top: -44px;
+    transform-origin: 2px 44px;
+  }
+  .yash-loader-spokes i:nth-child(3n) {
+    height: 25px;
+    margin-top: -49px;
+  }
+  .yash-radial-loader .uploaded-loader-logo {
+    width: 56px !important;
+    height: 56px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yash-loader-spokes,
+  .yash-radial-loader .uploaded-loader-logo {
+    animation: none !important;
+  }
+}
