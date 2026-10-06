@@ -4740,12 +4740,20 @@ def owner_overview(db: Session = Depends(get_db), _: User = Depends(require_admi
         .order_by(LoginHistory.occurred_at.desc())
         .limit(8)
     ).all()
+    integrations = {
+        "smtp": bool(os.getenv("SMTP_HOST", "").strip() and os.getenv("SMTP_FROM", "").strip()),
+        "sms": bool(os.getenv("TWILIO_ACCOUNT_SID", "").strip() and os.getenv("TWILIO_AUTH_TOKEN", "").strip() and os.getenv("TWILIO_FROM_NUMBER", "").strip()),
+        "ai": ai_config_error() is None,
+        "owner_mfa": bool(os.getenv("YASHCRM_ADMIN_TOTP_SECRET", "").strip()),
+        "public_url": bool(os.getenv("APP_PUBLIC_URL", "").strip()),
+    }
     return {
         "total_users": total_users,
         "active_users": active_users,
         "signed_up_today": signed_up_today,
         "logins_today": logins_today,
         "active_sessions": active_sessions,
+        "integrations": integrations,
         "plans": plans,
         "recent_logins": [{
             "id": event.id,
