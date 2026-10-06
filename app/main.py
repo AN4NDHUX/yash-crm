@@ -810,6 +810,7 @@ class RecordPayload(BaseModel):
     related_id: int | list[int] | None = None
     description: str | None = None
     content: str | None = None
+    body: str | None = None
     completed_at: datetime | None = None
     role: str | None = None
     last_active: datetime | None = None
@@ -1302,70 +1303,95 @@ def _workflow_actions(config: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"type": action_type, "value": config.get("action_value")}]
 
 
-def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str, record: PlatformRecord, values: dict[str, Any]) -> None:
+def _record_title(record: Any) -> str:
+    if isinstance(record, PlatformRecord):
+        return record.title
+    if isinstance(record, Contact):
+        return f"{record.first_name} {record.last_name}".strip() or f"Contact #{record.id}"
+    return str(getattr(record, "name", None) or getattr(record, "subject", None) or getattr(record, "title", None) or f"Record #{getattr(record, 'id', '?')}")
+
+
+def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str, record: Any, values: dict[str, Any]) -> None:
     action_type = str(action.get("type") or action.get("action_type") or "audit").lower()
     value = action.get("value", action.get("action_value"))
+    title = _record_title(record)
     if action_type in {"field_update", "update_field"}:
         field_name = str(action.get("field") or "").strip()
         field_value = action.get("value")
         if not field_name and value and "=" in str(value):
             field_name, field_value = str(value).split("=", 1)
+        field_name = field_name.strip()
         if not field_name:
             raise ValueError("field_update requires a field")
-        changed = dict(record.data or {})
-        changed[field_name.strip()] = field_value
-        sync_platform_columns(record, changed)
+        if isinstance(record, PlatformRecord):
+            changed = dict(record.data or {})
+            changed[field_name] = field_value
+            sync_platform_columns(record, changed)
+        else:
+            column = record.__table__.columns.get(field_name)
+            if column is None:
+                raise ValueError(f"Unknown field '{field_name}' for {resource}")
+            setattr(record, field_name, coerce_value(type(record), field_name, field_value))
     elif action_type in {"create_task", "task"}:
-        owner_id = record.owner_id or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
-        db.add(Activity(activity_type="Task", subject=str(value or action.get("subject") or f"Follow up: {record.title}"), owner_id=owner_id, status="Open", priority=str(action.get("priority") or "Normal"), related_type=resource, related_id=record.id))
+        owner_id = getattr(record, "owner_id", None) or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+        db.add(Activity(activity_type="Task", subject=str(value or action.get("subject") or f"Follow up: {title}"), owner_id=owner_id, status="Open", priority=str(action.get("priority") or "Normal"), related_type=resource, related_id=record.id))
     elif action_type in {"notification", "notify"}:
-        user_id = int(action.get("user_id") or record.owner_id or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)))
-        db.add(Notification(user_id=user_id, kind=str(action.get("kind") or "workflow"), title=str(action.get("title") or f"Workflow update: {record.title}"), body=str(value or action.get("body") or "A workflow action was triggered."), resource=resource, record_id=record.id))
+        fallback_owner = getattr(record, "owner_id", None) or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+        user_id = int(action.get("user_id") or fallback_owner)
+        db.add(Notification(user_id=user_id, kind=str(action.get("kind") or "workflow"), title=str(action.get("title") or f"Workflow update: {title}"), body=str(value or action.get("body") or "A workflow action was triggered."), resource=resource, record_id=record.id))
     elif action_type in {"owner_change", "assign_owner"}:
+        if not hasattr(record, "owner_id"):
+            raise ValueError(f"{resource} does not support ownership")
         record.owner_id = int(action.get("user_id") or value)
     elif action_type in {"start_approval", "approval"}:
         process_id = int(action.get("process_id") or value or 0)
         process = db.get(ApprovalProcess, process_id)
         if process is None:
             raise ValueError("start_approval requires a valid process_id")
-        request, duplicate = _create_approval_request(process, resource, record.id, record.owner_id, action.get("comment"), db)
+        request, duplicate = _create_approval_request(process, resource, record.id, getattr(record, "owner_id", None), action.get("comment"), db)
         if duplicate:
             add_audit(db, "approval_duplicate", resource, record.id, f"Approval request already exists for process '{process.name}'")
     elif action_type == "tag":
-        changed = dict(record.data or {})
-        tags = list(changed.get("tags") or [])
-        if value and str(value) not in tags:
-            tags.append(str(value))
-        changed["tags"] = tags
-        sync_platform_columns(record, changed)
+        if isinstance(record, PlatformRecord):
+            changed = dict(record.data or {})
+            tags = list(changed.get("tags") or [])
+            if value and str(value) not in tags:
+                tags.append(str(value))
+            changed["tags"] = tags
+            sync_platform_columns(record, changed)
+        elif hasattr(record, "tags"):
+            tags = list(getattr(record, "tags") or [])
+            if value and str(value) not in tags:
+                tags.append(str(value))
+            record.tags = tags
+        else:
+            raise ValueError(f"{resource} does not support tags")
     elif action_type in {"webhook", "webhook_queue", "function", "email", "call", "meeting"}:
         add_audit(db, "automation_queued", resource, record.id, f"Queued workflow action '{action_type}' for external worker")
     elif action_type != "audit":
         raise ValueError(f"Unsupported workflow action '{action_type}'")
 
 
-def run_platform_automation(db: Session, resource: str, event: str,
-                            record: PlatformRecord, values: dict[str, Any],
-                            before_values: dict[str, Any] | None = None) -> None:
-    """Execute local workflow actions and persist queued/scheduled outcomes.
-
-    External actions are never sent from the request. They are recorded as queued
-    execution history for a deployment worker to deliver safely.
-    """
+def run_record_automation(db: Session, resource: str, event: str, record: Any, values: dict[str, Any], before_values: dict[str, Any] | None = None) -> None:
+    """Run CRM workflow rules for both core SQLAlchemy records and generic platform records."""
     rules = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "workflow_rules", PlatformRecord.archived == False, PlatformRecord.status == "Active").order_by(PlatformRecord.id)).all()
+    normalized_resource = resource.lower().replace(" ", "_")
+    aliases = {normalized_resource, normalized_resource.rstrip("s")}
     for rule in rules:
         config = rule.data or {}
-        if str(config.get("module", "")).lower().replace(" ", "_") not in {resource, "all", "*"}:
+        configured = str(config.get("module", "")).lower().replace(" ", "_")
+        if configured not in aliases | {"all", "*"}:
             continue
         if config.get("event") not in (None, "", event):
             continue
         criteria = config.get("criteria") or ({"field": config.get("criteria_field"), "operator": "equals", "value": config.get("criteria_value")} if config.get("criteria_field") else None)
-        if not workflow_criteria_match({**(before_values or {}), **values}, criteria):
+        criteria_values = {**(before_values or {}), **values}
+        if not workflow_criteria_match(criteria_values, criteria):
             continue
         actions = _workflow_actions(config)
-        key = f"{rule.id}|{resource}|{record.id}|{event}|{record.version or 1}|{json.dumps(actions, sort_keys=True, default=str)}"
-        existing = db.scalar(select(WorkflowExecution).where(WorkflowExecution.idempotency_key == key))
-        if existing:
+        state_token = getattr(record, "version", None) or getattr(record, "updated_at", None) or getattr(record, "created_at", None) or json.dumps(criteria_values, sort_keys=True, default=str)
+        key = f"{rule.id}|{resource}|{record.id}|{event}|{state_token}|{json.dumps(actions, sort_keys=True, default=str)}"
+        if db.scalar(select(WorkflowExecution).where(WorkflowExecution.idempotency_key == key)):
             continue
         scheduled_for = None
         if config.get("scheduled_for"):
@@ -1390,6 +1416,9 @@ def run_platform_automation(db: Session, resource: str, event: str,
             execution.error = str(error)
             add_audit(db, "automation_error", resource, record.id, f"Workflow '{rule.title}' failed: {error}")
 
+
+def run_platform_automation(db: Session, resource: str, event: str, record: PlatformRecord, values: dict[str, Any], before_values: dict[str, Any] | None = None) -> None:
+    run_record_automation(db, resource, event, record, values, before_values)
 
 def _active_blueprint(db: Session, resource: str) -> Blueprint | None:
     aliases = {resource.lower(), resource.rstrip("s").lower(), resource.replace("_", " ").lower(), resource.rstrip("s").replace("_", " ").lower()}
@@ -4474,8 +4503,12 @@ def export_csv(resource: str, db: Session = Depends(get_db), actor: User | None 
 
 
 @app.post("/api/import/{resource}")
-async def import_csv(resource: str, file: UploadFile = File(...), db: Session = Depends(get_db)) -> dict[str, Any]:
-    config = platform_config(resource)
+async def import_csv(resource: str, file: UploadFile = File(...), db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    is_platform = resource in PLATFORM_RESOURCES
+    is_core = resource in {"leads", "contacts", "accounts", "deals", "products", "activities"}
+    if not is_platform and not is_core:
+        raise HTTPException(404, "Unknown import resource")
+    config = platform_config(resource) if is_platform else None
     if not (file.filename or "").lower().endswith(".csv"):
         raise HTTPException(422, "Upload a CSV file")
     raw = await file.read()
@@ -4489,15 +4522,48 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
     imported = 0
     errors: list[dict[str, Any]] = []
     for number, row in enumerate(reader, start=2):
-        values = {key.strip(): value.strip() for key, value in row.items() if key and value is not None and value.strip() != ""}
+        raw_values = {key.strip(): value.strip() for key, value in row.items() if key and value is not None and value.strip() != ""}
         try:
             with db.begin_nested():
-                validate_platform_values(resource, values)
-                record = PlatformRecord(resource=resource, title=str(values.get("name") or config["singular"]), data={})
-                sync_platform_columns(record, values)
-                db.add(record)
-                db.flush()
-                add_audit(db, "import", resource, record.id, f"Imported {config['singular']} '{record.title}'")
+                if is_platform:
+                    values = dict(raw_values)
+                    authorize_field_values(db, resource, values, actor, "write")
+                    normalize_platform_links(db, resource, values)
+                    validate_platform_values(resource, values)
+                    record = PlatformRecord(resource=resource, title=str(values.get("name") or config["singular"]), data={})
+                    sync_platform_columns(record, values)
+                    db.add(record)
+                    db.flush()
+                    run_record_automation(db, resource, "create", record, values)
+                    add_audit(db, "import", resource, record.id, f"Imported {config['singular']} '{record.title}'")
+                else:
+                    model = RESOURCE_MAP[resource]
+                    unknown = [key for key in raw_values if model.__table__.columns.get(key) is None]
+                    if unknown:
+                        raise HTTPException(422, f"Unknown column(s): {', '.join(unknown)}")
+                    values = {key: coerce_value(model, key, value) for key, value in raw_values.items()}
+                    authorize_field_values(db, resource, values, actor, "write")
+                    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator" and hasattr(model, "owner_id"):
+                        values.setdefault("owner_id", actor.id)
+                        if values.get("owner_id") != actor.id:
+                            raise HTTPException(403, "You may only import records owned by yourself")
+                    if resource == "contacts" and not values.get("first_name"):
+                        raise HTTPException(422, "first_name is required")
+                    if resource in {"leads", "accounts", "deals", "products"} and not values.get("name"):
+                        raise HTTPException(422, "name is required")
+                    if resource == "activities" and not values.get("subject"):
+                        raise HTTPException(422, "subject is required")
+                    if resource == "deals":
+                        stage = values.get("stage", "Qualification")
+                        values.setdefault("probability", STAGE_PROBABILITY.get(stage, 20))
+                        values.setdefault("status", STAGE_STATUS.get(stage, "Open"))
+                    record = model(**values)
+                    if resource == "activities" and getattr(record, "status", None) == "Completed" and getattr(record, "completed_at", None) is None:
+                        record.completed_at = datetime.utcnow()
+                    db.add(record)
+                    db.flush()
+                    run_record_automation(db, resource, "create", record, values)
+                    add_audit(db, "import", resource, record.id, f"Imported {resource.rstrip('s')} record", after=serialize(record, db))
             imported += 1
         except Exception as error:
             errors.append({"row": number, "error": str(getattr(error, "detail", error))[:240]})
@@ -4562,7 +4628,7 @@ def get_collection(resource: str, search: str | None = None, status: str | None 
 
 
 @app.post("/api/leads/bulk-archive")
-def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     ids = list(dict.fromkeys(payload.related_id))
     if not ids:
         raise HTTPException(422, "related_id must contain at least one lead ID")
@@ -4570,6 +4636,8 @@ def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db
         raise HTTPException(422, "A maximum of 100 leads can be archived at once")
     leads = db.scalars(select(Lead).where(Lead.id.in_(ids))).all()
     for lead in leads:
+        if not can_access_record(db, "leads", lead, actor, "write"):
+            raise HTTPException(403, "You do not have access to archive one or more selected leads")
         lead.archived = True
         add_audit(db, "archive", "leads", lead.id, f"Archived lead '{lead.name}'")
     db.commit()
@@ -4617,7 +4685,8 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
     db.add(item)
     db.flush()
     created = serialize(item, db)
-    add_audit(db, "create", resource, item.id, f"Created {resource.rstrip('s')} record", after=created)
+    run_record_automation(db, resource, "create", item, created)
+    add_audit(db, "create", resource, item.id, f"Created {resource.rstrip('s')} record", after=serialize(item, db))
     db.commit()
     db.refresh(item)
     return serialize(item, db)
@@ -4668,6 +4737,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         item.completed_at = None
     if resource == "deals" and item.stage != before[0]:
         record_blueprint_transition(db, blueprint, resource, item_id, str(before[0] or ""), str(item.stage), serialize(item, db), actor_id=item.owner_id)
+    run_record_automation(db, resource, "update", item, serialize(item, db), before_full)
     add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db))
     db.commit()
     db.refresh(item)
@@ -4700,62 +4770,65 @@ def delete_record(resource: str, item_id: int, db: Session = Depends(get_db), ac
 
 
 @app.get("/api/{resource}/{item_id}/related")
-def related_records(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def related_records(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
-    if db.get(RESOURCE_MAP[resource], item_id) is None:
+    parent = db.get(RESOURCE_MAP[resource], item_id)
+    if parent is None or not can_access_record(db, resource, parent, actor):
         raise HTTPException(404, "Record not found")
     related: dict[str, list[dict[str, Any]]] = {"activities": [], "contacts": [], "accounts": [], "deals": [], "leads": [], "products": [], "notes": [], "attachments": [], "emails": []}
     if resource == "accounts":
-        related["contacts"] = [serialize(item, db) for item in db.scalars(select(Contact).where(Contact.account_id == item_id, Contact.archived == False)).all()]
-        related["deals"] = [serialize(item, db) for item in db.scalars(select(Deal).where(Deal.account_id == item_id, Deal.archived == False)).all()]
-        related["activities"] = [serialize(item, db) for item in db.scalars(select(Activity).where(Activity.related_type == "accounts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+        related["contacts"] = [serialize(item, db, actor) for item in db.scalars(select(Contact).where(Contact.account_id == item_id, Contact.archived == False)).all()]
+        related["deals"] = [serialize(item, db, actor) for item in db.scalars(select(Deal).where(Deal.account_id == item_id, Deal.archived == False)).all()]
+        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "accounts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
     elif resource == "contacts":
         contact = db.get(Contact, item_id)
         if contact and contact.account_id:
             account = db.get(Account, contact.account_id)
             if account:
-                related["accounts"] = [serialize(account, db)]
-        related["deals"] = [serialize(item, db) for item in db.scalars(select(Deal).where(Deal.contact_id == item_id, Deal.archived == False)).all()]
-        related["activities"] = [serialize(item, db) for item in db.scalars(select(Activity).where(Activity.related_type == "contacts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+                related["accounts"] = [serialize(account, db, actor)]
+        related["deals"] = [serialize(item, db, actor) for item in db.scalars(select(Deal).where(Deal.contact_id == item_id, Deal.archived == False)).all()]
+        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "contacts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
     elif resource == "leads":
         lead = db.get(Lead, item_id)
-        related["activities"] = [serialize(item, db) for item in db.scalars(select(Activity).where(Activity.related_type == "leads", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "leads", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
         if lead and lead.converted_account_id:
             account = db.get(Account, lead.converted_account_id)
             if account:
-                related["accounts"] = [serialize(account, db)]
+                related["accounts"] = [serialize(account, db, actor)]
         if lead and lead.converted_contact_id:
             contact = db.get(Contact, lead.converted_contact_id)
             if contact:
-                related["contacts"] = [serialize(contact, db)]
+                related["contacts"] = [serialize(contact, db, actor)]
         if lead and lead.converted_deal_id:
             deal = db.get(Deal, lead.converted_deal_id)
             if deal:
-                related["deals"] = [serialize(deal, db)]
+                related["deals"] = [serialize(deal, db, actor)]
     elif resource == "deals":
         deal = db.get(Deal, item_id)
         if deal and deal.account_id:
             account = db.get(Account, deal.account_id)
             if account:
-                related["accounts"] = [serialize(account, db)]
+                related["accounts"] = [serialize(account, db, actor)]
         if deal and deal.contact_id:
             contact = db.get(Contact, deal.contact_id)
             if contact:
-                related["contacts"] = [serialize(contact, db)]
-        related["activities"] = [serialize(item, db) for item in db.scalars(select(Activity).where(Activity.related_type == "deals", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+                related["contacts"] = [serialize(contact, db, actor)]
+        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "deals", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
     for key, model in {"products": Product, "notes": Note, "attachments": Attachment, "emails": Email}.items():
-        related[key] = [serialize(item, db) for item in db.scalars(select(model).where(model.related_type == resource, model.related_id == item_id, model.archived == False).order_by(model.created_at.desc())).all()]
+        related[key] = [serialize(item, db, actor) for item in db.scalars(select(model).where(model.related_type == resource, model.related_id == item_id, model.archived == False).order_by(model.created_at.desc())).all()]
     return related
 
 
 @app.post("/api/leads/{item_id}/convert")
-def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     lead = db.get(Lead, item_id)
     if lead is None:
         raise HTTPException(404, "Lead not found")
     if lead.archived:
         raise HTTPException(409, "Archived leads cannot be converted")
+    if not can_access_record(db, "leads", lead, actor, "write"):
+        raise HTTPException(403, "You do not have access to convert this lead")
     values = payload.model_dump(exclude_unset=True)
     LEAD_CONVERSION_LOCK.acquire()
     try:
