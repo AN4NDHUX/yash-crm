@@ -1,0 +1,29 @@
+name: CRM Regression Tests
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: python -m pip install -r requirements-dev.txt pytest
+      - run: python -m py_compile app/main.py
+      - run: node --check static/js/app.js
+      - run: pytest -q
+        env:
+          APP_ENV: development
+          ENABLE_AUTH: "true"
+          APP_USERNAME: admin
+          APP_PASSWORD: supersecretpass123
