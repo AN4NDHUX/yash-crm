@@ -796,8 +796,8 @@ function bindDeveloperHub() {
 }
 
 function bindMetadataModuleActions() {
-  $('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
-  $('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
+  $$('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.dataset.customModuleToggle);
     const enabled = button.dataset.enabled !== "true";
     try {
@@ -808,7 +808,7 @@ function bindMetadataModuleActions() {
       await renderRoute();
     } catch (error) { toast("Could not update module", error.message, "error"); }
   }));
-  $('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.dataset.customModuleDelete);
     if (!await confirmAction("Delete this custom module?","Its active custom records will be archived and the module definition, fields, layouts and views will be removed.","Delete module")) return;
     try {
@@ -819,9 +819,9 @@ function bindMetadataModuleActions() {
       await renderRoute();
     } catch (error) { toast("Could not delete module", error.message, "error"); }
   }));
-  $('details.action-menu').forEach((menu) => menu.addEventListener("toggle", () => {
+  $$('details.action-menu').forEach((menu) => menu.addEventListener("toggle", () => {
     if (!menu.open) return;
-    $('details.action-menu').forEach((other) => { if (other !== menu) other.open = false; });
+    $$('details.action-menu').forEach((other) => { if (other !== menu) other.open = false; });
   }));
 }
 
