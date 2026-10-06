@@ -24,7 +24,7 @@ from urllib.request import Request as URLRequest, urlopen
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (
@@ -102,6 +102,21 @@ class User(TimestampMixin, Base):
     sensitive_data: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
     retention_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     anonymized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    ip_address: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class Territory(TimestampMixin, Base):
@@ -1662,17 +1677,24 @@ def get_or_create_settings(db: Session) -> OrganizationSetting:
 
 
 def ensure_cloud_admin(db: Session) -> None:
-    if db.scalar(select(User.id).limit(1)) is not None:
-        return
     name = os.getenv("ADMIN_NAME", "Administrator").strip() or "Administrator"
     email = os.getenv("ADMIN_EMAIL", "admin@yashcrm.local").strip().lower()
     if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise RuntimeError("ADMIN_EMAIL must be a valid email address")
-    db.add(User(name=name, email=email, role="Administrator", status="Active", last_active=datetime.utcnow()))
+    admin = db.scalar(select(User).where(func.lower(User.role) == "administrator").order_by(User.id))
+    if admin is None:
+        admin = User(name=name, email=email, role="Administrator", status="Active", last_active=datetime.utcnow())
+        db.add(admin)
+        db.flush()
+    fallback_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
+    if fallback_password and len(fallback_password) >= 10 and not admin.password_hash:
+        admin.password_hash = _password_hash(fallback_password)
+        admin.password_changed_at = datetime.utcnow()
     db.commit()
 
 
 PUBLIC_PROBE_PATHS = frozenset({"/health", "/ready"})
+PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session"})
 # Static, non-sensitive files that browsers request WITHOUT the page's Basic-auth
 # credentials: the manifest fetch, favicon requests and the manifest's icons. Putting
 # them behind auth makes installability and the tab icon fail with 401. Exact paths
@@ -1724,6 +1746,113 @@ def _basic_username(header: str) -> str:
         return ""
 
 
+AUTH_COOKIE = "yash_session"
+AUTH_SESSION_DAYS = max(1, min(_env_int("YASHCRM_SESSION_DAYS", 14), 90))
+PASSWORD_ITERATIONS = 260_000
+
+
+def _password_hash(password: str) -> str:
+    password = str(password or "")
+    if len(password) < 10:
+        raise ValueError("Password must contain at least 10 characters")
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
+    return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${base64.urlsafe_b64encode(salt).decode()}${base64.urlsafe_b64encode(digest).decode()}"
+
+
+def _password_valid(password: str, encoded: str | None) -> bool:
+    if not encoded:
+        return False
+    try:
+        algorithm, iterations, salt_b64, digest_b64 = encoded.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        salt = base64.urlsafe_b64decode(salt_b64.encode())
+        expected = base64.urlsafe_b64decode(digest_b64.encode())
+        actual = hashlib.pbkdf2_hmac("sha256", str(password or "").encode("utf-8"), salt, int(iterations))
+        return secrets.compare_digest(actual, expected)
+    except (ValueError, TypeError, binascii.Error):
+        return False
+
+
+def _session_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _session_user(request: Request, db: Session) -> User | None:
+    token = request.cookies.get(AUTH_COOKIE, "")
+    if not token:
+        return None
+    now = datetime.utcnow()
+    session = db.scalar(select(AuthSession).where(
+        AuthSession.token_hash == _session_token_hash(token),
+        AuthSession.revoked_at.is_(None),
+        AuthSession.expires_at > now,
+    ))
+    if session is None:
+        return None
+    user = db.get(User, session.user_id)
+    if user is None or user.status != "Active":
+        return None
+    if session.last_seen_at < now - timedelta(minutes=5):
+        session.last_seen_at = now
+        user.last_active = now
+        db.commit()
+    return user
+
+
+def _create_session(request: Request, db: Session, user: User) -> str:
+    raw = secrets.token_urlsafe(48)
+    now = datetime.utcnow()
+    db.add(AuthSession(
+        user_id=user.id,
+        token_hash=_session_token_hash(raw),
+        created_at=now,
+        expires_at=now + timedelta(days=AUTH_SESSION_DAYS),
+        last_seen_at=now,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent", "")[:500],
+    ))
+    user.last_login_at = now
+    user.last_active = now
+    db.add(LoginHistory(
+        user_id=user.id,
+        event="login",
+        success=True,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent", "")[:500],
+        metadata_json={"path": request.url.path, "method": "password"},
+    ))
+    db.commit()
+    return raw
+
+
+def _revoke_session(request: Request, db: Session) -> None:
+    token = request.cookies.get(AUTH_COOKIE, "")
+    if not token:
+        return
+    session = db.scalar(select(AuthSession).where(AuthSession.token_hash == _session_token_hash(token), AuthSession.revoked_at.is_(None)))
+    if session is not None:
+        session.revoked_at = datetime.utcnow()
+        db.commit()
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        AUTH_COOKIE,
+        token,
+        max_age=AUTH_SESSION_DAYS * 86400,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(AUTH_COOKIE, path="/", secure=IS_PRODUCTION, httponly=True, samesite="lax")
+
+
 def record_login_event(request: Request, username: str, event: str, success: bool) -> None:
     """Persist authentication events without exposing credential material."""
     try:
@@ -1742,10 +1871,10 @@ def record_login_event(request: Request, username: str, event: str, success: boo
 
 
 def current_actor(request: Request, db: Session = Depends(get_db)) -> User | None:
-    """Resolve the authenticated CRM user used by server-side authorization.
+    """Resolve the named CRM user authenticated by a database session.
 
-    Production maps the Basic username to a CRM email/name. Development can use
-    X-Yash-Actor-Id for deterministic local tests while authentication is disabled.
+    HTTP Basic remains an emergency compatibility path for existing automated tests and
+    deployment recovery, but normal browser access uses the HttpOnly session cookie.
     """
     if not env_bool("ENABLE_AUTH", IS_PRODUCTION):
         raw_id = request.headers.get("X-Yash-Actor-Id")
@@ -1754,15 +1883,24 @@ def current_actor(request: Request, db: Session = Depends(get_db)) -> User | Non
             if actor and actor.status == "Active":
                 return actor
         return db.scalar(select(User).where(User.status == "Active", func.lower(User.role) == "administrator").order_by(User.id)) or db.scalar(select(User).where(User.status == "Active").order_by(User.id))
+    actor_id = getattr(request.state, "actor_id", None)
+    if actor_id:
+        actor = db.get(User, int(actor_id))
+        if actor and actor.status == "Active":
+            return actor
+    actor = _session_user(request, db)
+    if actor is not None:
+        return actor
     username = _basic_username(request.headers.get("Authorization", ""))
-    actor = db.scalar(select(User).where(func.lower(User.email) == username.lower(), User.status == "Active"))
-    if actor is None:
-        actor = db.scalar(select(User).where(func.lower(User.name) == username.lower(), User.status == "Active"))
-    if actor is None and username.lower() in {"admin", "administrator"}:
-        actor = db.scalar(select(User).where(func.lower(User.role) == "administrator", User.status == "Active").order_by(User.id))
-    if actor is None:
-        raise HTTPException(403, "Authenticated account is not linked to an active CRM user")
-    return actor
+    if username:
+        actor = db.scalar(select(User).where(func.lower(User.email) == username.lower(), User.status == "Active"))
+        if actor is None:
+            actor = db.scalar(select(User).where(func.lower(User.name) == username.lower(), User.status == "Active"))
+        if actor is None and username.lower() in {"admin", "administrator"}:
+            actor = db.scalar(select(User).where(func.lower(User.role) == "administrator", User.status == "Active").order_by(User.id))
+        if actor is not None:
+            return actor
+    raise HTTPException(401, "Sign in to continue")
 
 
 def _role_record(db: Session, role: str | None) -> PlatformRecord | None:
@@ -1877,11 +2015,8 @@ def validate_production_settings() -> None:
         raise RuntimeError("CORS_ORIGINS cannot contain '*' in production.")
     if not env_bool("ENABLE_AUTH", True):
         raise RuntimeError("ENABLE_AUTH must remain enabled in production.")
-    if env_bool("ENABLE_AUTH", True):
-        username, password = _app_credentials()
-        insecure_passwords = {"change-this-to-a-long-password", "replace-with-at-least-12-random-characters"}
-        if not username or len(password) < 12 or password.lower() in insecure_passwords or secrets.compare_digest(username.encode(), password.encode()):
-            raise RuntimeError("APP_USERNAME and an APP_PASSWORD of at least 12 characters are required.")
+    # Browser authentication is database-backed. APP_USERNAME / APP_PASSWORD are optional
+    # emergency Basic-auth compatibility credentials rather than the primary sign-in gate.
     admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
     if parseaddr(admin_email)[1] != admin_email or "@" not in admin_email or "." not in admin_email.rsplit("@", 1)[-1]:
         raise RuntimeError("ADMIN_EMAIL must be a valid production email address.")
@@ -1926,29 +2061,41 @@ if allowed_origins:
 
 @app.middleware("http")
 async def cloud_security(request: Request, call_next):
-    # Health probes and a short allowlist of static brand assets stay unauthenticated.
-    # All user/data surfaces are protected with HTTP Basic at the app layer; put SSO/OIDC
-    # at the proxy when available.
     auth_enabled = env_bool("ENABLE_AUTH", IS_PRODUCTION)
     path = request.url.path
-    is_public = path in PUBLIC_PROBE_PATHS or (path in PUBLIC_ASSET_PATHS and request.method in {"GET", "HEAD"})
-    # A CORS preflight never carries credentials by design; CORSMiddleware answers it.
+    is_public = (
+        path in PUBLIC_PROBE_PATHS
+        or path in PUBLIC_AUTH_PATHS
+        or (path in PUBLIC_ASSET_PATHS and request.method in {"GET", "HEAD"})
+    )
     is_preflight = request.method == "OPTIONS" and "access-control-request-method" in request.headers
     if auth_enabled and not is_public and not is_preflight:
-        expected_user, expected_password = _app_credentials()
-        if not expected_user or len(expected_password) < 12:
-            return JSONResponse(status_code=503, content={"detail": "Cloud authentication is not configured safely."})
-        if not _basic_auth_valid(request.headers.get("Authorization", "")):
-            record_login_event(request, _basic_username(request.headers.get("Authorization", "")), "login", False)
-            challenge = {"WWW-Authenticate": 'Basic realm="Yash CRM", charset="UTF-8"'}
+        actor: User | None = None
+        try:
+            with SessionLocal() as db:
+                actor = _session_user(request, db)
+                if actor is not None:
+                    request.state.actor_id = actor.id
+        except Exception:
+            actor = None
+        if actor is None and _basic_auth_valid(request.headers.get("Authorization", "")):
+            username = _basic_username(request.headers.get("Authorization", ""))
+            try:
+                with SessionLocal() as db:
+                    actor = db.scalar(select(User).where(func.lower(User.email) == username.lower(), User.status == "Active"))
+                    if actor is None:
+                        actor = db.scalar(select(User).where(func.lower(User.name) == username.lower(), User.status == "Active"))
+                    if actor is None and username.lower() in {"admin", "administrator"}:
+                        actor = db.scalar(select(User).where(func.lower(User.role) == "administrator", User.status == "Active").order_by(User.id))
+                    if actor is not None:
+                        request.state.actor_id = actor.id
+            except Exception:
+                actor = None
+        if actor is None:
             if path.startswith("/api/"):
-                # A body lets the SPA show "Authentication required" instead of a bare HTTP 401.
-                response: Response = JSONResponse(status_code=401, content={"detail": "Authentication required"}, headers=challenge)
-            else:
-                response = Response(status_code=401, headers=challenge)
-            return add_security_headers(response, request)
-        if request.method == "GET" and path in {"/", "/dashboard"}:
-            record_login_event(request, _basic_username(request.headers.get("Authorization", "")), "login", True)
+                return add_security_headers(JSONResponse(status_code=401, content={"detail": "Sign in to continue"}), request)
+            next_path = path if path.startswith("/") else "/dashboard"
+            return add_security_headers(RedirectResponse(url=f"/login?next={next_path}", status_code=303), request)
     response = await call_next(request)
     return add_security_headers(response, request)
 
@@ -2042,6 +2189,87 @@ def web_manifest() -> FileResponse:
 @app.get("/sw.js")
 def service_worker() -> FileResponse:
     return FileResponse(ROOT / "public" / "sw.js", media_type="application/javascript", headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page() -> FileResponse:
+    return FileResponse(ROOT / "templates" / "auth.html", media_type="text/html")
+
+
+@app.get("/signup", response_class=HTMLResponse)
+def signup_page() -> FileResponse:
+    return FileResponse(ROOT / "templates" / "auth.html", media_type="text/html")
+
+
+@app.post("/api/auth/signup")
+def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
+    name = str(payload.get("name") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    password = str(payload.get("password") or "")
+    if len(name) < 2 or len(name) > 120:
+        raise HTTPException(422, "Enter your full name")
+    if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(422, "Enter a valid email address")
+    if len(password) < 10:
+        raise HTTPException(422, "Password must contain at least 10 characters")
+    existing = db.scalar(select(User).where(func.lower(User.email) == email))
+    if existing is not None:
+        raise HTTPException(409, "An account already exists for this email address")
+    user = User(
+        name=name,
+        email=email,
+        role="Sales rep",
+        status="Active",
+        last_active=datetime.utcnow(),
+        password_hash=_password_hash(password),
+        password_changed_at=datetime.utcnow(),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    token = _create_session(request, db, user)
+    response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"}, status_code=201)
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/login")
+def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
+    email = str(payload.get("email") or "").strip().lower()
+    password = str(payload.get("password") or "")
+    user = db.scalar(select(User).where(func.lower(User.email) == email))
+    if user is None or user.status != "Active" or not _password_valid(password, user.password_hash):
+        db.add(LoginHistory(
+            user_id=user.id if user else None,
+            event="login",
+            success=False,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent", "")[:500],
+            metadata_json={"path": request.url.path, "method": "password"},
+        ))
+        db.commit()
+        raise HTTPException(401, "Incorrect email or password")
+    token = _create_session(request, db, user)
+    response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"})
+    _set_session_cookie(response, token)
+    return response
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, db: Session = Depends(get_db)) -> Response:
+    _revoke_session(request, db)
+    response = JSONResponse({"ok": True, "redirect": "/login"})
+    _clear_session_cookie(response)
+    return response
+
+
+@app.get("/api/auth/session")
+def auth_session(request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    user = _session_user(request, db)
+    if user is None:
+        raise HTTPException(401, "No active session")
+    return {"authenticated": True, "user": serialize(user, db)}
 
 
 @app.get("/api/meta")
