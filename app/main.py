@@ -140,6 +140,20 @@ class PasswordResetToken(Base):
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class LoginOtpChallenge(Base):
+    __tablename__ = "login_otp_challenges"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    otp_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    ip_address: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
 class Territory(TimestampMixin, Base):
     __tablename__ = "territories"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -815,25 +829,41 @@ def _same_origin_browser_request(request: Request) -> bool:
         return False
 
 
-def _totp_valid(code: str, secret: str) -> bool:
-    """Validate a standard RFC 6238 6-digit TOTP without an external dependency."""
-    cleaned = re.sub(r"\s+", "", str(secret or "")).upper()
-    supplied = re.sub(r"\D", "", str(code or ""))
-    if not cleaned or len(supplied) != 6:
-        return False
-    try:
-        padding = "=" * ((8 - len(cleaned) % 8) % 8)
-        key = base64.b32decode(cleaned + padding, casefold=True)
-    except (binascii.Error, ValueError):
-        return False
-    counter = int(time.time() // 30)
-    for drift in (-1, 0, 1):
-        digest = hmac.new(key, int(counter + drift).to_bytes(8, "big"), hashlib.sha1).digest()
-        offset = digest[-1] & 0x0F
-        value = (int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF) % 1_000_000
-        if secrets.compare_digest(f"{value:06d}", supplied):
-            return True
-    return False
+def _login_otp_hash(challenge_id: str, otp: str) -> str:
+    secret = os.getenv("YASHCRM_OTP_SECRET", "").strip() or os.getenv("APP_PASSWORD", "").strip("\r\n")
+    if not secret:
+        secret = "development-only-otp-secret"
+    material = f"{challenge_id}:{str(otp).strip()}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), material, hashlib.sha256).hexdigest()
+
+
+def _mask_login_destination(user: User) -> str:
+    email = str(user.email or "").strip()
+    if "@" in email:
+        local, domain = email.split("@", 1)
+        local_masked = (local[:2] + "***") if len(local) > 2 else (local[:1] + "***")
+        return f"{local_masked}@{domain}"
+    phone = re.sub(r"\D", "", str(user.phone or ""))
+    if phone:
+        return f"***{phone[-4:]}"
+    return "your registered contact"
+
+
+def _send_login_otp(user: User, otp: str) -> bool:
+    subject = "Your Yash CRM one-time login code"
+    body = (
+        f"Your Yash CRM one-time login code is {otp}. "
+        "It expires in 10 minutes and can be used only once. "
+        "If you did not request this code, ignore this message."
+    )
+    if not IS_PRODUCTION:
+        return True
+    delivered = False
+    if str(user.email or "").strip():
+        delivered = _send_email_message(str(user.email), subject, body) or delivered
+    if str(user.phone or "").strip():
+        delivered = _send_sms_message(str(user.phone), body) or delivered
+    return delivered
 
 
 def _stable_csrf_token() -> str:
@@ -1904,7 +1934,7 @@ def ensure_cloud_admin(db: Session) -> None:
 
 
 PUBLIC_PROBE_PATHS = frozenset({"/health", "/ready"})
-PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/auth/forgot-password", "/api/auth/reset-password"})
+PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/login/verify-otp", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/auth/forgot-password", "/api/auth/reset-password"})
 # Static, non-sensitive files that browsers request WITHOUT the page's Basic-auth
 # credentials: the manifest fetch, favicon requests and the manifest's icons. Putting
 # them behind auth makes installability and the tab icon fail with 401. Exact paths
@@ -2011,7 +2041,7 @@ def _session_user(request: Request, db: Session) -> User | None:
     return user
 
 
-def _create_session(request: Request, db: Session, user: User) -> str:
+def _create_session(request: Request, db: Session, user: User, auth_method: str = "password") -> str:
     raw = secrets.token_urlsafe(48)
     now = datetime.utcnow()
     db.add(AuthSession(
@@ -2031,7 +2061,7 @@ def _create_session(request: Request, db: Session, user: User) -> str:
         success=True,
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent", "")[:500],
-        metadata_json={"path": request.url.path, "method": "password"},
+        metadata_json={"path": request.url.path, "method": str(auth_method or "password")[:40]},
     ))
     db.commit()
     return raw
@@ -2797,12 +2827,7 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
             )
         )
 
-    if credentials_valid and user is not None and str(user.role or "").lower() == "administrator":
-        totp_secret = os.getenv("YASHCRM_ADMIN_TOTP_SECRET", "").strip()
-        if totp_secret and not _totp_valid(str(payload.get("otp") or ""), totp_secret):
-            raise HTTPException(401, detail={"code": "MFA_REQUIRED", "message": "Enter the current 6-digit authenticator code."})
-
-    if not credentials_valid:
+    if not credentials_valid or user is None:
         db.add(LoginHistory(
             user_id=user.id if user else None,
             event="login",
@@ -2813,11 +2838,95 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
         ))
         db.commit()
         raise HTTPException(401, "Incorrect username, email, phone number, or password")
+
+    _auth_rate_limit(request, "login-otp", str(user.id), limit=5, window_seconds=600)
+    now = datetime.utcnow()
+    db.execute(
+        LoginOtpChallenge.__table__.update().where(
+            LoginOtpChallenge.user_id == user.id,
+            LoginOtpChallenge.used_at.is_(None),
+        ).values(used_at=now)
+    )
+    challenge_id = secrets.token_urlsafe(24)
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    challenge = LoginOtpChallenge(
+        public_id=challenge_id,
+        user_id=user.id,
+        otp_hash=_login_otp_hash(challenge_id, otp),
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+        attempts=0,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent", "")[:500],
+    )
+    db.add(challenge)
+    db.commit()
+
+    if not _send_login_otp(user, otp):
+        challenge.used_at = datetime.utcnow()
+        db.commit()
+        raise HTTPException(
+            503,
+            detail={
+                "code": "OTP_DELIVERY_UNAVAILABLE",
+                "message": "One-time-code delivery is not configured or temporarily unavailable. Configure SMTP or SMS delivery and try again.",
+            },
+        )
+
+    body: dict[str, Any] = {
+        "ok": True,
+        "otp_required": True,
+        "challenge_id": challenge_id,
+        "expires_in": 600,
+        "destination": _mask_login_destination(user),
+        "message": f"A 6-digit one-time code was sent to {_mask_login_destination(user)}.",
+    }
+    if not IS_PRODUCTION:
+        body["debug_otp"] = otp
+    return JSONResponse(body, status_code=202)
+
+
+@app.post("/api/auth/login/verify-otp")
+def auth_login_verify_otp(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
+    challenge_id = str(payload.get("challenge_id") or "").strip()
+    otp = re.sub(r"\D", "", str(payload.get("otp") or ""))
+    _auth_rate_limit(request, "verify-login-otp", challenge_id, limit=8, window_seconds=600)
+    if not challenge_id or len(otp) != 6:
+        raise HTTPException(422, detail={"code": "OTP_INVALID", "message": "Enter the 6-digit one-time code."})
+
+    now = datetime.utcnow()
+    challenge = db.scalar(select(LoginOtpChallenge).where(
+        LoginOtpChallenge.public_id == challenge_id,
+        LoginOtpChallenge.used_at.is_(None),
+    ))
+    if challenge is None or challenge.expires_at <= now:
+        raise HTTPException(400, detail={"code": "OTP_EXPIRED", "message": "This one-time code has expired. Request a new code."})
+    if challenge.attempts >= 5:
+        challenge.used_at = now
+        db.commit()
+        raise HTTPException(429, detail={"code": "OTP_LOCKED", "message": "Too many incorrect codes. Request a new code."})
+
+    expected = _login_otp_hash(challenge.public_id, otp)
+    if not secrets.compare_digest(expected, challenge.otp_hash):
+        challenge.attempts += 1
+        if challenge.attempts >= 5:
+            challenge.used_at = now
+        db.commit()
+        raise HTTPException(401, detail={"code": "OTP_INVALID", "message": "The one-time code is incorrect."})
+
+    user = db.get(User, challenge.user_id)
+    if user is None or user.status != "Active":
+        challenge.used_at = now
+        db.commit()
+        raise HTTPException(401, detail={"code": "ACCOUNT_UNAVAILABLE", "message": "This account is unavailable."})
+
+    challenge.used_at = now
+    db.commit()
     _claim_legacy_custom_modules(db, user)
-    token = _create_session(request, db, user)
+    token = _create_session(request, db, user, auth_method="password+otp")
     _notify_account_once(
         db, user, "login", "New Yash CRM sign-in",
-        f"Your Yash CRM account was signed in on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}. If this was not you, reset your password immediately.",
+        f"Your Yash CRM account was signed in using a one-time code on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}. If this was not you, reset your password immediately.",
         within_minutes=10,
     )
     response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"})
@@ -4762,7 +4871,7 @@ def owner_overview(db: Session = Depends(get_db), _: User = Depends(require_admi
         "smtp": bool(os.getenv("SMTP_HOST", "").strip() and os.getenv("SMTP_FROM", "").strip()),
         "sms": bool(os.getenv("TWILIO_ACCOUNT_SID", "").strip() and os.getenv("TWILIO_AUTH_TOKEN", "").strip() and os.getenv("TWILIO_FROM_NUMBER", "").strip()),
         "ai": ai_config_error() is None,
-        "owner_mfa": bool(os.getenv("YASHCRM_ADMIN_TOTP_SECRET", "").strip()),
+        "owner_mfa": bool(os.getenv("YASHCRM_OTP_SECRET", "").strip()),
         "public_url": bool(os.getenv("APP_PUBLIC_URL", "").strip()),
     }
     return {
