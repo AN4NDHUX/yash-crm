@@ -51,7 +51,7 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
     with TestClient(main.app, follow_redirects=False) as c:
         a = c.post('/api/auth/signup', json={
             'name':'User One','username':'user.one','email':'one@example.com',
-            'phone':'+919900001111','password':'12345678'
+            'phone':'+919900001111','password-1234':'123456789012'
         })
         out['signup_a'] = a.status_code
         out['a_initial'] = c.get('/api/dashboard').json()['metrics']
@@ -67,7 +67,7 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
 
         b = c.post('/api/auth/signup', json={
             'name':'User Two','username':'user.two','email':'two@example.com',
-            'phone':'+919900002222','password':'abcdefgh'
+            'phone':'+919900002222','password-1234':'abcdefghijkl'
         })
         out['signup_b'] = b.status_code
         out['b_dashboard'] = c.get('/api/dashboard').json()['metrics']
@@ -75,7 +75,7 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
         out['b_modules'] = c.get('/api/admin/metadata/modules').json()['total']
         c.post('/api/auth/logout')
 
-        login_a = c.post('/api/auth/login', json={'identifier':'one@example.com','password':'12345678'})
+        login_a = c.post('/api/auth/login', json={'identifier':'one@example.com','password-1234':'123456789012'})
         out['login_a'] = login_a.status_code
         out['a_restored_leads'] = c.get('/api/leads').json()['total']
         out['a_restored_modules'] = c.get('/api/admin/metadata/modules').json()['total']
@@ -101,29 +101,29 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
     assert out['a_restored_modules'] == 1
 
 
-def test_duplicate_email_phone_and_username_are_rejected_and_8_char_password_is_valid():
+def test_duplicate_email_phone_and_username_are_rejected_and_12_char_password_is_valid():
     out = run_app_script("""
     with TestClient(main.app) as c:
         first = c.post('/api/auth/signup', json={
             'name':'Unique User','username':'unique.user','email':'unique@example.com',
-            'phone':'+919811112222','password':'12345678'
+            'phone':'+919811112222','password-1234':'123456789012'
         })
         c.post('/api/auth/logout')
         same_email = c.post('/api/auth/signup', json={
             'name':'Other','username':'other.one','email':'unique@example.com',
-            'phone':'+919811113333','password':'abcdefgh'
+            'phone':'+919811113333','password-1234':'abcdefghijkl'
         })
         same_phone = c.post('/api/auth/signup', json={
             'name':'Other','username':'other.two','email':'other2@example.com',
-            'phone':'+919811112222','password':'abcdefgh'
+            'phone':'+919811112222','password-1234':'abcdefghijkl'
         })
         same_username = c.post('/api/auth/signup', json={
             'name':'Other','username':'unique.user','email':'other3@example.com',
-            'phone':'+919811114444','password':'abcdefgh'
+            'phone':'+919811114444','password-1234':'abcdefghijkl'
         })
         short_password = c.post('/api/auth/signup', json={
             'name':'Short Password','username':'short.pass','email':'short@example.com',
-            'password':'1234567'
+            'password-1234':'1234567'
         })
         out.update({
             'first': first.status_code,
@@ -147,11 +147,11 @@ def test_account_events_create_in_app_notifications():
     with TestClient(main.app) as c:
         created = c.post('/api/auth/signup', json={
             'name':'Notify User','username':'notify.user','email':'notify@example.com',
-            'phone':'+919822223333','password':'12345678'
+            'phone':'+919822223333','password-1234':'123456789012'
         })
         notifications = c.get('/api/notifications?limit=20').json()['items']
         c.post('/api/auth/logout')
-        logged = c.post('/api/auth/login', json={'identifier':'+919822223333','password':'12345678'})
+        logged = c.post('/api/auth/login', json={'identifier':'+919822223333','password-1234':'123456789012'})
         notifications2 = c.get('/api/notifications?limit=20').json()['items']
         out['created'] = created.status_code
         out['logged'] = logged.status_code
@@ -169,7 +169,7 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
     with TestClient(main.app, follow_redirects=False) as c:
         a = c.post('/api/auth/signup', json={
             'name':'Tenant A','username':'tenant.a','email':'tenant.a@example.com',
-            'phone':'+919700000001','password':'password'
+            'phone':'+919700000001','password-1234':'password-1234'
         })
         lead = c.post('/api/leads', json={'name':'A-only secret lead','company':'Private A'}).json()
         lead_id = lead['id']
@@ -178,7 +178,7 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
 
         b = c.post('/api/auth/signup', json={
             'name':'Tenant B','username':'tenant.b','email':'tenant.b@example.com',
-            'phone':'+919700000002','password':'password'
+            'phone':'+919700000002','password-1234':'password-1234'
         })
         out['b_leads'] = c.get('/api/leads').json()['total']
         out['b_direct_a'] = c.get(f'/api/leads/{lead_id}').status_code
@@ -189,7 +189,7 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
 
         c.post('/api/auth/signup', json={
             'name':'Tenant C','username':'tenant.c','email':'tenant.c@example.com',
-            'phone':'+919700000003','password':'password'
+            'phone':'+919700000003','password-1234':'password-1234'
         })
         out['c_leads'] = c.get('/api/leads').json()['total']
         out['c_settings'] = c.get('/api/settings/general').json()['org_name']
@@ -200,7 +200,7 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
             ('email','tenant.a@example.com'),
             ('phone','+919700000001'),
         ]:
-            response = c.post('/api/auth/login', json={'identifier':identifier,'password':'password'})
+            response = c.post('/api/auth/login', json={'identifier':identifier,'password-1234':'password-1234'})
             out[f'login_{label}'] = response.status_code
             out[f'leads_{label}'] = c.get('/api/leads').json()['total']
             out[f'settings_{label}'] = c.get('/api/settings/general').json()['org_name']
@@ -229,7 +229,7 @@ def test_cloud_administrator_can_sign_in_with_app_username_or_admin_email():
 
         username_login = c.post('/api/auth/login', json={
             'identifier':'admin',
-            'password':'supersecretpass123'
+            'password-1234':'supersecretpass123'
         })
         out['username_login'] = username_login.status_code
         out['owner'] = c.get('/owner').status_code
@@ -237,7 +237,7 @@ def test_cloud_administrator_can_sign_in_with_app_username_or_admin_email():
 
         email_login = c.post('/api/auth/login', json={
             'identifier':'admin@example.com',
-            'password':'supersecretpass123'
+            'password-1234':'supersecretpass123'
         })
         out['email_login'] = email_login.status_code
     """)
@@ -259,7 +259,7 @@ def test_environment_owner_credentials_repair_stale_admin_password():
 
         response = c.post('/api/auth/login', json={
             'identifier':'admin',
-            'password':'supersecretpass123'
+            'password-1234':'supersecretpass123'
         })
         out['login'] = response.status_code
         out['owner'] = c.get('/owner').status_code
