@@ -2755,3 +2755,164 @@ button, a, input, select, textarea { touch-action: manipulation; }
     justify-self: start;
   }
 }
+
+
+/* Setup home — dense Zoho-style directory layout */
+.setup-home {
+  gap: 14px;
+}
+
+.setup-home-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 68px;
+  padding: 12px 8px 12px 8px;
+  margin: -4px 0 0;
+  background: rgba(247,249,252,.96);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(210,216,226,.8);
+}
+
+.setup-home-toolbar h1 {
+  margin: 0;
+  min-width: 64px;
+  color: var(--text);
+  font-size: 21px;
+  line-height: 1;
+  letter-spacing: -.025em;
+}
+
+.setup-home-toolbar .setup-toolbar-search {
+  width: min(324px, 100%);
+  min-width: 260px;
+}
+
+.setup-home .setup-toolbar-note {
+  display: none;
+}
+
+.setup-home .setup-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.setup-home .setup-hub-card {
+  padding: 19px 20px 22px;
+  min-height: 100%;
+  border: 1px solid rgba(221,225,232,.62);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15,23,42,.025);
+}
+
+.setup-home .setup-hub-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 12px;
+  border: 0;
+}
+
+.setup-home .setup-hub-head h2 {
+  margin: 0;
+  color: #121a2b;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.setup-hub-icon {
+  flex: 0 0 20px;
+  width: 20px;
+  color: #273247;
+  font-size: 18px;
+  text-align: center;
+}
+
+.setup-home .setup-hub-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.setup-home .setup-hub-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  min-height: 0;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: #1c2940;
+  font-size: 13px;
+  line-height: 1.15;
+  text-decoration: none;
+}
+
+.setup-home .setup-hub-link:hover {
+  background: transparent;
+  color: var(--indigo);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.setup-sparkle {
+  color: #f0b429;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.setup-directory-group {
+  display: block;
+  padding: 14px 12px 5px;
+}
+
+.setup-quick-actions {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 1500px) {
+  .setup-home .setup-hub-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1220px) {
+  .setup-home .setup-hub-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .setup-home .setup-hub-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .setup-home-toolbar {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .setup-home-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .setup-home-toolbar .setup-toolbar-search {
+    width: 100%;
+    min-width: 0;
+  }
+  .setup-home .setup-hub-grid {
+    grid-template-columns: 1fr;
+  }
+}
