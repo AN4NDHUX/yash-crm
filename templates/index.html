@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261006-card-structure-v4" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261006-tenancy-controls-v1" />
 </head>
 <body>
   <div class="app-shell">
@@ -117,72 +117,10 @@
       </header>
 
       <div class="content-area" id="app-content" tabindex="-1">
-        <section class="page-heading showcase-enter">
-          <div>
-            <span class="eyebrow">Overview</span>
-            <h1>Good afternoon, Administrator</h1>
-            <p class="subheading">Here is what is happening across your customer workspace.</p>
-          </div>
-          <div class="heading-actions">
-            <button class="button button-ghost">＋ Log activity</button>
-            <button class="button button-primary">＋ Add lead</button>
-          </div>
-        </section>
-
-        <section class="stats-grid" aria-label="Workspace summary">
-          <article class="card stat-card">
-            <div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon"></span></div>
-            <strong class="stat-value">1</strong>
-            <p class="stat-foot"><b>Live</b> from CRM records</p>
-          </article>
-          <article class="card stat-card">
-            <div class="stat-top"><span class="stat-label">Open deals</span><span class="stat-icon"></span></div>
-            <strong class="stat-value">1</strong>
-            <p class="stat-foot"><b>Live</b> from CRM records</p>
-          </article>
-          <article class="card stat-card">
-            <div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div>
-            <strong class="stat-value">₹1,00,00,00,000</strong>
-            <p class="stat-foot"><b>Live</b> open opportunities</p>
-          </article>
-          <article class="card stat-card">
-            <div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon"></span></div>
-            <strong class="stat-value">0</strong>
-            <p class="stat-foot"><b>Needs attention</b> next 7 days</p>
-          </article>
-        </section>
-
-        <section class="dashboard-grid">
-          <div class="dashboard-column">
-            <article class="card">
-              <div class="card-head"><div class="card-head-copy"><h2>Pipeline overview</h2><small>Open opportunities by stage</small></div><a class="card-head-link" href="/deals">View deals ↗</a></div>
-              <div class="card-body pipeline-chart">
-                <div class="pipeline-row"><span class="pipeline-label">Qualification</span><span class="progress-track"><i class="progress-bar" style="width:100%"></i></span><span class="pipeline-meta"><strong>₹1,00,00,00,000</strong>1 deal</span></div>
-              </div>
-            </article>
-
-            <article class="card">
-              <div class="card-head"><div class="card-head-copy"><h2>Recent activity</h2><small>Latest updates from the team</small></div><a class="card-head-link" href="/activities">View all ↗</a></div>
-              <div class="card-body empty-state"><span class="empty-icon">✓</span><h3>Nothing new yet.</h3><p>Your latest customer activity will appear here.</p></div>
-            </article>
-          </div>
-
-          <div class="dashboard-column">
-            <article class="card">
-              <div class="card-head"><div class="card-head-copy"><h2>Lead funnel</h2><small>Current lead distribution</small></div><a class="card-head-link" href="/leads">View leads ↗</a></div>
-              <div class="card-body funnel"><div class="funnel-row"><span>Converted</span><span class="funnel-bar"><i style="width:100%"></i></span><b>1</b></div></div>
-            </article>
-
-            <article class="card">
-              <div class="card-head"><div class="card-head-copy"><h2>Quick actions</h2><small>Keep your workspace up to date</small></div></div>
-              <div class="card-body quick-actions">
-                <button class="quick-action"><span></span>Add lead</button>
-                <button class="quick-action"><span></span>Add contact</button>
-                <button class="quick-action"><span></span>Add account</button>
-                <button class="quick-action"><span></span>Add deal</button>
-              </div>
-            </article>
-          </div>
+        <section class="card empty-state initial-shell-state">
+          <span class="empty-icon">◌</span>
+          <h3>Loading your workspace</h3>
+          <p>Your private CRM data will appear here.</p>
         </section>
       </div>
     </main>
@@ -204,7 +142,7 @@
   </div>
 
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=20261006-card-structure-v4"></script>
+  <script type="module" src="/static/js/app.js?v=20261006-tenancy-controls-v1"></script>
   <script>
     (() => {
       const syncSidebarRoute = () => {
