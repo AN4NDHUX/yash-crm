@@ -2334,19 +2334,28 @@ def signup_page() -> FileResponse:
 def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
     name = str(payload.get("name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
+    username = _clean_username(payload.get("username") or email.split("@", 1)[0])
+    phone = _normalize_phone(payload.get("phone"))
     password = str(payload.get("password") or "")
     if len(name) < 2 or len(name) > 120:
         raise HTTPException(422, "Enter your full name")
     if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise HTTPException(422, "Enter a valid email address")
-    if len(password) < 10:
-        raise HTTPException(422, "Password must contain at least 10 characters")
-    existing = db.scalar(select(User).where(func.lower(User.email) == email))
-    if existing is not None:
+    if not phone:
+        raise HTTPException(422, "Phone number is required")
+    if len(password) < 8:
+        raise HTTPException(422, "Password must contain at least 8 characters")
+    if db.scalar(select(User).where(func.lower(User.email) == email)):
         raise HTTPException(409, "An account already exists for this email address")
+    if db.scalar(select(User).where(func.lower(User.username) == username)):
+        raise HTTPException(409, "That username is already in use")
+    if db.scalar(select(User).where(User.phone == phone)):
+        raise HTTPException(409, "An account already exists for this phone number")
     user = User(
         name=name,
         email=email,
+        username=username,
+        phone=phone,
         role="Sales rep",
         status="Active",
         last_active=datetime.utcnow(),
@@ -2357,6 +2366,10 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     db.commit()
     db.refresh(user)
     token = _create_session(request, db, user)
+    _notify_account(
+        db, user, "account_created", "Welcome to Yash CRM",
+        f"Your Yash CRM account was created successfully. Username: {user.username}. If this was not you, contact your administrator immediately."
+    )
     response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"}, status_code=201)
     _set_session_cookie(response, token)
     return response
@@ -2364,9 +2377,9 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
 
 @app.post("/api/auth/login")
 def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
-    email = str(payload.get("email") or "").strip().lower()
+    identifier = str(payload.get("identifier") or payload.get("email") or "").strip()
     password = str(payload.get("password") or "")
-    user = db.scalar(select(User).where(func.lower(User.email) == email))
+    user = _account_by_identifier(db, identifier)
     if user is None or user.status != "Active" or not _password_valid(password, user.password_hash):
         db.add(LoginHistory(
             user_id=user.id if user else None,
@@ -2377,8 +2390,13 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
             metadata_json={"path": request.url.path, "method": "password"},
         ))
         db.commit()
-        raise HTTPException(401, "Incorrect email or password")
+        raise HTTPException(401, "Incorrect username, email, phone number, or password")
+    _claim_legacy_custom_modules(db, user)
     token = _create_session(request, db, user)
+    _notify_account(
+        db, user, "login", "New Yash CRM sign-in",
+        f"Your Yash CRM account was signed in on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}. If this was not you, reset your password immediately."
+    )
     response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"})
     _set_session_cookie(response, token)
     return response
@@ -2398,6 +2416,62 @@ def auth_session(request: Request, db: Session = Depends(get_db)) -> dict[str, A
     if user is None:
         raise HTTPException(401, "No active session")
     return {"authenticated": True, "user": serialize(user, db)}
+
+
+@app.post("/api/auth/forgot-password")
+def auth_forgot_password(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    identifier = str(payload.get("identifier") or payload.get("email") or "").strip()
+    user = _account_by_identifier(db, identifier)
+    if user is not None and user.status == "Active":
+        raw = secrets.token_urlsafe(40)
+        now = datetime.utcnow()
+        db.add(PasswordResetToken(
+            user_id=user.id,
+            token_hash=_session_token_hash(raw),
+            created_at=now,
+            expires_at=now + timedelta(minutes=30),
+        ))
+        db.commit()
+        base = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+        reset_url = f"{base}/reset-password?token={raw}" if base else f"/reset-password?token={raw}"
+        _notify_account(
+            db, user, "password_reset_requested", "Yash CRM password reset",
+            f"A password reset was requested for your Yash CRM account. Use this link within 30 minutes: {reset_url}"
+        )
+    return {"ok": True, "message": "If the account exists, password reset instructions have been sent."}
+
+
+@app.post("/api/auth/reset-password")
+def auth_reset_password(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    token = str(payload.get("token") or "")
+    password = str(payload.get("password") or "")
+    if len(password) < 8:
+        raise HTTPException(422, "Password must contain at least 8 characters")
+    row = db.scalar(select(PasswordResetToken).where(
+        PasswordResetToken.token_hash == _session_token_hash(token),
+        PasswordResetToken.used_at.is_(None),
+        PasswordResetToken.expires_at > datetime.utcnow(),
+    ))
+    if row is None:
+        raise HTTPException(400, "This password reset link is invalid or expired")
+    user = db.get(User, row.user_id)
+    if user is None or user.status != "Active":
+        raise HTTPException(400, "This account is unavailable")
+    user.password_hash = _password_hash(password)
+    user.password_changed_at = datetime.utcnow()
+    row.used_at = datetime.utcnow()
+    db.execute(
+        AuthSession.__table__.update().where(
+            AuthSession.user_id == user.id,
+            AuthSession.revoked_at.is_(None),
+        ).values(revoked_at=datetime.utcnow())
+    )
+    db.commit()
+    _notify_account(
+        db, user, "password_reset", "Yash CRM password changed",
+        "Your Yash CRM password was reset successfully. If you did not make this change, contact your administrator immediately."
+    )
+    return {"ok": True, "redirect": "/login"}
 
 
 @app.get("/api/meta")
