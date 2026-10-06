@@ -498,7 +498,8 @@ class Activity(TimestampMixin, Base):
 
 class OrganizationSetting(Base):
     __tablename__ = "organization_settings"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     org_name: Mapped[str] = mapped_column(String(160), default="Yash CRM")
     timezone: Mapped[str] = mapped_column(String(80), default="Asia/Kolkata")
     currency: Mapped[str] = mapped_column(String(10), default="INR")
@@ -817,6 +818,9 @@ def ensure_additive_schema() -> None:
             "phone": "VARCHAR(40) NULL",
         },
         "metadata_modules": {
+            "owner_id": "INTEGER NULL",
+        },
+        "organization_settings": {
             "owner_id": "INTEGER NULL",
         },
     }
@@ -1718,9 +1722,23 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
 
 
 def get_or_create_settings(db: Session) -> OrganizationSetting:
-    setting = db.get(OrganizationSetting, 1)
+    """Return settings for the authenticated workspace, falling back to a global default only outside a user request."""
+    actor_id = TENANT_ACTOR_ID.get()
+    if actor_id:
+        setting = db.scalar(select(OrganizationSetting).where(OrganizationSetting.owner_id == actor_id).order_by(OrganizationSetting.id))
+    else:
+        setting = db.scalar(select(OrganizationSetting).where(OrganizationSetting.owner_id.is_(None)).order_by(OrganizationSetting.id))
     if setting is None:
-        setting = OrganizationSetting(id=1, org_name="Yash CRM", timezone="Asia/Kolkata", currency="INR", date_format="DD MMM YYYY", fiscal_year_start="April", default_pipeline="Default sales pipeline", notifications={})
+        setting = OrganizationSetting(
+            owner_id=actor_id,
+            org_name="Yash CRM",
+            timezone="Asia/Kolkata",
+            currency="INR",
+            date_format="DD MMM YYYY",
+            fiscal_year_start="April",
+            default_pipeline="Default sales pipeline",
+            notifications={},
+        )
         db.add(setting)
         db.commit()
         db.refresh(setting)
@@ -1989,6 +2007,18 @@ def _notify_account(db: Session, user: User, kind: str, title: str, body: str) -
     db.add(Notification(user_id=user.id, kind=kind, title=title[:220], body=body, resource="account", record_id=user.id))
     db.commit()
     _dispatch_account_message(user, title, body)
+
+
+def _notify_account_once(db: Session, user: User, kind: str, title: str, body: str, *, within_minutes: int = 10) -> None:
+    """Avoid flooding email/SMS providers when a user signs in repeatedly in a short window."""
+    cutoff = datetime.utcnow() - timedelta(minutes=max(1, within_minutes))
+    recent = db.scalar(select(Notification.id).where(
+        Notification.user_id == user.id,
+        Notification.kind == kind,
+        Notification.created_at >= cutoff,
+    ).order_by(Notification.created_at.desc()).limit(1))
+    if recent is None:
+        _notify_account(db, user, kind, title, body)
 
 
 def _claim_legacy_custom_modules(db: Session, actor: User) -> None:
@@ -2414,9 +2444,10 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     db.commit()
     db.refresh(user)
     token = _create_session(request, db, user)
+    login_url = (os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/") + "/login") if os.getenv("APP_PUBLIC_URL", "").strip() else "/login"
     _notify_account(
-        db, user, "account_created", "Welcome to Yash CRM",
-        f"Your Yash CRM account was created successfully. Username: {user.username}. If this was not you, contact your administrator immediately."
+        db, user, "account_created", "Yash CRM account created",
+        f"Hello {user.name}. Your Yash CRM account was created successfully. Username: {user.username}. Login: {login_url}. If this was not you, contact your administrator immediately."
     )
     response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"}, status_code=201)
     _set_session_cookie(response, token)
@@ -2441,9 +2472,10 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
         raise HTTPException(401, "Incorrect username, email, phone number, or password")
     _claim_legacy_custom_modules(db, user)
     token = _create_session(request, db, user)
-    _notify_account(
+    _notify_account_once(
         db, user, "login", "New Yash CRM sign-in",
-        f"Your Yash CRM account was signed in on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}. If this was not you, reset your password immediately."
+        f"Your Yash CRM account was signed in on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}. If this was not you, reset your password immediately.",
+        within_minutes=10,
     )
     response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"})
     _set_session_cookie(response, token)
@@ -3653,7 +3685,7 @@ def lead_journey(lead_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @app.get("/api/search")
-def global_search(q: str = Query(default="", min_length=0), db: Session = Depends(get_db)) -> dict[str, Any]:
+def global_search(q: str = Query(default="", min_length=0), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     if not q.strip():
         return {"results": []}
     pattern = f"%{q.strip()}%"
@@ -3663,7 +3695,7 @@ def global_search(q: str = Query(default="", min_length=0), db: Session = Depend
         if resource == "contacts":
             clauses.append((Contact.first_name + " " + Contact.last_name).ilike(pattern))
         for row in db.scalars(select(model).where(or_(*clauses), model.archived == False).limit(5)).all():
-            item = serialize(row, db)
+            item = serialize(row, db, actor)
             label = item.get("full_name") or item.get("name")
             results.append({"resource": resource, "id": item["id"], "label": label, "meta": item.get("company") or item.get("stage") or item.get("industry")})
     if len(results) < 12:
