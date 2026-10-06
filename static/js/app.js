@@ -206,7 +206,105 @@ function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 
-function loading() { return `<div class="loading" role="status" aria-live="polite"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading animation" aria-hidden="true" tabindex="-1" loading="eager"></iframe><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
+function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-inline" aria-hidden="true"><canvas class="brand-orbs-canvas" width="128" height="128"></canvas><span class="brand-orbs-letter">V</span></div><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
+
+function initBrandOrbsLoader(root = document) {
+  const canvas = root.querySelector(".brand-orbs-canvas");
+  if (!canvas || canvas.dataset.initialized === "true") return;
+  canvas.dataset.initialized = "true";
+  const ctx = canvas.getContext("2d", { alpha: true });
+  if (!ctx) return;
+
+  const SIZE = 128;
+  const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const CENTER = SIZE / 2;
+  const TAU = Math.PI * 2;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  canvas.width = SIZE * DPR;
+  canvas.height = SIZE * DPR;
+  canvas.style.width = SIZE + "px";
+  canvas.style.height = SIZE + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  let t = 0;
+  let hover = 0;
+  let hoverTarget = 0;
+  const particles = [
+    [0.02,33,2.8,.58],[0.08,47,1.8,.36],[0.14,39,2.2,.46],[0.20,51,1.5,.30],
+    [0.27,35,2.6,.54],[0.34,45,1.8,.35],[0.41,40,2.4,.50],[0.49,52,1.5,.28],
+    [0.56,36,2.5,.52],[0.63,46,1.9,.38],[0.70,41,2.7,.56],[0.78,50,1.6,.30],
+    [0.85,37,2.2,.48],[0.92,44,1.8,.36]
+  ];
+
+  const glow = (x, y, radius, alpha) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    g.addColorStop(0, `rgba(117,177,255,${0.34 * alpha})`);
+    g.addColorStop(.42, `rgba(68,128,246,${0.16 * alpha})`);
+    g.addColorStop(1, "rgba(68,128,246,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill();
+  };
+
+  const chevron = (angle, radius, scale, alpha) => {
+    const x = CENTER + Math.cos(angle) * radius;
+    const y = CENTER + Math.sin(angle) * radius;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle + Math.PI / 2);
+    const g = ctx.createLinearGradient(0, -8, 0, 8);
+    g.addColorStop(0, `rgba(244,249,255,${alpha})`);
+    g.addColorStop(.46, `rgba(135,190,255,${alpha * .94})`);
+    g.addColorStop(1, `rgba(61,120,241,${alpha * .68})`);
+    ctx.fillStyle = g;
+    ctx.shadowColor = `rgba(66,129,246,${alpha * .35})`;
+    ctx.shadowBlur = 9;
+    const w = 7.4 * scale, h = 8.6 * scale, inner = 3.3 * scale;
+    ctx.beginPath();
+    ctx.moveTo(-w, 1.8 * scale); ctx.lineTo(0, -h); ctx.lineTo(w, 1.8 * scale);
+    ctx.lineTo(inner, 4.8 * scale); ctx.lineTo(0, -.5 * scale); ctx.lineTo(-inner, 4.8 * scale);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  };
+
+  const render = () => {
+    if (!canvas.isConnected) return;
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    hover += (hoverTarget - hover) * .08;
+    const pulse = .5 + .5 * Math.sin(t * .045);
+    const rotation = reduceMotion ? .18 : t * (.0105 + hover * .0045);
+
+    for (let i = 0; i < particles.length; i++) {
+      const [phase, baseRadius, size, alpha] = particles[i];
+      const angle = phase * TAU + rotation * .45 + Math.sin(t * .018 + i * .7) * .10;
+      const radius = baseRadius + Math.sin(t * .026 + i) * 2.5;
+      const x = CENTER + Math.cos(angle) * radius, y = CENTER + Math.sin(angle) * radius;
+      glow(x, y, size * 5.2, alpha);
+      ctx.fillStyle = `rgba(105,170,255,${alpha})`;
+      ctx.beginPath(); ctx.arc(x, y, size, 0, TAU); ctx.fill();
+    }
+
+    const halo = ctx.createRadialGradient(CENTER, CENTER, 4, CENTER, CENTER, 40 + pulse * 2);
+    halo.addColorStop(0, "rgba(95,103,250,.08)");
+    halo.addColorStop(.52, "rgba(64,126,245,.06)");
+    halo.addColorStop(1, "rgba(64,126,245,0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(CENTER, CENTER, 42 + pulse * 2, 0, TAU); ctx.fill();
+
+    for (let i = 0; i < 8; i++) {
+      const angle = rotation + i * (TAU / 8);
+      const wave = Math.sin(t * .042 + i * .82);
+      const radius = 31.5 + pulse * 1.3;
+      const x = CENTER + Math.cos(angle) * radius, y = CENTER + Math.sin(angle) * radius;
+      glow(x, y, 11, .22 + hover * .05);
+      chevron(angle, radius, .72 + wave * .025 + hover * .035, .74 + wave * .08 + hover * .07);
+    }
+
+    if (!reduceMotion) { t += 1; requestAnimationFrame(render); }
+  };
+
+  canvas.addEventListener("pointerenter", () => { hoverTarget = 1; });
+  canvas.addEventListener("pointerleave", () => { hoverTarget = 0; });
+  render();
+}
 function emptyState(icon, title, copy, button = "") { return `<div class="empty-state"><span class="empty-icon">${icon}</span><h3>${esc(title)}</h3><p>${esc(copy)}</p>${button ? `<div style="margin-top:16px">${button}</div>` : ""}</div>`; }
 
 async function ensureLookups() {
@@ -275,6 +373,7 @@ async function renderRoute() {
   activeNav(route);
   const content = $("#app-content");
   content.innerHTML = loading();
+  initBrandOrbsLoader(content);
   refreshNavCount();
   try {
     await ensureLookups();
