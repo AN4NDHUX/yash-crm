@@ -1779,13 +1779,32 @@ def get_or_create_settings(db: Session) -> OrganizationSetting:
 def ensure_cloud_admin(db: Session) -> None:
     name = os.getenv("ADMIN_NAME", "Administrator").strip() or "Administrator"
     email = os.getenv("ADMIN_EMAIL", "admin@yashcrm.local").strip().lower()
+    raw_username = os.getenv("APP_USERNAME", "admin").strip() or "admin"
+    admin_username = re.sub(r"[^a-z0-9._-]+", "", raw_username.lower())
+    if not 3 <= len(admin_username) <= 40:
+        raise RuntimeError("APP_USERNAME must contain 3 to 40 letters, numbers, dots, dashes, or underscores")
     if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise RuntimeError("ADMIN_EMAIL must be a valid email address")
     admin = db.scalar(select(User).where(func.lower(User.role) == "administrator").order_by(User.id))
+    duplicate_username = db.scalar(select(User).where(
+        func.lower(User.username) == admin_username,
+        User.id != (admin.id if admin else -1),
+    ))
+    if duplicate_username is not None:
+        raise RuntimeError("APP_USERNAME is already assigned to another Yash CRM account")
     if admin is None:
-        admin = User(name=name, email=email, role="Administrator", status="Active", last_active=datetime.utcnow())
+        admin = User(
+            name=name,
+            email=email,
+            username=admin_username,
+            role="Administrator",
+            status="Active",
+            last_active=datetime.utcnow(),
+        )
         db.add(admin)
         db.flush()
+    elif not admin.username or admin.username.lower() != admin_username:
+        admin.username = admin_username
     fallback_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
     if fallback_password and len(fallback_password) >= 8 and not admin.password_hash:
         admin.password_hash = _password_hash(fallback_password)
