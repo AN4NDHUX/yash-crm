@@ -2748,11 +2748,21 @@ def sales_performance(db: Session, actor: User | None = None) -> dict[str, Any]:
         conversions = db.scalar(select(func.count()).select_from(Lead).where(Lead.owner_id == user.id, Lead.status == "Converted", Lead.archived == False, Lead.updated_at >= datetime.combine(start, datetime.min.time()), Lead.updated_at <= datetime.combine(end, datetime.max.time()))) or 0
         people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "period_start": start.isoformat(), "period_end": end.isoformat(), "target_configured": target_record is not None})
 
-    stuck_query = select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]),
+    stuck_query = select(Lead).where(
+        Lead.archived == False,
+        Lead.status.not_in(["Converted", "Unqualified"]),
+        or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7)),
+    )
+    quote_query = select(PlatformRecord).where(
+        PlatformRecord.resource == "quotes",
+        PlatformRecord.archived == False,
+        PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]),
+    )
     if isinstance(actor, User):
         stuck_query = stuck_query.where(Lead.owner_id == actor.id)
-    stuck_leads = db.scalars(stuck_query.where( or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
-    open_quotes = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False, PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]))).all()
+        quote_query = quote_query.where(PlatformRecord.owner_id == actor.id)
+    stuck_leads = db.scalars(stuck_query.order_by(Lead.next_follow_up.asc()).limit(8)).all()
+    open_quotes = db.scalars(quote_query).all()
     quote_attention = []
     for quote in open_quotes:
         valid_until = _date_value((quote.data or {}).get("valid_until"))
