@@ -9,6 +9,8 @@ const state = {
   platformLookups: {},
   profile: null,
   platformCatalog: { resources: {}, setup_navigation: {} },
+  customModules: [],
+  customBuilder: null,
   aiMessages: [],
   aiStatus: null,
   aiExceptionView: "needs_review",
@@ -239,6 +241,28 @@ async function ensurePlatformCatalog() {
   }
 }
 
+
+async function ensureCustomModules() {
+  try {
+    const data = await api("/api/admin/metadata/modules");
+    state.customModules = data.items || [];
+  } catch {
+    state.customModules = [];
+  }
+  return state.customModules;
+}
+
+function enhanceCustomModuleNavigation() {
+  $('.dynamic-custom-module-link').forEach((node) => node.remove());
+  $('.dynamic-custom-module-label')?.remove();
+  const enabled = (state.customModules || []).filter((module) => module.enabled);
+  if (!enabled.length) return;
+  const anchor = $('[data-route="deals"]') || $('[data-route="teamspaces"]');
+  if (!anchor) return;
+  const html = `<span class="nav-label dynamic-custom-module-label">CUSTOM MODULES</span>${enabled.map((module) => `<a class="dynamic-custom-module-link" href="/custom/${esc(module.api_name)}" data-custom-module-route="${esc(module.api_name)}">${esc(module.plural_label || module.label)}</a>`).join("")}`;
+  anchor.insertAdjacentHTML("afterend", html);
+}
+
 function greeting() {
   const hour = new Date().getHours();
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -333,8 +357,16 @@ async function renderRoute() {
     if (parts[0] === "setup") {
       const resource = parts[1] || "index";
       setBreadcrumb(resource === "index" ? "Setup" : titleCase(resource), "Setup");
-      content.innerHTML = await setupView(resource);
+      content.innerHTML = await setupView(resource, parts.slice(2));
       bindSettings();
+      return;
+    }
+    if (parts[0] === "custom" && parts[1]) {
+      const module = (state.customModules || []).find((item) => item.api_name === parts[1] && item.enabled);
+      if (!module) return navigate("/dashboard", true);
+      setBreadcrumb(module.plural_label || module.label, "Custom Modules");
+      content.innerHTML = await customRuntimeView(module);
+      bindCustomRuntime(module);
       return;
     }
     if (parts[0] === "settings") {
@@ -728,6 +760,247 @@ function bindSetupConsole() {
   $$(`[data-add-metadata-view]`).forEach((button) => button.addEventListener("click", async () => { const name = window.prompt("View name:", "My records"); if (!name) return; try { await api(`/api/admin/metadata/modules/${button.dataset.addMetadataView}/views`, {method:"POST", body:JSON.stringify({name, criteria:[], columns:[], sorting:[], visibility:{scope:"private"}})}); toast("View created", "The saved view is now available to the module engine."); await renderRoute(); } catch (error) { toast("Could not create view", error.message, "error"); } }));
 }
 
+
+const CUSTOM_FIELD_TYPES = [
+  ["text","Single Line","↔"],["multiline","Multi-Line","☰"],["email","Email","✉"],["phone","Phone","⌕"],
+  ["picklist","Pick List","▾"],["multi_select","Multi-Select","☷"],["date","Date","□"],["datetime","Date/Time","◫"],
+  ["number","Number","123"],["auto_number","Auto-Number","№"],["currency","Currency","¤"],["decimal","Decimal",".00"],
+  ["percentage","Percent","%"],["checkbox","Checkbox","☑"],["url","URL","↗"],["lookup","Lookup","⌕"],
+  ["formula","Formula","ƒx"],["user_lookup","User","♙"],["file","File Upload","⇧"],["image","Image Upload","▧"],
+  ["subform","Subform","▦"],["rich_text","Rich Text","¶"]
+];
+
+function metadataFieldEnabled(field) {
+  return field?.visibility?.enabled !== false;
+}
+
+async function customModulesAdminView() {
+  const data = await api("/api/admin/metadata/modules");
+  state.customModules = data.items || [];
+  enhanceCustomModuleNavigation();
+  const rows = state.customModules.length ? state.customModules.map((module) => `
+    <tr>
+      <td><strong>${esc(module.label)}</strong><span class="sub-cell">${esc(module.api_name)}</span></td>
+      <td>${esc(module.plural_label || module.label)}</td>
+      <td>${module.fields?.length || 0}</td>
+      <td>${badge(module.enabled ? "Active" : "Inactive")}</td>
+      <td>${formatDateTime(module.updated_at)}</td>
+      <td><div class="table-actions">
+        <button class="table-action" data-custom-module-builder="${module.id}">Edit fields</button>
+        <button class="table-action" data-custom-module-toggle="${module.id}" data-enabled="${module.enabled}">${module.enabled ? "Disable" : "Enable"}</button>
+        <button class="table-action danger-action" data-custom-module-delete="${module.id}">Delete</button>
+      </div></td>
+    </tr>`).join("") : `<tr><td colspan="6">${emptyState("◇","No custom modules yet","Create your first custom module and design its fields visually.")}</td></tr>`;
+  return `${pageHeader("Customization", "Custom Modules & Fields", "Create unlimited metadata-driven modules, design fields visually, and control whether each module is available to users.", `<button class="button button-primary" data-custom-module-new>＋ Create Custom Module</button>`)}
+    <section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Module</th><th>Plural label</th><th>Fields</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+}
+
+async function customModuleBuilderView(moduleId = null) {
+  let module = null;
+  if (moduleId) {
+    const data = await api("/api/admin/metadata/modules");
+    module = (data.items || []).find((item) => Number(item.id) === Number(moduleId));
+    if (!module) return `<section class="card">${emptyState("!","Custom module not found","Return to Custom Modules & Fields and choose another module.")}</section>`;
+  }
+  state.customBuilder = {
+    moduleId: module?.id || null,
+    label: module?.label || "Untitled",
+    api_name: module?.api_name || "",
+    plural_label: module?.plural_label || "",
+    description: module?.description || "",
+    fields: (module?.fields || []).map((field) => ({...field, enabled: metadataFieldEnabled(field)})),
+    newFields: [],
+    activeTab: "create",
+  };
+  const palette = CUSTOM_FIELD_TYPES.map(([type,label,icon]) => `<button type="button" class="builder-palette-field" draggable="true" data-builder-field-type="${type}" data-builder-field-label="${esc(label)}"><span>${icon}</span><strong>${esc(label)}</strong></button>`).join("");
+  return `<section class="module-builder-shell">
+    <header class="module-builder-topbar">
+      <div class="builder-module-title"><input class="builder-title-input" data-builder-module-label value="${esc(state.customBuilder.label)}" aria-label="Module name" /><span>Standard</span></div>
+      <div class="builder-top-actions"><button class="button button-ghost" data-builder-cancel>Cancel</button><button class="button button-ghost" data-builder-save-close>Save and Close</button><button class="button button-primary" data-builder-save>Save</button></div>
+    </header>
+    <div class="module-builder-body">
+      <aside class="builder-palette"><div class="builder-palette-head"><strong>New Fields</strong><small>Drag fields into the layout</small></div><div class="builder-palette-grid">${palette}</div><button type="button" class="builder-palette-field builder-section-button" draggable="true" data-builder-field-type="section" data-builder-field-label="New Section"><span>▤</span><strong>NEW SECTION</strong></button></aside>
+      <main class="builder-canvas">
+        <nav class="builder-tabs"><button class="active" data-builder-tab="create">Create</button><button data-builder-tab="quick">Quick Create</button><button data-builder-tab="detail">Detail View</button></nav>
+        <section class="builder-module-meta">
+          <div class="form-grid"><div class="field"><label>Module Name</label><input class="field-input" data-builder-label value="${esc(state.customBuilder.label)}" /></div><div class="field"><label>Plural Label</label><input class="field-input" data-builder-plural value="${esc(state.customBuilder.plural_label)}" placeholder="e.g. Service Requests" /></div><div class="field"><label>API Name</label><input class="field-input" data-builder-api value="${esc(state.customBuilder.api_name)}" placeholder="service_requests" ${module ? "readonly" : ""} /></div><div class="field"><label>Description</label><input class="field-input" data-builder-description value="${esc(state.customBuilder.description)}" /></div></div>
+        </section>
+        <section class="builder-layout-frame">
+          <div class="builder-layout-head"><div><h2 data-builder-layout-heading>Create ${esc(state.customBuilder.label)}</h2><p>Drag fields from the left panel into this layout.</p></div></div>
+          <div class="builder-drop-zone" data-builder-drop>
+            ${builderFieldCards(state.customBuilder.fields)}
+            <div class="builder-drop-hint" data-builder-empty ${state.customBuilder.fields.length ? "hidden" : ""}>Drag a field here to add it to this custom module.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </section>`;
+}
+
+function builderFieldCards(fields) {
+  return (fields || []).map((field, index) => `<article class="builder-field-card ${field.enabled === false ? "disabled" : ""}" draggable="true" data-builder-field-id="${field.id || ""}" data-builder-local-index="${index}">
+    <span class="builder-field-grip">⋮⋮</span><div class="builder-field-copy"><strong>${esc(field.label)}</strong><small>${esc(field.field_type)} · ${esc(field.api_name || "new field")}</small></div>
+    <span class="status-dot ${field.enabled === false ? "inactive" : "active"}">${field.enabled === false ? "Disabled" : "Enabled"}</span>
+    <button type="button" class="table-action" data-builder-field-toggle="${index}">${field.enabled === false ? "Enable" : "Disable"}</button>
+    <button type="button" class="table-action" data-builder-field-edit="${index}">Edit</button>
+    <button type="button" class="table-action danger-action" data-builder-field-delete="${index}">Delete</button>
+  </article>`).join("");
+}
+
+function builderSlug(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,100);
+}
+
+function renderBuilderFields() {
+  const zone = $('[data-builder-drop]');
+  if (!zone || !state.customBuilder) return;
+  const hint = `<div class="builder-drop-hint" data-builder-empty ${state.customBuilder.fields.length ? "hidden" : ""}>Drag a field here to add it to this custom module.</div>`;
+  zone.innerHTML = builderFieldCards(state.customBuilder.fields) + hint;
+  bindBuilderFieldActions();
+}
+
+function bindBuilderFieldActions() {
+  $('[data-builder-field-toggle]').forEach((button) => button.addEventListener("click", async () => {
+    const index = Number(button.dataset.builderFieldToggle);
+    const field = state.customBuilder.fields[index];
+    field.enabled = field.enabled === false;
+    if (field.id) await api(`/api/admin/metadata/fields/${field.id}`, {method:"PATCH", body:JSON.stringify({enabled:field.enabled})});
+    renderBuilderFields();
+  }));
+  $('[data-builder-field-edit]').forEach((button) => button.addEventListener("click", async () => {
+    const index = Number(button.dataset.builderFieldEdit);
+    const field = state.customBuilder.fields[index];
+    const label = window.prompt("Field label:", field.label);
+    if (!label) return;
+    field.label = label.trim();
+    if (!field.id) field.api_name = builderSlug(window.prompt("Field API name:", field.api_name || label) || field.api_name || label);
+    if (field.id) await api(`/api/admin/metadata/fields/${field.id}`, {method:"PATCH", body:JSON.stringify({label:field.label})});
+    renderBuilderFields();
+  }));
+  $('[data-builder-field-delete]').forEach((button) => button.addEventListener("click", async () => {
+    const index = Number(button.dataset.builderFieldDelete);
+    const field = state.customBuilder.fields[index];
+    if (!await confirmAction("Delete this custom field?", `The field "${field.label}" will be removed from this module. Existing stored values are not displayed after removal.`, "Delete field")) return;
+    if (field.id) await api(`/api/admin/metadata/fields/${field.id}`, {method:"DELETE"});
+    state.customBuilder.fields.splice(index,1);
+    renderBuilderFields();
+  }));
+}
+
+async function saveCustomBuilder(closeAfter = false) {
+  const b = state.customBuilder;
+  if (!b) return;
+  b.label = $('[data-builder-label]')?.value.trim() || $('[data-builder-module-label]')?.value.trim() || b.label;
+  b.plural_label = $('[data-builder-plural]')?.value.trim() || b.plural_label || b.label;
+  b.api_name = builderSlug($('[data-builder-api]')?.value || b.api_name || b.plural_label || b.label);
+  b.description = $('[data-builder-description]')?.value.trim() || "";
+  if (!b.label || !b.api_name) return toast("Module details required","Enter a module name and API name.","error");
+  try {
+    let moduleId = b.moduleId;
+    if (!moduleId) {
+      const created = await api("/api/admin/metadata/modules", {method:"POST", body:JSON.stringify({label:b.label, plural_label:b.plural_label, api_name:b.api_name, description:b.description, enabled:true, config:{record_name_field:"name"}})});
+      moduleId = created.id; b.moduleId = moduleId;
+    } else {
+      await api(`/api/admin/metadata/modules/${moduleId}`, {method:"PATCH", body:JSON.stringify({label:b.label, plural_label:b.plural_label, description:b.description})});
+    }
+    for (let i=0;i<b.fields.length;i++) {
+      const field = b.fields[i];
+      if (field.id) {
+        await api(`/api/admin/metadata/fields/${field.id}`, {method:"PATCH", body:JSON.stringify({position:i, label:field.label, required:!!field.required, enabled:field.enabled !== false})});
+      } else {
+        const created = await api(`/api/admin/metadata/modules/${moduleId}/fields`, {method:"POST", body:JSON.stringify({label:field.label, api_name:field.api_name, field_type:field.field_type, position:i, required:!!field.required, enabled:field.enabled !== false})});
+        field.id = created.id;
+      }
+    }
+    const modules = await ensureCustomModules();
+    enhanceCustomModuleNavigation();
+    toast("Custom module saved", `${b.label} is now available in the CRM navigation.`);
+    if (closeAfter) return navigate("/setup/custom_modules", true);
+    return navigate(`/setup/custom_modules/builder/${moduleId}`, true);
+  } catch (error) { toast("Could not save custom module", error.message, "error"); }
+}
+
+function bindCustomModuleAdmin() {
+  $('[data-custom-module-new]')?.addEventListener("click", () => navigate("/setup/custom_modules/new"));
+  $('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
+  $('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
+    const id = Number(button.dataset.customModuleToggle);
+    const enabled = button.dataset.enabled !== "true";
+    try { await api(`/api/admin/metadata/modules/${id}`, {method:"PATCH", body:JSON.stringify({enabled})}); await ensureCustomModules(); enhanceCustomModuleNavigation(); toast(enabled ? "Module enabled" : "Module disabled"); await renderRoute(); } catch(error){ toast("Could not update module",error.message,"error"); }
+  }));
+  $('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
+    const id = Number(button.dataset.customModuleDelete);
+    if (!await confirmAction("Delete this custom module?","Its active custom records will be archived and the module definition, fields, layouts and views will be removed.","Delete module")) return;
+    try { await api(`/api/admin/metadata/modules/${id}`, {method:"DELETE"}); await ensureCustomModules(); enhanceCustomModuleNavigation(); toast("Custom module deleted"); await renderRoute(); } catch(error){ toast("Could not delete module",error.message,"error"); }
+  }));
+
+  const drop = $('[data-builder-drop]');
+  $('[data-builder-field-type]').forEach((item) => {
+    item.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("application/x-yash-field", JSON.stringify({type:item.dataset.builderFieldType,label:item.dataset.builderFieldLabel}));
+      event.dataTransfer.effectAllowed = "copy";
+    });
+    item.addEventListener("dblclick", () => {
+      if (item.dataset.builderFieldType === "section") return;
+      const label = item.dataset.builderFieldLabel;
+      state.customBuilder.fields.push({label, api_name:builderSlug(label), field_type:item.dataset.builderFieldType, enabled:true, required:false});
+      renderBuilderFields();
+    });
+  });
+  drop?.addEventListener("dragover", (event) => { event.preventDefault(); drop.classList.add("drag-over"); event.dataTransfer.dropEffect = "copy"; });
+  drop?.addEventListener("dragleave", () => drop.classList.remove("drag-over"));
+  drop?.addEventListener("drop", (event) => {
+    event.preventDefault(); drop.classList.remove("drag-over");
+    try {
+      const data = JSON.parse(event.dataTransfer.getData("application/x-yash-field"));
+      if (!data.type) return;
+      if (data.type === "section") {
+        toast("Section added","Sections are represented through saved layouts; field ordering remains editable here.");
+        return;
+      }
+      const label = data.label;
+      let apiName = builderSlug(label);
+      let suffix = 2;
+      while (state.customBuilder.fields.some((field) => field.api_name === apiName)) apiName = `${builderSlug(label)}_${suffix++}`;
+      state.customBuilder.fields.push({label, api_name:apiName, field_type:data.type, enabled:true, required:false});
+      renderBuilderFields();
+    } catch {}
+  });
+  bindBuilderFieldActions();
+  $('[data-builder-cancel]')?.addEventListener("click", () => navigate("/setup/custom_modules"));
+  $('[data-builder-save]')?.addEventListener("click", () => saveCustomBuilder(false));
+  $('[data-builder-save-close]')?.addEventListener("click", () => saveCustomBuilder(true));
+  $('[data-builder-tab]').forEach((button) => button.addEventListener("click", () => {
+    $('[data-builder-tab]').forEach((node)=>node.classList.toggle("active",node===button));
+    state.customBuilder.activeTab = button.dataset.builderTab;
+    $('[data-builder-layout-heading]').textContent = `${titleCase(button.dataset.builderTab)} ${state.customBuilder.label}`;
+  }));
+}
+
+async function customRuntimeView(module) {
+  const schema = await api(`/api/custom/${module.api_name}/schema`);
+  const data = await api(`/api/custom/${module.api_name}?limit=100`);
+  const fields = (schema.fields || []).slice(0,5);
+  const rows = data.items?.length ? data.items.map((row)=>`<tr><td><strong>${esc(row.name || row.title || `${module.label} #${row.id}`)}</strong></td>${fields.map((field)=>`<td>${esc(Array.isArray(row[field.api_name]) ? row[field.api_name].join(", ") : (row[field.api_name] ?? "—"))}</td>`).join("")}<td>${badge(row.status || "Active")}</td></tr>`).join("") : "";
+  return `${pageHeader("Custom Modules", module.plural_label || module.label, module.description || "Custom CRM module.", `<button class="button button-primary" data-custom-runtime-new>＋ New ${esc(module.label)}</button><button class="button button-ghost" data-go="/setup/custom_modules/builder/${module.id}">Customize fields</button>`)}
+  <section class="card table-card">${rows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${esc(module.label)}</th>${fields.map((field)=>`<th>${esc(field.label)}</th>`).join("")}<th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState("◇",`No ${(module.plural_label || module.label).toLowerCase()} yet`,"Create the first record after configuring fields.")}</section>`;
+}
+
+function bindCustomRuntime(module) {
+  $('[data-go]').forEach((button)=>button.addEventListener("click",()=>navigate(button.dataset.go)));
+  $('[data-custom-runtime-new]')?.addEventListener("click", async () => {
+    const schema = await api(`/api/custom/${module.api_name}/schema`);
+    const payload = {};
+    for (const field of schema.fields || []) {
+      if (field.read_only) continue;
+      const value = window.prompt(field.label + (field.required ? " *" : "") + ":");
+      if (value === null) return;
+      if (value !== "") payload[field.api_name] = value;
+    }
+    try { await api(`/api/custom/${module.api_name}`, {method:"POST", body:JSON.stringify(payload)}); toast("Record created"); await renderRoute(); } catch(error){ toast("Could not create record",error.message,"error"); }
+  });
+}
+
 function setupLandingView() {
   let hiddenGroups = []; let hiddenItems = [];
   try { hiddenGroups = JSON.parse(localStorage.getItem('yash.setup.hidden_groups') || '[]'); hiddenItems = JSON.parse(localStorage.getItem('yash.setup.hidden_items') || '[]'); } catch (_) {}
@@ -736,8 +1009,10 @@ function setupLandingView() {
   return `<section class="setup-page-shell"><div class="setup-toolbar setup-toolbar-search-only"><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" autofocus /></label></div><p class="related-empty setup-toolbar-note" data-setup-search-count>Browse ${Object.values(state.platformCatalog.setup_navigation || {}).flat().length} setup options.</p><div class="setup-hub-grid" data-setup-search-results>${cards}</div></section>`;
 }
 
-async function setupView(resource) {
+async function setupView(resource, subparts = []) {
   if (resource === 'index') return setupLandingView();
+  if (resource === "custom_modules" && subparts[0] === "new") return customModuleBuilderView(null);
+  if (resource === "custom_modules" && subparts[0] === "builder") return customModuleBuilderView(Number(subparts[1]));
   let content;
   if (resource === "search_setup") content = setupSearchView();
   else if (resource === "customize_setup") content = await customizeSetupView();
@@ -750,6 +1025,7 @@ async function setupView(resource) {
   else if (resource === "import") content = importView();
   else if (resource === "export") content = exportView();
   else if (resource === "duplicates") content = duplicateView();
+  else if (resource === "custom_modules") content = await customModulesAdminView();
   else if (state.platformCatalog.resources[resource]) content = `<section class="foundation-note">This is a working foundation: records persist, validate, filter, sort, export, audit and recycle. External delivery, identity-provider enforcement and background scheduling require deployment-specific workers or integrations.</section>${await platformPanel(resource, true)}`;
   else content = `<section class="card">${emptyState("!", "Unknown setup page", "Choose a setup item from the directory.")}</section>`;
   return `<section class="setup-page-shell"><div class="setup-toolbar setup-toolbar-search-only"><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" /></label></div><div class="setup-workspace">${setupDirectory(resource)}<div class="settings-content">${content}</div></div></section>`;
@@ -1460,6 +1736,7 @@ async function blueprintSettingsView() {
 }
 
 function bindSettings() {
+  bindCustomModuleAdmin();
   const setupSearch = $('[data-setup-search-input]');
   setupSearch?.addEventListener('input', () => {
     const query = setupSearch.value.trim().toLowerCase();
@@ -1506,7 +1783,9 @@ async function openConvertModal(id) {
 async function init() {
   bindGlobal();
   try { await ensurePlatformCatalog(); } catch (error) { toast("Module catalog unavailable", error.message, "error"); }
+  await ensureCustomModules();
   enhanceNavigation();
+  enhanceCustomModuleNavigation();
   try { state.meta = await api("/api/meta"); } catch (error) { toast("Workspace data unavailable", error.message, "error"); }
   try { state.settingsCache = await api("/api/settings/general"); } catch (error) { /* use defaults until settings load */ }
   try { state.profile = await api("/api/settings/profile"); applyProfile(); } catch (error) { /* keep the shell usable */ }
