@@ -42,3 +42,15 @@ def test_mobile_drawer_contract_is_wired():
 def test_reduced_motion_is_supported():
     css = (ROOT / "static" / "css" / "app.css").read_text(encoding="utf-8")
     assert "@media (prefers-reduced-motion: reduce)" in css
+
+
+def test_mobile_routes_disable_blur_prone_compositor_effects():
+    css = (ROOT / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    marker = "Mobile rendering stability"
+    assert marker in css
+    mobile = css[css.index(marker):]
+    assert "-webkit-backdrop-filter: none !important" in mobile
+    assert "backdrop-filter: none !important" in mobile
+    assert "animation: none !important" in mobile
+    assert "filter: none !important" in mobile
+    assert ".drawer-backdrop" in mobile
