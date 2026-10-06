@@ -179,6 +179,37 @@ class LoginHistory(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", SAJSON, default=dict)
 
 
+class Plan(TimestampMixin, Base):
+    __tablename__ = "plans"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    price_monthly: Mapped[float] = mapped_column(Float, default=0)
+    currency: Mapped[str] = mapped_column(String(10), default="USD")
+    max_records: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_storage_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_custom_modules: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_limit_monthly: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    features: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+
+
+class Subscription(TimestampMixin, Base):
+    __tablename__ = "subscriptions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="Active", index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    provider_customer_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+
+
 class PrivacyRecord(TimestampMixin, Base):
     __tablename__ = "privacy_records"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -2021,6 +2052,69 @@ def _notify_account_once(db: Session, user: User, kind: str, title: str, body: s
         _notify_account(db, user, kind, title, body)
 
 
+def _default_plan(db: Session) -> Plan:
+    plan = db.scalar(select(Plan).where(Plan.code == "free"))
+    if plan is None:
+        plan = Plan(
+            code="free",
+            name="Free",
+            price_monthly=0,
+            currency="USD",
+            max_records=1000,
+            max_storage_mb=250,
+            max_custom_modules=2,
+            ai_limit_monthly=100,
+            active=True,
+            features={"reports": True, "custom_modules": True, "apex": False},
+        )
+        db.add(plan)
+        db.flush()
+    return plan
+
+
+def _ensure_user_subscription(db: Session, user: User) -> Subscription:
+    subscription = db.scalar(select(Subscription).where(Subscription.user_id == user.id))
+    if subscription is None:
+        plan = _default_plan(db)
+        now = datetime.utcnow()
+        subscription = Subscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status="Active",
+            started_at=now,
+            current_period_start=now,
+        )
+        db.add(subscription)
+        db.flush()
+    return subscription
+
+
+def _subscription_payload(db: Session, user_id: int) -> dict[str, Any]:
+    subscription = db.scalar(select(Subscription).where(Subscription.user_id == user_id))
+    if subscription is None:
+        user = db.get(User, user_id)
+        if user is None:
+            return {"plan_code":"free","plan_name":"Free","status":"Unknown"}
+        subscription = _ensure_user_subscription(db, user)
+        db.commit()
+    plan = db.get(Plan, subscription.plan_id)
+    return {
+        "id": subscription.id,
+        "status": subscription.status,
+        "plan_id": subscription.plan_id,
+        "plan_code": plan.code if plan else None,
+        "plan_name": plan.name if plan else "Unknown",
+        "price_monthly": float(plan.price_monthly or 0) if plan else 0,
+        "currency": plan.currency if plan else "USD",
+        "started_at": subscription.started_at.isoformat() if subscription.started_at else None,
+        "trial_ends_at": subscription.trial_ends_at.isoformat() if subscription.trial_ends_at else None,
+        "current_period_start": subscription.current_period_start.isoformat() if subscription.current_period_start else None,
+        "current_period_end": subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+        "cancel_at_period_end": bool(subscription.cancel_at_period_end),
+        "provider": subscription.provider,
+    }
+
+
 def _claim_legacy_custom_modules(db: Session, actor: User) -> None:
     unowned = db.scalars(select(MetadataModule).where(MetadataModule.owner_id.is_(None))).all()
     changed = False
@@ -2441,6 +2535,8 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
         password_changed_at=datetime.utcnow(),
     )
     db.add(user)
+    db.flush()
+    _ensure_user_subscription(db, user)
     db.commit()
     db.refresh(user)
     token = _create_session(request, db, user)
@@ -4348,7 +4444,220 @@ def _admin_user_payload(user: User, db: Session) -> dict[str, Any]:
     value["manager_name"] = db.get(User, user.manager_id).name if user.manager_id and db.get(User, user.manager_id) else None
     value["territory_name"] = db.get(Territory, user.territory_id).name if user.territory_id and db.get(Territory, user.territory_id) else None
     value["groups"] = [group.name for group in db.scalars(select(SecurityGroup).join(SecurityGroupMember, SecurityGroupMember.group_id == SecurityGroup.id).where(SecurityGroupMember.user_id == user.id)).all()]
+    value["subscription"] = _subscription_payload(db, user.id)
     return value
+
+
+@app.get("/owner", response_class=HTMLResponse)
+def owner_console(_: User = Depends(require_admin_actor)) -> FileResponse:
+    return FileResponse(ROOT / "templates" / "owner.html", media_type="text/html")
+
+
+def _login_method(row: LoginHistory | None) -> str:
+    if row is None:
+        return "—"
+    metadata = row.metadata_json or {}
+    return str(metadata.get("method") or row.event or "password").replace("_", " ").title()
+
+
+def _device_summary(user_agent: str | None) -> str:
+    ua = str(user_agent or "").lower()
+    if not ua:
+        return "Unknown device"
+    browser = "Edge" if "edg/" in ua else "Chrome" if "chrome/" in ua else "Firefox" if "firefox/" in ua else "Safari" if "safari/" in ua else "Browser"
+    os_name = "Windows" if "windows" in ua else "Android" if "android" in ua else "iOS" if "iphone" in ua or "ipad" in ua else "macOS" if "mac os" in ua else "Linux" if "linux" in ua else "Unknown OS"
+    return f"{browser} / {os_name}"
+
+
+@app.get("/api/owner/overview")
+def owner_overview(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    now = datetime.utcnow()
+    today = datetime(now.year, now.month, now.day)
+    total_users = int(db.scalar(select(func.count()).select_from(User)) or 0)
+    active_users = int(db.scalar(select(func.count()).select_from(User).where(User.status == "Active")) or 0)
+    signed_up_today = int(db.scalar(select(func.count()).select_from(User).where(User.created_at >= today)) or 0)
+    logins_today = int(db.scalar(select(func.count()).select_from(LoginHistory).where(LoginHistory.event == "login", LoginHistory.success == True, LoginHistory.occurred_at >= today)) or 0)
+    active_sessions = int(db.scalar(select(func.count()).select_from(AuthSession).where(AuthSession.revoked_at.is_(None), AuthSession.expires_at > now)) or 0)
+
+    plan_rows = db.execute(
+        select(Plan.name, func.count(Subscription.id))
+        .outerjoin(Subscription, Subscription.plan_id == Plan.id)
+        .group_by(Plan.id, Plan.name)
+        .order_by(Plan.id)
+    ).all()
+    plans = [{"name": name, "count": int(count or 0)} for name, count in plan_rows]
+    recent = db.execute(
+        select(LoginHistory, User)
+        .outerjoin(User, User.id == LoginHistory.user_id)
+        .order_by(LoginHistory.occurred_at.desc())
+        .limit(8)
+    ).all()
+    return {
+        "total_users": total_users,
+        "active_users": active_users,
+        "signed_up_today": signed_up_today,
+        "logins_today": logins_today,
+        "active_sessions": active_sessions,
+        "plans": plans,
+        "recent_logins": [{
+            "id": event.id,
+            "user_id": user.id if user else None,
+            "name": user.name if user else "Unknown account",
+            "email": user.email if user else None,
+            "success": bool(event.success),
+            "method": _login_method(event),
+            "device": _device_summary(event.user_agent),
+            "ip_address": event.ip_address,
+            "occurred_at": event.occurred_at.isoformat(),
+        } for event, user in recent],
+    }
+
+
+@app.get("/api/owner/users")
+def owner_users(
+    search: str | None = None,
+    status: str | None = None,
+    plan: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin_actor),
+) -> dict[str, Any]:
+    query = select(User).order_by(User.created_at.desc())
+    if status:
+        query = query.where(User.status == status)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where(or_(User.name.ilike(pattern), User.email.ilike(pattern), User.username.ilike(pattern), User.phone.ilike(pattern)))
+    users = db.scalars(query.offset(offset).limit(limit)).all()
+    items = []
+    for user in users:
+        subscription = _subscription_payload(db, user.id)
+        if plan and str(subscription.get("plan_code") or "").lower() != plan.lower():
+            continue
+        last_login = db.scalar(select(LoginHistory).where(LoginHistory.user_id == user.id, LoginHistory.event == "login", LoginHistory.success == True).order_by(LoginHistory.occurred_at.desc()).limit(1))
+        items.append({
+            "id": user.id,
+            "name": user.name,
+            "username": user.username,
+            "email": user.email,
+            "phone": user.phone,
+            "role": user.role,
+            "status": user.status,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+            "last_active": user.last_active.isoformat() if user.last_active else None,
+            "login_method": _login_method(last_login),
+            "last_device": _device_summary(last_login.user_agent if last_login else None),
+            "subscription": subscription,
+        })
+    return {"items": items, "total": len(items), "limit": limit, "offset": offset}
+
+
+@app.get("/api/owner/users/{user_id}")
+def owner_user_detail(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    logins = db.scalars(select(LoginHistory).where(LoginHistory.user_id == user.id).order_by(LoginHistory.occurred_at.desc()).limit(50)).all()
+    sessions = db.scalars(select(AuthSession).where(AuthSession.user_id == user.id).order_by(AuthSession.created_at.desc()).limit(50)).all()
+    custom_modules = int(db.scalar(select(func.count()).select_from(MetadataModule).where(MetadataModule.owner_id == user.id)) or 0)
+    return {
+        "user": _admin_user_payload(user, db),
+        "custom_modules": custom_modules,
+        "login_history": [{
+            "id": row.id,
+            "event": row.event,
+            "success": bool(row.success),
+            "method": _login_method(row),
+            "ip_address": row.ip_address,
+            "device": _device_summary(row.user_agent),
+            "occurred_at": row.occurred_at.isoformat(),
+        } for row in logins],
+        "sessions": [{
+            "id": row.id,
+            "created_at": row.created_at.isoformat(),
+            "last_seen_at": row.last_seen_at.isoformat(),
+            "expires_at": row.expires_at.isoformat(),
+            "revoked_at": row.revoked_at.isoformat() if row.revoked_at else None,
+            "ip_address": row.ip_address,
+            "device": _device_summary(row.user_agent),
+            "active": row.revoked_at is None and row.expires_at > datetime.utcnow(),
+        } for row in sessions],
+    }
+
+
+@app.get("/api/owner/login-history")
+def owner_login_history(
+    success: bool | None = None,
+    user_id: int | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin_actor),
+) -> dict[str, Any]:
+    query = select(LoginHistory, User).outerjoin(User, User.id == LoginHistory.user_id)
+    if success is not None:
+        query = query.where(LoginHistory.success == success)
+    if user_id:
+        query = query.where(LoginHistory.user_id == user_id)
+    total = int(db.scalar(select(func.count()).select_from(query.subquery())) or 0)
+    rows = db.execute(query.order_by(LoginHistory.occurred_at.desc()).offset(offset).limit(limit)).all()
+    return {"items": [{
+        "id": event.id,
+        "user_id": user.id if user else None,
+        "name": user.name if user else "Unknown account",
+        "email": user.email if user else None,
+        "event": event.event,
+        "success": bool(event.success),
+        "method": _login_method(event),
+        "ip_address": event.ip_address,
+        "device": _device_summary(event.user_agent),
+        "occurred_at": event.occurred_at.isoformat(),
+    } for event, user in rows], "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/owner/plans")
+def owner_plans(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    plans = db.scalars(select(Plan).order_by(Plan.price_monthly, Plan.id)).all()
+    return {"items": [{
+        "id": plan.id,
+        "code": plan.code,
+        "name": plan.name,
+        "price_monthly": float(plan.price_monthly or 0),
+        "currency": plan.currency,
+        "max_records": plan.max_records,
+        "max_storage_mb": plan.max_storage_mb,
+        "max_custom_modules": plan.max_custom_modules,
+        "ai_limit_monthly": plan.ai_limit_monthly,
+        "active": bool(plan.active),
+        "features": plan.features or {},
+    } for plan in plans]}
+
+
+@app.patch("/api/owner/users/{user_id}/subscription")
+def owner_update_subscription(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    plan_code = str(payload.get("plan_code") or "").strip().lower()
+    plan = db.scalar(select(Plan).where(func.lower(Plan.code) == plan_code, Plan.active == True))
+    if plan is None:
+        raise HTTPException(422, "Unknown or inactive plan")
+    subscription = _ensure_user_subscription(db, user)
+    before = _subscription_payload(db, user.id)
+    subscription.plan_id = plan.id
+    subscription.status = str(payload.get("status") or subscription.status or "Active")
+    subscription.current_period_start = subscription.current_period_start or datetime.utcnow()
+    subscription.current_period_end = payload.get("current_period_end") or subscription.current_period_end
+    after = {
+        "plan_code": plan.code,
+        "plan_name": plan.name,
+        "status": subscription.status,
+    }
+    add_audit(db, "subscription_updated", "subscriptions", subscription.id, f"Updated subscription for '{user.email}'", before=before, after=after, actor_id=actor.id)
+    db.commit()
+    return _subscription_payload(db, user.id)
 
 
 @app.get("/api/admin/users")
