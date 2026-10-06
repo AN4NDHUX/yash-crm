@@ -45,8 +45,11 @@
     .switch{text-align:center;margin-top:22px;color:var(--muted);font-size:13px}
     .error{display:none;margin:0 0 16px;padding:11px 12px;border-radius:10px;background:#fff2f2;color:var(--danger);font-size:12px;border:1px solid #ffd7d7}
     .secure{display:flex;align-items:center;gap:7px;margin-top:18px;justify-content:center;color:#8a94a8;font-size:11px}.secure:before{content:"✓";display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#edf5ff;color:#1769e0;font-weight:800}
-    .signup-only{display:none}
+    .signup-only,.forgot-only,.reset-only{display:none}
     body.signup .signup-only{display:grid} body.signup .signin-only{display:none}
+    body.forgot .forgot-only{display:grid} body.forgot .signin-only{display:none}
+    body.reset .reset-only{display:grid} body.reset .signin-only{display:none}
+    body.forgot .signup-only,body.forgot .reset-only,body.reset .signup-only,body.reset .forgot-only{display:none}
     @media(max-width:980px){.auth-shell{grid-template-columns:1fr}.hero{min-height:360px;padding:34px}.hero-art{right:-80px;bottom:-35px;transform:scale(.8)}.hero h1{font-size:48px}.panel-wrap{padding:34px 20px 48px}}
     @media(max-width:560px){.hero{min-height:280px}.hero-copy{padding-top:34px}.hero h1{font-size:38px}.hero p{font-size:14px}.hero-art{display:none}.panel{padding:30px 22px;border-radius:20px}.panel h2{font-size:32px}.panel-wrap{padding:22px 14px 36px}}
   </style>
@@ -68,10 +71,18 @@
       <div class="panel">
         <span class="eyebrow signin-only">Welcome back</span>
         <span class="eyebrow signup-only">Create your workspace access</span>
+        <span class="eyebrow forgot-only">Account recovery</span>
+        <span class="eyebrow reset-only">Secure your account</span>
+
         <h2 class="signin-only">Sign in</h2>
         <h2 class="signup-only">Create account</h2>
-        <p class="sub signin-only">Continue to your Yash CRM customer workspace.</p>
-        <p class="sub signup-only">Create your personal Yash CRM account with your email and password.</p>
+        <h2 class="forgot-only">Reset password</h2>
+        <h2 class="reset-only">Choose a new password</h2>
+
+        <p class="sub signin-only">Continue to your private Yash CRM workspace using your username, email, or phone number.</p>
+        <p class="sub signup-only">Every account starts with a private, empty CRM workspace. Existing data is restored only when you sign back into the same account.</p>
+        <p class="sub forgot-only">Enter your username, email, or phone number. If the account exists, reset instructions will be sent to its registered channels.</p>
+        <p class="sub reset-only">Use a new password with at least 8 characters.</p>
 
         <div class="error" id="auth-error" role="alert"></div>
 
@@ -80,24 +91,46 @@
             <label for="name">Full name</label>
             <input id="name" name="name" autocomplete="name" placeholder="Your full name" />
           </div>
-          <div class="field">
-            <label for="email">Email address</label>
-            <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@company.com" />
-          </div>
-          <div class="field">
-            <label for="password">Password</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" required minlength="10" placeholder="At least 10 characters" />
+          <div class="field signup-only">
+            <label for="username">Username</label>
+            <input id="username" name="username" autocomplete="username" minlength="3" maxlength="40" placeholder="your.username" />
           </div>
           <div class="field signup-only">
-            <label for="confirm-password">Confirm password</label>
-            <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="10" placeholder="Repeat your password" />
+            <label for="signup-email">Email address</label>
+            <input id="signup-email" name="email" type="email" autocomplete="email" placeholder="you@company.com" />
           </div>
-          <div class="row signin-only"><span></span><a href="/signup">Create an account</a></div>
-          <button class="submit" type="submit" id="submit-button"><span class="signin-only">Sign in to Yash CRM</span><span class="signup-only">Create my account</span></button>
+          <div class="field signup-only">
+            <label for="phone">Phone number</label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+91XXXXXXXXXX" />
+          </div>
+
+          <div class="field signin-only forgot-only">
+            <label for="identifier">Username, email, or phone number</label>
+            <input id="identifier" name="identifier" autocomplete="username" placeholder="name, you@company.com, or phone" />
+          </div>
+
+          <div class="field signin-only signup-only reset-only">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" />
+          </div>
+          <div class="field signup-only reset-only">
+            <label for="confirm-password">Confirm password</label>
+            <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" placeholder="Repeat your password" />
+          </div>
+
+          <div class="row signin-only"><a href="/forgot-password">Forgot password?</a><a href="/signup">Create an account</a></div>
+          <button class="submit" type="submit" id="submit-button">
+            <span class="signin-only">Sign in to Yash CRM</span>
+            <span class="signup-only">Create my account</span>
+            <span class="forgot-only">Send reset instructions</span>
+            <span class="reset-only">Save new password</span>
+          </button>
         </form>
 
         <div class="switch signin-only">New to Yash CRM? <a href="/signup">Sign up</a></div>
         <div class="switch signup-only">Already have an account? <a href="/login">Sign in</a></div>
+        <div class="switch forgot-only"><a href="/login">Back to sign in</a></div>
+        <div class="switch reset-only"><a href="/login">Back to sign in</a></div>
         <div class="secure">Passwords are salted and hashed before database storage.</div>
       </div>
     </section>
@@ -105,48 +138,103 @@
 
 <script>
 (() => {
-  const signup = location.pathname === "/signup";
-  document.body.classList.toggle("signup", signup);
-  document.title = signup ? "Yash CRM — Create account" : "Yash CRM — Sign in";
+  const mode =
+    location.pathname === "/signup" ? "signup" :
+    location.pathname === "/forgot-password" ? "forgot" :
+    location.pathname === "/reset-password" ? "reset" : "signin";
+
+  if (mode !== "signin") document.body.classList.add(mode);
+  document.title = ({
+    signin:"Yash CRM — Sign in",
+    signup:"Yash CRM — Create account",
+    forgot:"Yash CRM — Reset password",
+    reset:"Yash CRM — Choose new password"
+  })[mode];
+
   const form = document.getElementById("auth-form");
   const errorBox = document.getElementById("auth-error");
   const submit = document.getElementById("submit-button");
   const password = document.getElementById("password");
-  password.autocomplete = signup ? "new-password" : "current-password";
+  if (password) password.autocomplete = mode === "signin" ? "current-password" : "new-password";
 
   const showError = (message) => {
     errorBox.textContent = message || "Something went wrong. Try again.";
     errorBox.style.display = "block";
   };
 
-  fetch("/api/auth/session", {credentials:"same-origin"})
-    .then((r) => { if (r.ok) location.replace("/dashboard"); })
-    .catch(() => {});
+  if (mode === "signin" || mode === "signup") {
+    fetch("/api/auth/session", {credentials:"same-origin"})
+      .then((r) => { if (r.ok) location.replace("/dashboard"); })
+      .catch(() => {});
+  }
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     errorBox.style.display = "none";
     const data = new FormData(form);
-    const payload = {
-      email: String(data.get("email") || "").trim(),
-      password: String(data.get("password") || "")
-    };
-    if (signup) {
-      payload.name = String(data.get("name") || "").trim();
+    let endpoint = "/api/auth/login";
+    let payload = {};
+
+    if (mode === "signin") {
+      payload = {
+        identifier: String(data.get("identifier") || "").trim(),
+        password: String(data.get("password") || "")
+      };
+      if (!payload.identifier) return showError("Enter your username, email, or phone number.");
+    } else if (mode === "signup") {
+      payload = {
+        name: String(data.get("name") || "").trim(),
+        username: String(data.get("username") || "").trim(),
+        email: String(data.get("email") || "").trim(),
+        phone: String(data.get("phone") || "").trim(),
+        password: String(data.get("password") || "")
+      };
       const confirm = String(data.get("confirm_password") || "");
-      if (payload.password !== confirm) return showError("Passwords do not match.");
       if (payload.name.length < 2) return showError("Enter your full name.");
+      if (payload.username.length < 3) return showError("Username must contain at least 3 characters.");
+      if (!payload.email) return showError("Email address is required.");
+      if (!payload.phone) return showError("Phone number is required.");
+      if (payload.password.length < 8) return showError("Password must contain at least 8 characters.");
+      if (payload.password !== confirm) return showError("Passwords do not match.");
+      endpoint = "/api/auth/signup";
+    } else if (mode === "forgot") {
+      payload = {identifier: String(data.get("identifier") || "").trim()};
+      if (!payload.identifier) return showError("Enter your username, email, or phone number.");
+      endpoint = "/api/auth/forgot-password";
+    } else {
+      const token = new URLSearchParams(location.search).get("token") || "";
+      payload = {token, password: String(data.get("password") || "")};
+      const confirm = String(data.get("confirm_password") || "");
+      if (!token) return showError("This password reset link is missing its security token.");
+      if (payload.password.length < 8) return showError("Password must contain at least 8 characters.");
+      if (payload.password !== confirm) return showError("Passwords do not match.");
+      endpoint = "/api/auth/reset-password";
     }
+
     submit.disabled = true;
     try {
-      const response = await fetch(signup ? "/api/auth/signup" : "/api/auth/login", {
+      const response = await fetch(endpoint, {
         method: "POST",
         credentials: "same-origin",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify(payload)
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || "Could not continue.");
+      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not continue.");
+
+      if (mode === "forgot") {
+        errorBox.textContent = result.message || "If the account exists, reset instructions were sent.";
+        errorBox.style.display = "block";
+        errorBox.style.background = "#effaf4";
+        errorBox.style.color = "#18794e";
+        errorBox.style.borderColor = "#c9eed8";
+        submit.disabled = false;
+        return;
+      }
+      if (mode === "reset") {
+        location.replace("/login");
+        return;
+      }
       const requested = new URLSearchParams(location.search).get("next");
       const safeNext = requested && requested.startsWith("/") && !requested.startsWith("//") ? requested : (result.redirect || "/dashboard");
       location.replace(safeNext);
