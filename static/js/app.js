@@ -660,7 +660,7 @@ function setupDirectory(active) {
   let hiddenGroups = []; let hiddenItems = [];
   try { hiddenGroups = JSON.parse(localStorage.getItem('yash.setup.hidden_groups') || '[]'); hiddenItems = JSON.parse(localStorage.getItem('yash.setup.hidden_items') || '[]'); } catch (_) {}
   const groups = Object.entries(state.platformCatalog.setup_navigation || {}).filter(([group]) => !hiddenGroups.includes(group));
-  return `<section class="card settings-nav"><div class="setup-quick-actions"><a href="/setup/search_setup" class="${active === "search_setup" ? "active" : ""}">Search Setup</a><a href="/setup/customize_setup" class="${active === "customize_setup" ? "active" : ""}">Customize Setup</a></div>${groups.map(([group, links]) => `<div data-setup-group="${esc(group)}"><span class="eyebrow" style="display:block;padding:12px 12px 5px">${esc(group)}</span>${links.filter(([resource]) => !hiddenItems.includes(resource)).map(([resource, label]) => `<a href="/setup/${resource}" class="${active === resource ? "active" : ""}">${esc(label)}</a>`).join("")}</div>`).join("")}</section>`;
+  return `<section class="card settings-nav"><div class="setup-quick-actions"><a href="/setup/search_setup" class="${active === "search_setup" ? "active" : ""}">Search Setup</a></div>${groups.map(([group, links]) => `<div data-setup-group="${esc(group)}"><span class="eyebrow setup-directory-group">${esc(group)}</span>${links.filter(([resource]) => !hiddenItems.includes(resource)).map(([resource, label]) => `<a href="/setup/${resource}" class="${active === resource ? "active" : ""}">${esc(label)}</a>`).join("")}</div>`).join("")}</section>`;
 }
 
 function setupSearchView() {
@@ -1023,8 +1023,14 @@ function setupLandingView() {
   let hiddenGroups = []; let hiddenItems = [];
   try { hiddenGroups = JSON.parse(localStorage.getItem('yash.setup.hidden_groups') || '[]'); hiddenItems = JSON.parse(localStorage.getItem('yash.setup.hidden_items') || '[]'); } catch (_) {}
   const groups = Object.entries(state.platformCatalog.setup_navigation || {}).filter(([group]) => !hiddenGroups.includes(group));
-  const cards = groups.map(([group, links]) => `<section class="card setup-hub-card setup-search-group" data-search-group="${esc(group.toLowerCase())}"><div class="setup-hub-head"><h2>${esc(group)}</h2></div><div class="setup-hub-links">${links.filter(([resource]) => !hiddenItems.includes(resource)).map(([resource, label]) => `<a href="/setup/${resource}" class="setup-hub-link setup-search-item" data-search-text="${esc(`${group} ${label} ${resource}`.toLowerCase())}">${esc(label)}</a>`).join("")}</div></section>`).join("");
-  return `<section class="setup-page-shell"><div class="setup-toolbar setup-toolbar-search-only"><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" autofocus /></label></div><p class="related-empty setup-toolbar-note" data-setup-search-count>Browse ${Object.values(state.platformCatalog.setup_navigation || {}).flat().length} setup options.</p><div class="setup-hub-grid" data-setup-search-results>${cards}</div></section>`;
+  const icons = {
+    "General":"♙","Security Control":"◇","Channels":"◔","Customization":"⚙","Automation":"⚙",
+    "Process Management":"⌘","Experience Center":"⌘","Data Administration":"▤","Marketplace":"▣",
+    "Developer Hub":"◈","Apex":"✦","CPQ":"▦"
+  };
+  const sparkle = new Set(["Canvas","Teamspace","Agents","MCP for AI Agents","StyleUI","Voice of the Customer"]);
+  const cards = groups.map(([group, links]) => `<section class="card setup-hub-card setup-search-group" data-search-group="${esc(group.toLowerCase())}"><div class="setup-hub-head"><span class="setup-hub-icon">${icons[group] || "◈"}</span><h2>${esc(group)}</h2></div><div class="setup-hub-links">${links.filter(([resource]) => !hiddenItems.includes(resource)).map(([resource, label]) => `<a href="/setup/${resource}" class="setup-hub-link setup-search-item" data-search-text="${esc(`${group} ${label} ${resource}`.toLowerCase())}"><span>${esc(label)}</span>${sparkle.has(label) ? '<b class="setup-sparkle">✦</b>' : ""}</a>`).join("")}</div></section>`).join("");
+  return `<section class="setup-page-shell setup-home"><div class="setup-home-toolbar"><h1>Setup</h1><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" autofocus /></label></div><p class="related-empty setup-toolbar-note" data-setup-search-count>Browse ${Object.values(state.platformCatalog.setup_navigation || {}).flat().length} setup options.</p><div class="setup-hub-grid" data-setup-search-results>${cards}</div></section>`;
 }
 
 async function setupView(resource, subparts = []) {
