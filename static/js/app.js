@@ -183,8 +183,10 @@ function setBreadcrumb(label, parent = "Workspace") {
 }
 
 function activeNav(route) {
-  const root = route.split("/").filter(Boolean)[0] || "dashboard";
-  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === root));
+  const parts = route.split("/").filter(Boolean);
+  const root = parts[0] || "dashboard";
+  $('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === root));
+  $('[data-custom-module-route]').forEach((link) => link.classList.toggle("active", root === "custom" && link.dataset.customModuleRoute === parts[1]));
 }
 
 function enhanceNavigation() {
@@ -808,7 +810,7 @@ async function customModuleBuilderView(moduleId = null) {
     api_name: module?.api_name || "",
     plural_label: module?.plural_label || "",
     description: module?.description || "",
-    fields: (module?.fields || []).map((field) => ({...field, enabled: metadataFieldEnabled(field)})),
+    fields: module ? (module.fields || []).map((field) => ({...field, enabled: metadataFieldEnabled(field)})) : [{label:"Name", api_name:"name", field_type:"text", enabled:true, required:true}],
     newFields: [],
     activeTab: "create",
   };
@@ -860,6 +862,22 @@ function renderBuilderFields() {
 }
 
 function bindBuilderFieldActions() {
+  $('[data-builder-local-index]').forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("application/x-yash-field-index", card.dataset.builderLocalIndex);
+      event.dataTransfer.effectAllowed = "move";
+    });
+    card.addEventListener("dragover", (event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; });
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const from = Number(event.dataTransfer.getData("application/x-yash-field-index"));
+      const to = Number(card.dataset.builderLocalIndex);
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+      const [moved] = state.customBuilder.fields.splice(from, 1);
+      state.customBuilder.fields.splice(to, 0, moved);
+      renderBuilderFields();
+    });
+  });
   $('[data-builder-field-toggle]').forEach((button) => button.addEventListener("click", async () => {
     const index = Number(button.dataset.builderFieldToggle);
     const field = state.customBuilder.fields[index];
