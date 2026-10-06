@@ -2839,6 +2839,14 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
         db.commit()
         raise HTTPException(401, "Incorrect username, email, phone number, or password")
 
+    otp_required = env_bool("YASHCRM_LOGIN_OTP_REQUIRED", IS_PRODUCTION)
+    if not otp_required:
+        _claim_legacy_custom_modules(db, user)
+        token = _create_session(request, db, user, auth_method="password")
+        response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"})
+        _set_session_cookie(response, token)
+        return response
+
     _auth_rate_limit(request, "login-otp", str(user.id), limit=5, window_seconds=600)
     now = datetime.utcnow()
     db.execute(
