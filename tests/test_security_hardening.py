@@ -159,3 +159,39 @@ def test_password_policy_requires_twelve_characters():
         out['valid'] = valid.status_code
     """)
     assert out == {'short': 422, 'valid': 201}
+
+
+def test_document_download_is_tenant_authorized_and_database_backed():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Document Owner','username':'doc.owner','email':'doc.owner@example.com',
+            'password':'strong-password-123'
+        })
+        uploaded = c.post(
+            '/api/documents/upload',
+            data={'name':'Private document'},
+            files={'file':('private.txt', b'private tenant content', 'text/plain')},
+        )
+        out['upload'] = uploaded.status_code
+        item = uploaded.json()
+        out['url'] = item.get('url')
+        item_id = item['id']
+        own = c.get(f'/api/documents/{item_id}/download')
+        out['own'] = own.status_code
+        out['body'] = own.content.decode()
+        with main.SessionLocal() as db:
+            out['blob_count'] = int(db.scalar(main.select(main.func.count()).select_from(main.DocumentBlob)) or 0)
+        c.post('/api/auth/logout')
+        c.post('/api/auth/signup', json={
+            'name':'Other Tenant','username':'other.tenant','email':'other.tenant@example.com',
+            'password':'strong-password-123'
+        })
+        out['cross_tenant'] = c.get(f'/api/documents/{item_id}/download').status_code
+    """)
+    assert out['upload'] == 201
+    assert out['url'].endswith('/download')
+    assert out['own'] == 200
+    assert out['body'] == 'private tenant content'
+    assert out['blob_count'] == 1
+    assert out['cross_tenant'] == 404
