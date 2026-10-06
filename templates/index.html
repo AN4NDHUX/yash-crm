@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261006-routing-repair-v3" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261006-account-auth-v1" />
 </head>
 <body>
   <div class="app-shell">
@@ -83,8 +83,11 @@
         </div>
         <div class="user-mini">
           <span class="avatar avatar-indigo"></span>
-          <div><strong>Administrator</strong><small>Administrator</small></div>
-          <button class="icon-button" id="profile-shortcut" aria-label="Open profile">•••</button>
+          <div><strong>Account</strong><small>CRM user</small></div>
+          <div class="user-mini-actions">
+            <button class="icon-button" id="profile-shortcut" aria-label="Open profile">•••</button>
+            <button class="sidebar-signout" id="logout-button" type="button">Sign out</button>
+          </div>
         </div>
       </div>
     </aside>
@@ -201,7 +204,7 @@
   </div>
 
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=20261006-routing-repair-v3"></script>
+  <script type="module" src="/static/js/app.js?v=20261006-account-auth-v1"></script>
   <script>
     (() => {
       const syncSidebarRoute = () => {
