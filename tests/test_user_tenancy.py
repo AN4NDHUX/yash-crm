@@ -162,3 +162,57 @@ def test_account_events_create_in_app_notifications():
     assert out['logged'] == 200
     assert 'account_created' in out['kinds1']
     assert 'login' in out['kinds2']
+
+
+def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_blocked():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        a = c.post('/api/auth/signup', json={
+            'name':'Tenant A','username':'tenant.a','email':'tenant.a@example.com',
+            'phone':'+919700000001','password':'password'
+        })
+        lead = c.post('/api/leads', json={'name':'A-only secret lead','company':'Private A'}).json()
+        lead_id = lead['id']
+        c.put('/api/settings/general', json={'org_name':'Tenant A CRM','currency':'USD'})
+        c.post('/api/auth/logout')
+
+        b = c.post('/api/auth/signup', json={
+            'name':'Tenant B','username':'tenant.b','email':'tenant.b@example.com',
+            'phone':'+919700000002','password':'password'
+        })
+        out['b_leads'] = c.get('/api/leads').json()['total']
+        out['b_direct_a'] = c.get(f'/api/leads/{lead_id}').status_code
+        out['b_search_a'] = c.get('/api/search', params={'q':'A-only secret lead'}).json()['results']
+        out['b_settings'] = c.get('/api/settings/general').json()['org_name']
+        c.put('/api/settings/general', json={'org_name':'Tenant B CRM','currency':'INR'})
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Tenant C','username':'tenant.c','email':'tenant.c@example.com',
+            'phone':'+919700000003','password':'password'
+        })
+        out['c_leads'] = c.get('/api/leads').json()['total']
+        out['c_settings'] = c.get('/api/settings/general').json()['org_name']
+        c.post('/api/auth/logout')
+
+        for label, identifier in [
+            ('username','tenant.a'),
+            ('email','tenant.a@example.com'),
+            ('phone','+919700000001'),
+        ]:
+            response = c.post('/api/auth/login', json={'identifier':identifier,'password':'password'})
+            out[f'login_{label}'] = response.status_code
+            out[f'leads_{label}'] = c.get('/api/leads').json()['total']
+            out[f'settings_{label}'] = c.get('/api/settings/general').json()['org_name']
+            c.post('/api/auth/logout')
+    """)
+    assert out['b_leads'] == 0
+    assert out['b_direct_a'] == 404
+    assert out['b_search_a'] == []
+    assert out['b_settings'] == 'Yash CRM'
+    assert out['c_leads'] == 0
+    assert out['c_settings'] == 'Yash CRM'
+    for label in ('username', 'email', 'phone'):
+        assert out[f'login_{label}'] == 200
+        assert out[f'leads_{label}'] == 1
+        assert out[f'settings_{label}'] == 'Tenant A CRM'
