@@ -60,7 +60,7 @@ Required production settings include:
 - `APP_USERNAME` / `APP_PASSWORD` for creation and synchronization of the database-backed owner account
 - `SEED_DEMO_DATA=false`
 
-The Administrator can optionally require TOTP MFA with `YASHCRM_ADMIN_TOTP_SECRET`. See [CLOUD_DEPLOY.md](CLOUD_DEPLOY.md) for deployment, backup, security and verification steps.
+Production login uses the account password followed by a single-use 6-digit OTP delivered by configured email or SMS. See [CLOUD_DEPLOY.md](CLOUD_DEPLOY.md) for deployment, delivery, backup, security and verification steps.
 
 ## Cloud AI setup
 
@@ -101,7 +101,9 @@ Copy `.env.example` only as a reference; the application does not automatically 
 | `APP_PASSWORD` | Administrator bootstrap/synchronization secret, at least 12 characters; never commit it. Production HTTP Basic access is disabled. |
 | `ADMIN_NAME` / `ADMIN_EMAIL` | Owner/Administrator identity synchronized at startup. |
 | `APP_PUBLIC_URL` | Canonical public Railway URL used in account/reset notifications. |
-| `YASHCRM_ADMIN_TOTP_SECRET` | Optional Base32 TOTP secret that requires a 6-digit authenticator code for Administrator login. |
+| `YASHCRM_LOGIN_OTP_REQUIRED` | Keep `true` in production to require a one-time login code after password validation. |
+| `YASHCRM_OTP_SECRET` | Server-side HMAC secret used to hash one-time login codes before storage. |
+| `SMTP_*` / `TWILIO_*` | Delivery settings for production one-time login codes and account notifications. |
 | `FORWARDED_ALLOW_IPS` | Trusted proxy addresses. Defaults to loopback instead of `*`. |
 | `CORS_ORIGINS` | Usually empty because the UI and API are same-origin. Wildcard CORS is rejected in production. |
 | `SEED_DEMO_DATA` | Keep `false` in production. |
@@ -112,7 +114,7 @@ Copy `.env.example` only as a reference; the application does not automatically 
 | `YASHCRM_AI_TIMEOUT` | AI request timeout in seconds, clamped to 10–300. |
 | `YASHCRM_AI_EXCEPTIONS_ENABLED` | Enables the new quotation-exception queue. Defaults on outside production and off in production. |
 
-Production uses per-user database sessions with tenant-scoped records, Administrator-only user/security administration, rate-limited public authentication endpoints, same-origin mutation checks, CSP/security headers and optional owner TOTP MFA. Development retains a Basic-auth compatibility path for automated/local tooling only.
+Production uses per-user database sessions with tenant-scoped records, Administrator-only user/security administration, rate-limited public authentication endpoints, same-origin mutation checks, CSP/security headers and one-time login OTP. Development retains a Basic-auth compatibility path for automated/local tooling only.
 
 ## Health and migrations
 
