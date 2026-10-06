@@ -216,3 +216,23 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
         assert out[f'login_{label}'] == 200
         assert out[f'leads_{label}'] == 1
         assert out[f'settings_{label}'] == 'Tenant A CRM'
+
+
+def test_cloud_administrator_can_sign_in_with_app_username():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        with main.SessionLocal() as db:
+            admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
+            out['username'] = admin.username
+            out['role'] = admin.role
+        login = c.post('/api/auth/login', json={
+            'identifier':'admin',
+            'password':'supersecretpass123'
+        })
+        out['login'] = login.status_code
+        out['owner'] = c.get('/owner').status_code
+    """)
+    assert out['username'] == 'admin'
+    assert out['role'] == 'Administrator'
+    assert out['login'] == 200
+    assert out['owner'] == 200
