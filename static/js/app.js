@@ -1071,27 +1071,87 @@ function bindCustomModuleAdmin() {
   }));
 }
 
+function customRuntimeFieldControl(field) {
+  const required = field.required ? "required" : "";
+  const marker = field.required ? ' <span class="required">*</span>' : "";
+  const name = esc(field.api_name);
+  const label = esc(field.label);
+  const type = String(field.field_type || "text");
+  const validation = field.validation || {};
+  const min = validation.min != null ? `min="${esc(validation.min)}"` : "";
+  const max = validation.max != null ? `max="${esc(validation.max)}"` : "";
+  const minLength = validation.min_length != null ? `minlength="${esc(validation.min_length)}"` : "";
+  const maxLength = validation.max_length != null ? `maxlength="${esc(validation.max_length)}"` : "";
+  const pattern = validation.regex ? `pattern="${esc(validation.regex)}"` : "";
+  if (field.read_only) return "";
+  if (type === "multiline" || type === "rich_text") {
+    return `<div class="field field-full"><label>${label}${marker}</label><textarea class="field-textarea" name="${name}" rows="4" ${required} ${minLength} ${maxLength}></textarea></div>`;
+  }
+  if (type === "checkbox") {
+    return `<label class="custom-runtime-check"><input type="checkbox" name="${name}" value="true" /><span>${label}${marker}</span></label>`;
+  }
+  if (type === "picklist") {
+    const options = validation.options || validation.allowed_values || [];
+    return `<div class="field"><label>${label}${marker}</label><select class="field-select" name="${name}" ${required}><option value="">Select</option>${options.map((item)=>`<option value="${esc(item)}">${esc(item)}</option>`).join("")}</select></div>`;
+  }
+  const inputType = ({email:"email",phone:"tel",url:"url",date:"date",datetime:"datetime-local",number:"number",decimal:"number",currency:"number",percentage:"number"})[type] || "text";
+  const step = ["decimal","currency","percentage"].includes(type) ? 'step="any"' : "";
+  return `<div class="field"><label>${label}${marker}</label><input class="field-input" type="${inputType}" name="${name}" ${required} ${step} ${min} ${max} ${minLength} ${maxLength} ${pattern} /></div>`;
+}
+
 async function customRuntimeView(module) {
   const schema = await api(`/api/custom/${module.api_name}/schema`);
   const data = await api(`/api/custom/${module.api_name}?limit=100`);
-  const fields = (schema.fields || []).slice(0,5);
-  const rows = data.items?.length ? data.items.map((row)=>`<tr><td><strong>${esc(row.name || row.title || `${module.label} #${row.id}`)}</strong></td>${fields.map((field)=>`<td>${esc(Array.isArray(row[field.api_name]) ? row[field.api_name].join(", ") : (row[field.api_name] ?? "—"))}</td>`).join("")}<td>${badge(row.status || "Active")}</td></tr>`).join("") : "";
-  return `${pageHeader("Custom Modules", module.plural_label || module.label, module.description || "Custom CRM module.", `<button class="button button-primary" data-custom-runtime-new>＋ New ${esc(module.label)}</button><button class="button button-ghost" data-go="/setup/custom_modules/builder/${module.id}">Customize fields</button>`)}
-  <section class="card table-card">${rows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${esc(module.label)}</th>${fields.map((field)=>`<th>${esc(field.label)}</th>`).join("")}<th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState("◇",`No ${(module.plural_label || module.label).toLowerCase()} yet`,"Create the first record after configuring fields.")}</section>`;
+  const fields = (schema.fields || []).filter((field)=>field.visibility?.enabled !== false);
+  const tableFields = fields.slice(0,5);
+  const rows = data.items?.length ? data.items.map((row)=>`<tr><td><strong>${esc(row.name || row.title || `${module.label} #${row.id}`)}</strong></td>${tableFields.map((field)=>`<td>${esc(Array.isArray(row[field.api_name]) ? row[field.api_name].join(", ") : (row[field.api_name] ?? "—"))}</td>`).join("")}<td>${badge(row.status || "Active")}</td></tr>`).join("") : "";
+  const formFields = fields.map(customRuntimeFieldControl).join("");
+  const addButton = fields.length ? `<button class="button button-primary" data-custom-runtime-new>＋ Add Report</button>` : "";
+  return `${pageHeader("Custom Modules", module.plural_label || module.label, module.description || "Custom CRM module.", `${addButton}<button class="button button-ghost" data-go="/setup/custom_modules/builder/${module.id}">Customize fields</button>`)}
+    ${fields.length ? `<section class="card custom-runtime-form-card" data-custom-runtime-form-card hidden>
+      <div class="settings-section-head"><h2>Add report</h2><p>Complete the fields configured for ${esc(module.label)}. Required fields are marked with *.</p></div>
+      <form class="settings-form" data-custom-runtime-form>
+        <div class="form-grid">${formFields}</div>
+        <div class="form-actions"><button type="button" class="button button-ghost" data-custom-runtime-cancel>Cancel</button><button type="submit" class="button button-primary">Save Report</button></div>
+      </form>
+    </section>` : `<section class="card settings-section"><div class="settings-section-head"><h2>Configure fields first</h2><p>This module has no active fields. Add fields in the visual builder before adding reports.</p></div><button class="button button-primary" data-go="/setup/custom_modules/builder/${module.id}">Customize fields</button></section>`}
+    <section class="card table-card custom-runtime-table">${rows ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>${esc(module.label)}</th>${tableFields.map((field)=>`<th>${esc(field.label)}</th>`).join("")}<th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState("◇","No reports yet","Use Add Report to create the first record for this module.")}</section>`;
 }
 
 function bindCustomRuntime(module) {
   $$('[data-go]').forEach((button)=>button.addEventListener("click",()=>navigate(button.dataset.go)));
-  $('[data-custom-runtime-new]')?.addEventListener("click", async () => {
-    const schema = await api(`/api/custom/${module.api_name}/schema`);
+  const card = $('[data-custom-runtime-form-card]');
+  const form = $('[data-custom-runtime-form]');
+  $('[data-custom-runtime-new]')?.addEventListener("click", () => {
+    if (!card) return;
+    card.hidden = false;
+    card.scrollIntoView({behavior:"smooth",block:"start"});
+    card.querySelector("input,select,textarea")?.focus();
+  });
+  $('[data-custom-runtime-cancel]')?.addEventListener("click", () => {
+    if (card) card.hidden = true;
+    form?.reset();
+  });
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity()) return;
     const payload = {};
-    for (const field of schema.fields || []) {
-      if (field.read_only) continue;
-      const value = window.prompt(field.label + (field.required ? " *" : "") + ":");
-      if (value === null) return;
-      if (value !== "") payload[field.api_name] = value;
+    const data = new FormData(form);
+    for (const [key,value] of data.entries()) {
+      if (value === "") continue;
+      const field = (state.customModules || []).find(()=>false);
+      payload[key] = value;
     }
-    try { await api(`/api/custom/${module.api_name}`, {method:"POST", body:JSON.stringify(payload)}); toast("Record created"); await renderRoute(); } catch(error){ toast("Could not create record",error.message,"error"); }
+    form.querySelectorAll('input[type="checkbox"]').forEach((input)=>{ payload[input.name] = input.checked; });
+    try {
+      await api(`/api/custom/${module.api_name}`, {method:"POST", body:JSON.stringify(payload)});
+      toast("Report saved", `The report was saved in ${module.plural_label || module.label}.`);
+      form.reset();
+      if (card) card.hidden = true;
+      await renderRoute();
+    } catch(error) {
+      toast("Could not save report", error.message, "error");
+    }
   });
 }
 
