@@ -185,8 +185,8 @@ function setBreadcrumb(label, parent = "Workspace") {
 function activeNav(route) {
   const parts = route.split("/").filter(Boolean);
   const root = parts[0] || "dashboard";
-  $('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === root));
-  $('[data-custom-module-route]').forEach((link) => link.classList.toggle("active", root === "custom" && link.dataset.customModuleRoute === parts[1]));
+  $$('[data-route]').forEach((link) => link.classList.toggle("active", link.dataset.route === root));
+  $$('[data-custom-module-route]').forEach((link) => link.classList.toggle("active", root === "custom" && link.dataset.customModuleRoute === parts[1]));
 }
 
 function enhanceNavigation() {
@@ -255,7 +255,7 @@ async function ensureCustomModules() {
 }
 
 function enhanceCustomModuleNavigation() {
-  $('.dynamic-custom-module-link').forEach((node) => node.remove());
+  $$('.dynamic-custom-module-link').forEach((node) => node.remove());
   $('.dynamic-custom-module-label')?.remove();
   const enabled = (state.customModules || []).filter((module) => module.enabled);
   if (!enabled.length) return;
@@ -862,7 +862,7 @@ function renderBuilderFields() {
 }
 
 function bindBuilderFieldActions() {
-  $('[data-builder-local-index]').forEach((card) => {
+  $$('[data-builder-local-index]').forEach((card) => {
     card.addEventListener("dragstart", (event) => {
       event.dataTransfer.setData("application/x-yash-field-index", card.dataset.builderLocalIndex);
       event.dataTransfer.effectAllowed = "move";
@@ -878,14 +878,14 @@ function bindBuilderFieldActions() {
       renderBuilderFields();
     });
   });
-  $('[data-builder-field-toggle]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-builder-field-toggle]').forEach((button) => button.addEventListener("click", async () => {
     const index = Number(button.dataset.builderFieldToggle);
     const field = state.customBuilder.fields[index];
     field.enabled = field.enabled === false;
     if (field.id) await api(`/api/admin/metadata/fields/${field.id}`, {method:"PATCH", body:JSON.stringify({enabled:field.enabled})});
     renderBuilderFields();
   }));
-  $('[data-builder-field-edit]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-builder-field-edit]').forEach((button) => button.addEventListener("click", async () => {
     const index = Number(button.dataset.builderFieldEdit);
     const field = state.customBuilder.fields[index];
     const label = window.prompt("Field label:", field.label);
@@ -895,7 +895,7 @@ function bindBuilderFieldActions() {
     if (field.id) await api(`/api/admin/metadata/fields/${field.id}`, {method:"PATCH", body:JSON.stringify({label:field.label})});
     renderBuilderFields();
   }));
-  $('[data-builder-field-delete]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-builder-field-delete]').forEach((button) => button.addEventListener("click", async () => {
     const index = Number(button.dataset.builderFieldDelete);
     const field = state.customBuilder.fields[index];
     if (!await confirmAction("Delete this custom field?", `The field "${field.label}" will be removed from this module. Existing stored values are not displayed after removal.`, "Delete field")) return;
@@ -940,20 +940,20 @@ async function saveCustomBuilder(closeAfter = false) {
 
 function bindCustomModuleAdmin() {
   $('[data-custom-module-new]')?.addEventListener("click", () => navigate("/setup/custom_modules/new"));
-  $('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
-  $('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
+  $$('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.dataset.customModuleToggle);
     const enabled = button.dataset.enabled !== "true";
     try { await api(`/api/admin/metadata/modules/${id}`, {method:"PATCH", body:JSON.stringify({enabled})}); await ensureCustomModules(); enhanceCustomModuleNavigation(); toast(enabled ? "Module enabled" : "Module disabled"); await renderRoute(); } catch(error){ toast("Could not update module",error.message,"error"); }
   }));
-  $('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
+  $$('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.dataset.customModuleDelete);
     if (!await confirmAction("Delete this custom module?","Its active custom records will be archived and the module definition, fields, layouts and views will be removed.","Delete module")) return;
     try { await api(`/api/admin/metadata/modules/${id}`, {method:"DELETE"}); await ensureCustomModules(); enhanceCustomModuleNavigation(); toast("Custom module deleted"); await renderRoute(); } catch(error){ toast("Could not delete module",error.message,"error"); }
   }));
 
   const drop = $('[data-builder-drop]');
-  $('[data-builder-field-type]').forEach((item) => {
+  $$('[data-builder-field-type]').forEach((item) => {
     item.addEventListener("dragstart", (event) => {
       event.dataTransfer.setData("application/x-yash-field", JSON.stringify({type:item.dataset.builderFieldType,label:item.dataset.builderFieldLabel}));
       event.dataTransfer.effectAllowed = "copy";
@@ -988,8 +988,8 @@ function bindCustomModuleAdmin() {
   $('[data-builder-cancel]')?.addEventListener("click", () => navigate("/setup/custom_modules"));
   $('[data-builder-save]')?.addEventListener("click", () => saveCustomBuilder(false));
   $('[data-builder-save-close]')?.addEventListener("click", () => saveCustomBuilder(true));
-  $('[data-builder-tab]').forEach((button) => button.addEventListener("click", () => {
-    $('[data-builder-tab]').forEach((node)=>node.classList.toggle("active",node===button));
+  $$('[data-builder-tab]').forEach((button) => button.addEventListener("click", () => {
+    $$('[data-builder-tab]').forEach((node)=>node.classList.toggle("active",node===button));
     state.customBuilder.activeTab = button.dataset.builderTab;
     $('[data-builder-layout-heading]').textContent = `${titleCase(button.dataset.builderTab)} ${state.customBuilder.label}`;
   }));
@@ -1005,7 +1005,7 @@ async function customRuntimeView(module) {
 }
 
 function bindCustomRuntime(module) {
-  $('[data-go]').forEach((button)=>button.addEventListener("click",()=>navigate(button.dataset.go)));
+  $$('[data-go]').forEach((button)=>button.addEventListener("click",()=>navigate(button.dataset.go)));
   $('[data-custom-runtime-new]')?.addEventListener("click", async () => {
     const schema = await api(`/api/custom/${module.api_name}/schema`);
     const payload = {};
