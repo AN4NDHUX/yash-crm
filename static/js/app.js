@@ -191,9 +191,9 @@ function activeNav(route) {
 
 function enhanceNavigation() {
   const setupLink = $('[data-route="setup"]');
-  if (setupLink) setupLink.remove();
+  if (setupLink) setupLink.textContent = "Settings & Setup";
   const settingsLink = $('[data-route="settings"]');
-  if (settingsLink) settingsLink.textContent = "Settings & General Setup";
+  if (settingsLink) settingsLink.remove();
   const addAfter = (route, nextRoute, label) => {
     const anchor = $(`[data-route="${route}"]`);
     if (anchor && !$(`[data-route="${nextRoute}"]`)) anchor.insertAdjacentHTML("afterend", `<a href="/${nextRoute}" data-route="${nextRoute}">${label}</a>`);
