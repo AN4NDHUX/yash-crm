@@ -2093,7 +2093,7 @@ def _environment_admin_credentials_valid(identifier: str, password: str) -> bool
     configured_username = os.getenv("APP_USERNAME", "").strip()
     configured_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
     configured_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
-    if not configured_password or len(configured_password) < 8:
+    if not configured_password or len(configured_password) < MIN_PASSWORD_LENGTH:
         return False
     supplied_identifier = str(identifier or "").strip().lower()
     username_ok = bool(configured_username) and secrets.compare_digest(
@@ -5082,6 +5082,13 @@ def user_status_action(user_id: int, action: str, db: Session = Depends(get_db),
         raise HTTPException(409, "An administrator cannot deactivate the current account")
     before = user.status
     user.status = "Active" if action == "activate" else "Inactive"
+    if action == "deactivate":
+        db.execute(
+            AuthSession.__table__.update().where(
+                AuthSession.user_id == user.id,
+                AuthSession.revoked_at.is_(None),
+            ).values(revoked_at=datetime.utcnow())
+        )
     add_audit(db, f"user_{action}d", "users", user.id, f"{action.title()}d user '{user.email}'", before={"status": before}, after={"status": user.status}, actor_id=actor.id)
     db.commit()
     return _admin_user_payload(user, db)
