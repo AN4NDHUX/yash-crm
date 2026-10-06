@@ -21,8 +21,6 @@ const PLATFORM_MODULE_ROUTES = [
   "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "payments",
   "campaigns", "cases", "solutions", "documents", "site_visits", "forecasts", "reports", "dashboards", "sales_targets",
 ];
-const BRAND_ORBS_LOADER_URL = "/static/threeui/brand-orbs-loader.html?v=20261006-neuform-v3";
-
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
