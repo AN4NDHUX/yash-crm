@@ -1,6 +1,6 @@
-# Apex CRM 2.0
+# Yash CRM
 
-Apex CRM is a browser-based FastAPI CRM with core sales, inventory, service, marketing, analytics, customization, security, automation and data-administration foundations. The production deployment is a stateless Docker web service backed by PostgreSQL.
+Yash CRM is a browser-based FastAPI CRM with core sales, inventory, service, marketing, analytics, customization, security, automation and data-administration foundations. The production deployment is a stateless Docker web service backed by PostgreSQL.
 
 ## Included modules
 
@@ -43,16 +43,24 @@ Browser -> HTTPS/cloud proxy -> FastAPI/Uvicorn -> PostgreSQL
                                       +-> OpenAI-compatible cloud AI provider
 ```
 
-End users need only the HTTPS URL and the shared application credentials. They do not install Python, run PowerShell, or start a local server.
+End users need only the HTTPS URL and their own Yash CRM account. Browser authentication is database-backed and accepts username, email, or phone number plus password. Production does not use the legacy shared HTTP Basic gate.
 
-## Deploy on Render
+## Deploy on Railway
 
-The root `render.yaml` creates the Docker web service and PostgreSQL database. In Render, create a new Blueprint from this repository and provide the two values marked `sync: false`:
+The production target is Railway with PostgreSQL. The root `Dockerfile`, `railway.toml`, and `cloud-entrypoint.sh` apply Alembic migrations before starting Uvicorn.
 
-- `APP_PASSWORD`: a unique password of at least 12 characters
-- `ADMIN_EMAIL`: the initial administrator's real email address
+Required production settings include:
 
-Render supplies `DATABASE_URL`, `PORT`, and the service hostname. The container applies Alembic migrations before it starts Uvicorn. See [CLOUD_DEPLOY.md](CLOUD_DEPLOY.md) for the exact deployment and verification sequence.
+- `APP_ENV=production`
+- `ENABLE_AUTH=true`
+- Railway PostgreSQL `DATABASE_URL`
+- exact `ALLOWED_HOSTS`
+- `APP_PUBLIC_URL`
+- `ADMIN_EMAIL` and `ADMIN_NAME`
+- `APP_USERNAME` / `APP_PASSWORD` for creation and synchronization of the database-backed owner account
+- `SEED_DEMO_DATA=false`
+
+The Administrator can optionally require TOTP MFA with `YASHCRM_ADMIN_TOTP_SECRET`. See [CLOUD_DEPLOY.md](CLOUD_DEPLOY.md) for deployment, backup, security and verification steps.
 
 ## Cloud AI setup
 
@@ -89,9 +97,12 @@ Copy `.env.example` only as a reference; the application does not automatically 
 | `DATABASE_URL` | Required PostgreSQL URL. `postgres://` and `postgresql://` are normalized for Psycopg 3. |
 | `ALLOWED_HOSTS` | Required exact host list. `*` is rejected in production. |
 | `ENABLE_AUTH` | Defaults to enabled in production. |
-| `APP_USERNAME` | Shared HTTP Basic username. |
-| `APP_PASSWORD` | Shared secret, at least 12 characters; never commit it. |
-| `ADMIN_NAME` / `ADMIN_EMAIL` | Initial CRM administrator record. The name and email remain editable in Settings. |
+| `APP_USERNAME` | Username synchronized to the database-backed Administrator account. |
+| `APP_PASSWORD` | Administrator bootstrap/synchronization secret, at least 12 characters; never commit it. Production HTTP Basic access is disabled. |
+| `ADMIN_NAME` / `ADMIN_EMAIL` | Owner/Administrator identity synchronized at startup. |
+| `APP_PUBLIC_URL` | Canonical public Railway URL used in account/reset notifications. |
+| `YASHCRM_ADMIN_TOTP_SECRET` | Optional Base32 TOTP secret that requires a 6-digit authenticator code for Administrator login. |
+| `FORWARDED_ALLOW_IPS` | Trusted proxy addresses. Defaults to loopback instead of `*`. |
 | `CORS_ORIGINS` | Usually empty because the UI and API are same-origin. Wildcard CORS is rejected in production. |
 | `SEED_DEMO_DATA` | Keep `false` in production. |
 | `YASHCRM_AI_PROVIDER` | Display name for the configured cloud AI provider. |
@@ -101,12 +112,12 @@ Copy `.env.example` only as a reference; the application does not automatically 
 | `YASHCRM_AI_TIMEOUT` | AI request timeout in seconds, clamped to 10–300. |
 | `YASHCRM_AI_EXCEPTIONS_ENABLED` | Enables the new quotation-exception queue. Defaults on outside production and off in production. |
 
-The built-in HTTP Basic gate prevents anonymous access, but it is not per-user identity or authorization. Before using the CRM for a larger team or sensitive regulated data, put it behind an OIDC/SSO access proxy and add role-based authorization.
+Production uses per-user database sessions with tenant-scoped records, Administrator-only user/security administration, rate-limited public authentication endpoints, same-origin mutation checks, CSP/security headers and optional owner TOTP MFA. Development retains a Basic-auth compatibility path for automated/local tooling only.
 
 ## Health and migrations
 
 - `GET /health` is a process liveness check and does not touch the database.
-- `GET /ready` verifies database connectivity and is Render's traffic health check.
+- `GET /ready` verifies database connectivity and is Railway's traffic health check.
 - `python -m alembic upgrade head` applies schema changes.
 - `python -m alembic check` verifies that model changes have a matching migration.
 
@@ -118,7 +129,7 @@ With the app running locally:
 python scripts/check_contracts.py
 ```
 
-For an authenticated deployment, also set `YASH_CRM_USERNAME` and `YASH_CRM_PASSWORD`. The checks cover health, security headers, core and expanded CRUD behavior, activity subtypes, lead-to-account/contact/deal conversion, related records, automation execution, editable administrator profile data, audit history and recycle/restore.
+The repository CI additionally runs PostgreSQL migrations, dependency auditing, Bandit security checks and a real headless Chromium signup/login/navigation flow. The contract script remains useful for controlled environment verification.
 
 ## Preserved product behavior
 
@@ -128,6 +139,6 @@ For an authenticated deployment, also set `YASH_CRM_USERNAME` and `YASH_CRM_PASS
 - Deletes archive normal CRM records instead of physically removing them.
 - The existing responsive UI is retained; the sidebar gloss is intentionally subtle and disabled for reduced-motion users.
 
-## Honest scope boundary
+## Production scope boundary
 
-This package is a functional Yash CRM foundation, not a claim of complete feature parity with any commercial CRM. SMTP/email delivery, durable production object storage, webhook dispatch, schedule execution, OIDC/SSO, granular per-request authorization, accounting/payment gateways and arbitrary report-query execution require deployment-specific services or further product work. The AI copilot is decision support, not an autonomous operator: model output can be wrong, CRM context leaves the application for the configured provider, and a human must approve every proposed CRM activity. Configuration records and queue/audit foundations are present so those services can be added without replacing the CRM data model. See [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md).
+The repository now includes tenant isolation, protected durable document storage in PostgreSQL, owner account operations, subscription feature/usage enforcement, browser E2E coverage, PostgreSQL migration CI and security scanning. External delivery systems still depend on deployment-specific credentials and network access: SMTP, SMS/Twilio and the configured AI provider must be validated in the Railway environment after secrets are configured. Billing-provider checkout/webhooks and enterprise SSO/OIDC are separate integrations rather than assumptions hidden in the core CRM.
