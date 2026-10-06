@@ -116,7 +116,7 @@
     .lang-chevron{margin-left:auto;font-size:10px;opacity:.85;transition:transform .16s ease}
     .lang[open] .lang-chevron{transform:rotate(180deg)}
     .lang-menu{position:absolute;top:calc(100% + 8px);right:0;width:180px;padding:7px;background:rgba(5,20,55,.98);border:1px solid rgba(255,255,255,.16);border-radius:13px;box-shadow:0 18px 40px rgba(0,0,0,.28);backdrop-filter:blur(16px);display:grid;gap:3px;z-index:40}
-    .lang-option{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-radius:9px;background:transparent;color:#fff;font:inherit;font-size:12px;font-weight:700;text-align:left;cursor:pointer}
+    .lang-option{position:relative;display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:0;border-radius:9px;background:transparent;color:#fff;font:inherit;font-size:12px;font-weight:700;text-align:left;cursor:pointer;user-select:none}\n    .lang-option input{position:absolute;opacity:0;pointer-events:none}
     .lang-option:hover,.lang-option[aria-current="true"]{background:rgba(255,255,255,.12)}
     .lang-option small{margin-left:auto;color:rgba(255,255,255,.56);font-size:10px}
     .flag{width:24px;height:16px;border-radius:3px;display:inline-grid;place-items:center;flex:0 0 auto;overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.24),0 1px 4px rgba(0,0,0,.22);background:#fff}
@@ -231,11 +231,11 @@
             <span class="lang-chevron">⌄</span>
           </summary>
           <div class="lang-menu" id="language-menu" role="listbox" aria-label="Language">
-            <button class="lang-option" type="button" data-lang="en" role="option"><span class="flag" aria-hidden="true"><svg viewBox="0 0 741 390" xmlns="http://www.w3.org/2000/svg"><rect width="741" height="390" fill="#fff"/><g fill="#B22234"><rect width="741" height="30"/><rect y="60" width="741" height="30"/><rect y="120" width="741" height="30"/><rect y="180" width="741" height="30"/><rect y="240" width="741" height="30"/><rect y="300" width="741" height="30"/><rect y="360" width="741" height="30"/></g><rect width="296.4" height="210" fill="#3C3B6E"/><g fill="#fff" font-size="20" font-family="Arial" text-anchor="middle"><text x="20" y="22">★ ★ ★ ★ ★ ★</text><text x="20" y="52"> ★ ★ ★ ★ ★</text><text x="20" y="82">★ ★ ★ ★ ★ ★</text><text x="20" y="112"> ★ ★ ★ ★ ★</text><text x="20" y="142">★ ★ ★ ★ ★ ★</text><text x="20" y="172"> ★ ★ ★ ★ ★</text><text x="20" y="202">★ ★ ★ ★ ★ ★</text></g></svg></span><span>English</span><small>EN</small></button>
-            <button class="lang-option" type="button" data-lang="es" role="option"><span class="flag" aria-hidden="true"><svg viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg"><rect width="3" height="2" fill="#AA151B"/><rect y=".5" width="3" height="1" fill="#F1BF00"/></svg></span><span>Español</span><small>ES</small></button>
-            <button class="lang-option" type="button" data-lang="de" role="option"><span class="flag" aria-hidden="true"><svg viewBox="0 0 5 3" xmlns="http://www.w3.org/2000/svg"><rect width="5" height="1" fill="#000"/><rect y="1" width="5" height="1" fill="#DD0000"/><rect y="2" width="5" height="1" fill="#FFCE00"/></svg></span><span>Deutsch</span><small>DE</small></button>
-            <button class="lang-option" type="button" data-lang="zh" role="option"><span class="flag" aria-hidden="true"><svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg"><rect width="30" height="20" fill="#DE2910"/><g fill="#FFDE00"><path d="M5 2.2l.7 2.1h2.2L6.1 5.6l.7 2.1L5 6.4 3.2 7.7l.7-2.1-1.8-1.3h2.2z"/><circle cx="9.5" cy="3.3" r=".65"/><circle cx="11" cy="5.3" r=".65"/><circle cx="10.8" cy="8" r=".65"/><circle cx="8.8" cy="9.5" r=".65"/></g></svg></span><span>中文</span><small>ZH</small></button>
-            <button class="lang-option" type="button" data-lang="hi" role="option"><span class="flag" aria-hidden="true"><svg viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg"><rect width="3" height="2" fill="#FF9933"/><rect y=".6667" width="3" height=".6666" fill="#fff"/><rect y="1.3333" width="3" height=".6667" fill="#138808"/><circle cx="1.5" cy="1" r=".22" fill="none" stroke="#000080" stroke-width=".055"/><circle cx="1.5" cy="1" r=".04" fill="#000080"/></svg></span><span>हिन्दी</span><small>HI</small></button>
+            <label class="lang-option" data-lang="en" role="option"><input type="radio" name="auth-language" value="en"><span class="flag" aria-hidden="true"><svg viewBox="0 0 741 390" xmlns="http://www.w3.org/2000/svg"><rect width="741" height="390" fill="#fff"/><g fill="#B22234"><rect width="741" height="30"/><rect y="60" width="741" height="30"/><rect y="120" width="741" height="30"/><rect y="180" width="741" height="30"/><rect y="240" width="741" height="30"/><rect y="300" width="741" height="30"/><rect y="360" width="741" height="30"/></g><rect width="296.4" height="210" fill="#3C3B6E"/><g fill="#fff" font-size="20" font-family="Arial" text-anchor="middle"><text x="20" y="22">★ ★ ★ ★ ★ ★</text><text x="20" y="52"> ★ ★ ★ ★ ★</text><text x="20" y="82">★ ★ ★ ★ ★ ★</text><text x="20" y="112"> ★ ★ ★ ★ ★</text><text x="20" y="142">★ ★ ★ ★ ★ ★</text><text x="20" y="172"> ★ ★ ★ ★ ★</text><text x="20" y="202">★ ★ ★ ★ ★ ★</text></g></svg></span><span>English</span><small>EN</small></label>
+            <label class="lang-option" data-lang="es" role="option"><input type="radio" name="auth-language" value="es"><span class="flag" aria-hidden="true"><svg viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg"><rect width="3" height="2" fill="#AA151B"/><rect y=".5" width="3" height="1" fill="#F1BF00"/></svg></span><span>Español</span><small>ES</small></label>
+            <label class="lang-option" data-lang="de" role="option"><input type="radio" name="auth-language" value="de"><span class="flag" aria-hidden="true"><svg viewBox="0 0 5 3" xmlns="http://www.w3.org/2000/svg"><rect width="5" height="1" fill="#000"/><rect y="1" width="5" height="1" fill="#DD0000"/><rect y="2" width="5" height="1" fill="#FFCE00"/></svg></span><span>Deutsch</span><small>DE</small></label>
+            <label class="lang-option" data-lang="zh" role="option"><input type="radio" name="auth-language" value="zh"><span class="flag" aria-hidden="true"><svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg"><rect width="30" height="20" fill="#DE2910"/><g fill="#FFDE00"><path d="M5 2.2l.7 2.1h2.2L6.1 5.6l.7 2.1L5 6.4 3.2 7.7l.7-2.1-1.8-1.3h2.2z"/><circle cx="9.5" cy="3.3" r=".65"/><circle cx="11" cy="5.3" r=".65"/><circle cx="10.8" cy="8" r=".65"/><circle cx="8.8" cy="9.5" r=".65"/></g></svg></span><span>中文</span><small>ZH</small></label>
+            <label class="lang-option" data-lang="hi" role="option"><input type="radio" name="auth-language" value="hi"><span class="flag" aria-hidden="true"><svg viewBox="0 0 3 2" xmlns="http://www.w3.org/2000/svg"><rect width="3" height="2" fill="#FF9933"/><rect y=".6667" width="3" height=".6666" fill="#fff"/><rect y="1.3333" width="3" height=".6667" fill="#138808"/><circle cx="1.5" cy="1" r=".22" fill="none" stroke="#000080" stroke-width=".055"/><circle cx="1.5" cy="1" r=".04" fill="#000080"/></svg></span><span>हिन्दी</span><small>HI</small></label>
           </div>
         </details>
       </div>
@@ -363,7 +363,10 @@
     if (selectedOption) activeFlag.innerHTML = selectedOption.outerHTML;
     activeCode.textContent = lang.code;
     document.querySelectorAll(".lang-option").forEach((option) => {
-      option.setAttribute("aria-current", option.dataset.lang === language ? "true" : "false");
+      const selected = option.dataset.lang === language;
+      option.setAttribute("aria-current", selected ? "true" : "false");
+      const radio = option.querySelector('input[name="auth-language"]');
+      if (radio) radio.checked = selected;
     });
     try { localStorage.setItem("yashcrm.auth.language", language); } catch (_) {}
 
@@ -417,19 +420,19 @@
     languageToggle.focus();
   };
 
+  languageMenu.addEventListener("change", (event) => {
+    const radio = event.target.closest('input[name="auth-language"]');
+    if (!radio) return;
+    selectLanguage(radio.value);
+  });
+
   languageMenu.addEventListener("click", (event) => {
     const option = event.target.closest(".lang-option");
     if (!option) return;
-    event.preventDefault();
-    event.stopPropagation();
-    selectLanguage(option.dataset.lang);
-  });
-
-  languageMenu.addEventListener("keydown", (event) => {
-    const option = event.target.closest(".lang-option");
-    if (!option || (event.key !== "Enter" && event.key !== " ")) return;
-    event.preventDefault();
-    selectLanguage(option.dataset.lang);
+    const radio = option.querySelector('input[name="auth-language"]');
+    if (!radio) return;
+    radio.checked = true;
+    selectLanguage(radio.value);
   });
 
   document.addEventListener("click", (event) => {
