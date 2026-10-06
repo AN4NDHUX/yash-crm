@@ -2134,3 +2134,95 @@ button, a, input, select, textarea { touch-action: manipulation; }
   height: 54px !important;
   filter: drop-shadow(0 8px 18px rgba(23,105,224,.22));
 }
+
+
+/* Frameless Neuform BrandOrbs loader */
+.loading {
+  min-height: 240px;
+  display: grid !important;
+  justify-items: center !important;
+  align-content: center !important;
+  gap: 12px !important;
+  padding: 32px 0 !important;
+  text-align: center;
+}
+
+.brand-orbs-shell,
+.yash-loading-logo,
+.yash-loading-mark {
+  display: none !important;
+}
+
+.brand-orbs-loader {
+  display: block !important;
+  width: 128px !important;
+  height: 128px !important;
+  flex: 0 0 128px !important;
+  border: 0 !important;
+  outline: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.loading-label {
+  display: block;
+  color: var(--premium-ink, #14213d);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.loading-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 8px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.loading-steps i { font-style: normal; }
+.loading-steps b {
+  width: 12px;
+  height: 1px;
+  background: var(--border-strong, #d7dce8);
+}
+
+.loading-progress {
+  width: 204px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(23,105,224,.10);
+}
+
+.loading-progress i {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, #1769e0, transparent);
+  animation: journey-load 1.45s ease-in-out infinite;
+}
+
+@media (max-width: 720px) {
+  .brand-orbs-loader {
+    width: 112px !important;
+    height: 112px !important;
+    flex-basis: 112px !important;
+  }
+  .loading-progress { width: min(204px, 72vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-progress i {
+    animation: none !important;
+    width: 100%;
+    transform: none !important;
+    opacity: .55;
+  }
+}
