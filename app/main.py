@@ -3732,7 +3732,9 @@ def _metadata_module_json(item: MetadataModule, db: Session) -> dict[str, Any]:
     fields = db.scalars(select(MetadataField).where(MetadataField.module_id == item.id).order_by(MetadataField.position, MetadataField.id)).all()
     layouts = db.scalars(select(MetadataLayout).where(MetadataLayout.module_id == item.id).order_by(MetadataLayout.id)).all()
     views = db.scalars(select(MetadataView).where(MetadataView.module_id == item.id).order_by(MetadataView.id)).all()
-    return {"id": item.id, "api_name": item.api_name, "label": item.label, "plural_label": item.plural_label, "description": item.description, "enabled": item.enabled, "config": item.config or {}, "fields": [serialize(field) for field in fields], "layouts": [serialize(layout) for layout in layouts], "views": [serialize(view) for view in views], "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
+    config = dict(item.config or {})
+    public_api_name = str(config.get("public_api_name") or item.api_name)
+    return {"id": item.id, "api_name": public_api_name, "storage_api_name": item.api_name, "label": item.label, "plural_label": item.plural_label, "description": item.description, "enabled": item.enabled, "owner_id": item.owner_id, "config": config, "fields": [serialize(field) for field in fields], "layouts": [serialize(layout) for layout in layouts], "views": [serialize(view) for view in views], "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
 
 
 @app.get("/api/admin/metadata/modules")
@@ -3744,16 +3746,32 @@ def list_metadata_modules(db: Session = Depends(get_db), actor: User = Depends(c
 
 @app.post("/api/admin/metadata/modules", status_code=201)
 def create_metadata_module(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
-    api_name = str(payload.get("api_name") or "").strip().lower().replace(" ", "_")
+    requested_api_name = re.sub(r"[^a-z0-9_]+", "_", str(payload.get("api_name") or "").strip().lower().replace(" ", "_")).strip("_")
     label = str(payload.get("label") or "").strip()
-    if not api_name or not label:
+    if not requested_api_name or not label:
         raise HTTPException(422, "Module label and API name are required")
-    if db.scalar(select(MetadataModule).where(MetadataModule.api_name == api_name)):
-        raise HTTPException(409, "That module API name already exists")
-    item = MetadataModule(api_name=api_name, label=label, plural_label=str(payload.get("plural_label") or label), description=payload.get("description"), enabled=bool(payload.get("enabled", True)), owner_id=actor.id, config=payload.get("config") or {})
+    existing = db.scalars(select(MetadataModule).where(MetadataModule.owner_id == actor.id)).all()
+    if any(str((item.config or {}).get("public_api_name") or item.api_name).lower() == requested_api_name for item in existing):
+        raise HTTPException(409, "That module API name already exists in your account")
+    storage_api_name = f"u{actor.id}__{requested_api_name}"
+    suffix = 2
+    while db.scalar(select(MetadataModule.id).where(MetadataModule.api_name == storage_api_name)):
+        storage_api_name = f"u{actor.id}__{requested_api_name}_{suffix}"
+        suffix += 1
+    config = dict(payload.get("config") or {})
+    config["public_api_name"] = requested_api_name
+    item = MetadataModule(
+        api_name=storage_api_name,
+        label=label,
+        plural_label=str(payload.get("plural_label") or label),
+        description=payload.get("description"),
+        enabled=bool(payload.get("enabled", True)),
+        owner_id=actor.id,
+        config=config,
+    )
     db.add(item)
     db.flush()
-    add_audit(db, "create", "metadata_modules", item.id, f"Created metadata module '{item.label}'", after=_metadata_module_json(item, db))
+    add_audit(db, "create", "metadata_modules", item.id, f"Created metadata module '{item.label}'", after=_metadata_module_json(item, db), actor_id=actor.id)
     db.commit()
     db.refresh(item)
     return _metadata_module_json(item, db)
@@ -3902,15 +3920,17 @@ def create_metadata_view(module_id: int, payload: dict[str, Any], db: Session = 
 
 def _custom_module(db: Session, resource: str, *, enabled_only: bool = True, actor: User | None = None) -> MetadataModule:
     normalized = resource.strip().lower().replace(" ", "_")
-    query = select(MetadataModule).where(func.lower(MetadataModule.api_name) == normalized)
+    query = select(MetadataModule)
     if enabled_only:
         query = query.where(MetadataModule.enabled == True)
     if isinstance(actor, User):
         query = query.where(MetadataModule.owner_id == actor.id)
-    module = db.scalar(query)
-    if module is None:
-        raise HTTPException(404, "Custom module not found")
-    return module
+    modules = db.scalars(query.order_by(MetadataModule.id)).all()
+    for module in modules:
+        public_api_name = str((module.config or {}).get("public_api_name") or module.api_name).lower()
+        if public_api_name == normalized or module.api_name.lower() == normalized:
+            return module
+    raise HTTPException(404, "Custom module not found")
 
 
 def _custom_fields(db: Session, module_id: int) -> list[MetadataField]:
