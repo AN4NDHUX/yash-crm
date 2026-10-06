@@ -183,10 +183,19 @@ def test_document_download_is_tenant_authorized_and_database_backed():
         with main.SessionLocal() as db:
             out['blob_count'] = int(db.scalar(main.select(main.func.count()).select_from(main.DocumentBlob)) or 0)
         c.post('/api/auth/logout')
-        c.post('/api/auth/signup', json={
+        second = c.post('/api/auth/signup', json={
             'name':'Other Tenant','username':'other.tenant','email':'other.tenant@example.com',
             'password':'strong-password-123'
         })
+        out['second_signup'] = second.status_code
+        if second.status_code != 201:
+            login = c.post('/api/auth/login', json={
+                'identifier':'other.tenant',
+                'password':'strong-password-123'
+            })
+            out['second_login'] = login.status_code
+        else:
+            out['second_login'] = 200
         out['cross_tenant'] = c.get(f'/api/documents/{item_id}/download').status_code
     """)
     assert out['upload'] == 201
@@ -194,4 +203,6 @@ def test_document_download_is_tenant_authorized_and_database_backed():
     assert out['own'] == 200
     assert out['body'] == 'private tenant content'
     assert out['blob_count'] == 1
+    assert out['second_signup'] == 201
+    assert out['second_login'] == 200
     assert out['cross_tenant'] == 404
