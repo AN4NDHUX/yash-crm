@@ -16,8 +16,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="preload" href="/static/threeui/brand-orbs-loader.html?v=20261001-logo-orbs" as="document" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261006-sidebar-stability" />
+  <link rel="preload" href="/static/threeui/brand-orbs-loader.html?v=20261006-particles-v2" as="document" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261006-sidebar-layout-v2" />
 </head>
 <body>
   <div class="app-shell">
@@ -88,7 +88,6 @@
           <button class="icon-button" id="profile-shortcut" aria-label="Open profile">•••</button>
         </div>
       </div>
-      <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize navigation panel" aria-valuemin="248" aria-valuemax="360" aria-valuenow="280" tabindex="0"></div>
     </aside>
 
     <button class="drawer-backdrop" id="drawer-backdrop" type="button" aria-label="Close navigation" hidden></button>
@@ -294,60 +293,14 @@
         subtree: true
       });
 
-      const sidebar = sidebarElement;
-      const resizer = document.querySelector("#sidebar-resizer");
       const desktop = window.matchMedia("(min-width: 1001px)");
       desktop.addEventListener("change", syncDrawer);
-      const minimumWidth = 248;
-      const maximumWidth = 360;
-      const defaultWidth = 280;
-      const clampWidth = (width) => Math.min(maximumWidth, Math.max(minimumWidth, width));
-      const applySidebarWidth = (width, persist = true) => {
-        const nextWidth = clampWidth(Math.round(width));
-        document.documentElement.style.setProperty("--sidebar-width", `${nextWidth}px`);
-        resizer.setAttribute("aria-valuenow", String(nextWidth));
-        if (persist) {
-          try { localStorage.setItem("yash-crm-sidebar-width", String(nextWidth)); } catch (_) { /* Storage is optional. */ }
-        }
-      };
-
-      try {
-        const savedWidth = Number(localStorage.getItem("yash-crm-sidebar-width"));
-        if (Number.isFinite(savedWidth) && savedWidth > 0) applySidebarWidth(savedWidth, false);
-      } catch (_) { /* Use the default width when storage is unavailable. */ }
-
-      let resizing = false;
-      let startX = 0;
-      let startWidth = defaultWidth;
-      const finishResize = () => {
-        if (!resizing) return;
-        resizing = false;
-        document.body.classList.remove("is-resizing-sidebar");
-      };
-
-      resizer.addEventListener("pointerdown", (event) => {
-        if (!desktop.matches) return;
-        resizing = true;
-        startX = event.clientX;
-        startWidth = sidebar.getBoundingClientRect().width;
-        resizer.setPointerCapture(event.pointerId);
-        document.body.classList.add("is-resizing-sidebar");
-        event.preventDefault();
+      document.documentElement.style.setProperty("--sidebar-width", desktop.matches ? "300px" : "");
+      try { localStorage.removeItem("yash-crm-sidebar-width"); } catch (_) { /* Storage is optional. */ }
+      desktop.addEventListener("change", () => {
+        document.documentElement.style.setProperty("--sidebar-width", desktop.matches ? "300px" : "");
       });
-      resizer.addEventListener("pointermove", (event) => {
-        if (!resizing) return;
-        applySidebarWidth(startWidth + event.clientX - startX);
-      });
-      resizer.addEventListener("pointerup", finishResize);
-      resizer.addEventListener("pointercancel", finishResize);
-      resizer.addEventListener("dblclick", () => applySidebarWidth(defaultWidth));
-      resizer.addEventListener("keydown", (event) => {
-        if (!desktop.matches || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-        const currentWidth = sidebar.getBoundingClientRect().width;
-        const nextWidth = event.key === "Home" ? minimumWidth : event.key === "End" ? maximumWidth : currentWidth + (event.key === "ArrowLeft" ? -8 : 8);
-        applySidebarWidth(nextWidth);
-        event.preventDefault();
-      });
+
     })();
   </script>
 </body>
