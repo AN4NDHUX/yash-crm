@@ -361,6 +361,7 @@ class SharingPolicy(TimestampMixin, Base):
 class WorkflowExecution(Base):
     __tablename__ = "workflow_executions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     rule_id: Mapped[int] = mapped_column(ForeignKey("platform_records.id"), index=True)
     resource: Mapped[str] = mapped_column(String(80))
     record_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -560,6 +561,7 @@ class ApprovalProcess(TimestampMixin, Base):
 class ApprovalRequest(TimestampMixin, Base):
     __tablename__ = "approval_requests"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     process_id: Mapped[int] = mapped_column(ForeignKey("approval_processes.id"), index=True)
     resource: Mapped[str] = mapped_column(String(80))
     record_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -668,6 +670,7 @@ class AIExceptionOccurrence(TimestampMixin, Base):
     __tablename__ = "ai_exception_occurrences"
     __table_args__ = (UniqueConstraint("active_key", name="uq_ai_exception_active_key"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     public_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     rule_version: Mapped[str] = mapped_column(String(80), index=True)
     source_resource: Mapped[str] = mapped_column(String(80), default="quotes")
@@ -743,6 +746,7 @@ class AuditEvent(Base):
 class ImportJob(TimestampMixin, Base):
     __tablename__ = "import_jobs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     resource: Mapped[str] = mapped_column(String(80), index=True)
     filename: Mapped[str] = mapped_column(String(220))
     status: Mapped[str] = mapped_column(String(40), default="Completed")
@@ -1575,7 +1579,7 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
                 scheduled_for = datetime.fromisoformat(str(config["scheduled_for"]).replace("Z", "+00:00")).replace(tzinfo=None)
             except ValueError:
                 scheduled_for = None
-        execution = WorkflowExecution(rule_id=rule.id, resource=resource, record_id=record.id, event=event, status="queued" if scheduled_for else "running", actions=actions, scheduled_for=scheduled_for, idempotency_key=key)
+        execution = WorkflowExecution(owner_id=record.owner_id, rule_id=rule.id, resource=resource, record_id=record.id, event=event, status="queued" if scheduled_for else "running", actions=actions, scheduled_for=scheduled_for, idempotency_key=key)
         db.add(execution)
         db.flush()
         if scheduled_for:
@@ -3321,7 +3325,7 @@ def sync_quote_exceptions(db: Session) -> tuple[list[AIExceptionOccurrence], dic
                 AIExceptionOccurrence.source_id == quote.id,
             ).order_by(AIExceptionOccurrence.id.desc()))
             occurrence = AIExceptionOccurrence(
-                public_id=secrets.token_urlsafe(18), rule_version=AI_EXCEPTION_RULE,
+                public_id=secrets.token_urlsafe(18), rule_version=AI_EXCEPTION_RULE, owner_id=quote.owner_id,
                 source_resource="quotes", source_id=quote.id, source_version=int(quote.version or 1),
                 trigger_kind=facts["trigger_kind"], review_state="open",
                 active_key=f"{AI_EXCEPTION_RULE}:quotes:{quote.id}",
@@ -5522,7 +5526,7 @@ def _create_approval_request(process: ApprovalProcess, resource: str, record_id:
     if existing:
         return existing, True
     steps = _approval_steps(process, db)
-    request = ApprovalRequest(process_id=process.id, resource=resource, record_id=record_id, requester_id=requester_id, status="Pending", current_step=steps[0]["order"], comment=comment, snapshot=snapshot, operation_key=key)
+    request = ApprovalRequest(owner_id=requester_id, process_id=process.id, resource=resource, record_id=record_id, requester_id=requester_id, status="Pending", current_step=steps[0]["order"], comment=comment, snapshot=snapshot, operation_key=key)
     db.add(request)
     db.flush()
     for index, step in enumerate(steps):
@@ -6204,7 +6208,7 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
             imported += 1
         except Exception as error:
             errors.append({"row": number, "error": str(getattr(error, "detail", error))[:240]})
-    job = ImportJob(resource=resource, filename=file.filename or "upload.csv", status="Completed with errors" if errors else "Completed", total_rows=imported + len(errors), imported_rows=imported, error_rows=len(errors), errors=errors[:100])
+    job = ImportJob(owner_id=actor.id, resource=resource, filename=file.filename or "upload.csv", status="Completed with errors" if errors else "Completed", total_rows=imported + len(errors), imported_rows=imported, error_rows=len(errors), errors=errors[:100])
     db.add(job)
     db.commit()
     return {"job_id": job.id, "resource": resource, "imported": imported, "errors": errors, "status": job.status}
