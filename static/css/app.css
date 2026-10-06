@@ -1872,3 +1872,89 @@ button, a, input, select, textarea { touch-action: manipulation; }
 @supports not (height: 100dvh) {
   .modal { max-height: calc(100vh - 24px); }
 }
+
+
+/* Mobile rendering stability — avoid compositor blur after SPA module navigation.
+   Mobile WebKit/Chromium can rasterize text softly when large transformed/filter/
+   backdrop-filter layers sit behind frequently replaced route content. */
+@media (max-width: 1000px) {
+  .main-area::before,
+  .main-area::after {
+    animation: none !important;
+    transform: none !important;
+    filter: none !important;
+    background-position: 50% 0, 50% 100%, 50% 50%, 0 0;
+  }
+
+  .main-area::after { opacity: .18; }
+
+  .topbar,
+  .module-toolbar,
+  .global-search,
+  .field-input,
+  .field-select,
+  .field-textarea,
+  .detail-related-nav,
+  .detail-tab-strip,
+  .detail-plain-section,
+  .setup-toolbar {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .topbar,
+  .module-toolbar,
+  .global-search,
+  .detail-related-nav,
+  .detail-tab-strip,
+  .detail-plain-section,
+  .setup-toolbar {
+    background-color: #fff;
+  }
+
+  .page-heading,
+  .stats-grid,
+  .dashboard-grid,
+  .settings-layout,
+  .detail-layout,
+  .showcase-enter {
+    animation: none !important;
+    transform: none !important;
+    filter: none !important;
+    opacity: 1 !important;
+  }
+
+  .content-area,
+  .content-area > *,
+  .card,
+  .table-card,
+  .settings-section,
+  .detail-summary,
+  .detail-record-main {
+    transform: none;
+    filter: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .drawer-backdrop {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    background: rgba(6, 20, 47, .46);
+  }
+}
+
+@media (max-width: 760px) {
+  .main-area::before { opacity: .5; }
+  .main-area::after { display: none; }
+  .card:hover,
+  .module-toolbar:hover,
+  .settings-section:hover,
+  .detail-summary:hover,
+  .table-card:hover,
+  .deal-card:hover,
+  .kanban-column:hover,
+  .stat-card:hover,
+  .quick-action:hover {
+    transform: none !important;
+  }
+}
