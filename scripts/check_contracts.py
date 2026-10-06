@@ -10,29 +10,45 @@ from __future__ import annotations
 import json
 import os
 import time
-import base64
+import http.cookiejar
 from datetime import date, timedelta
 from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 BASE = os.getenv("YASH_CRM_URL", "http://127.0.0.1:8000")
 USERNAME = os.getenv("YASH_CRM_USERNAME", "")
 PASSWORD = os.getenv("YASH_CRM_PASSWORD", "")
+OTP = os.getenv("YASH_CRM_OTP", "")
+COOKIE_JAR = http.cookiejar.CookieJar()
+OPENER = build_opener(HTTPCookieProcessor(COOKIE_JAR))
 
 
 def request_headers() -> dict[str, str]:
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
-    if USERNAME or PASSWORD:
-        token = base64.b64encode(f"{USERNAME}:{PASSWORD}".encode()).decode()
-        headers["Authorization"] = f"Basic {token}"
-    return headers
+    return {"Accept": "application/json", "Content-Type": "application/json"}
+
+
+def authenticate() -> None:
+    if not USERNAME and not PASSWORD:
+        return
+    payload = {"identifier": USERNAME, "password": PASSWORD}
+    if OTP:
+        payload["otp"] = OTP
+    request = Request(
+        f"{BASE}/api/auth/login",
+        data=json.dumps(payload).encode(),
+        method="POST",
+        headers=request_headers(),
+    )
+    with OPENER.open(request) as response:
+        if response.status != 200:
+            raise RuntimeError(f"Yash CRM login failed with HTTP {response.status}")
 
 
 def call(method: str, path: str, body: dict | None = None) -> dict:
     data = json.dumps(body).encode() if body is not None else None
     request = Request(f"{BASE}{path}", data=data, method=method, headers=request_headers())
-    with urlopen(request) as response:
+    with OPENER.open(request) as response:
         return json.loads(response.read())
 
 
@@ -71,13 +87,13 @@ def read_checks() -> None:
     # Installable-app files must be served as themselves, not swallowed by the SPA fallback.
     manifest = get("/manifest.webmanifest")
     assert manifest["display"] == "standalone" and len(manifest["icons"]) >= 2, manifest
-    with urlopen(Request(f"{BASE}/sw.js", headers=request_headers())) as response:
+    with OPENER.open(Request(f"{BASE}/sw.js", headers=request_headers())) as response:
         assert response.status == 200 and "javascript" in response.headers.get("Content-Type", "")
         assert b"addEventListener" in response.read(), "sw.js is not the service worker"
-    with urlopen(Request(f"{BASE}/static/icons/icon-512.png", headers=request_headers())) as response:
+    with OPENER.open(Request(f"{BASE}/static/icons/icon-512.png", headers=request_headers())) as response:
         assert response.headers.get("Content-Type") == "image/png"
 
-    with urlopen(Request(f"{BASE}/api/dashboard", headers=request_headers())) as response:
+    with OPENER.open(Request(f"{BASE}/api/dashboard", headers=request_headers())) as response:
         assert response.headers.get("Cache-Control") == "no-store"
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
 
@@ -184,6 +200,7 @@ def write_checks() -> None:
 
 
 def main() -> None:
+    authenticate()
     read_checks()
     write_checks()
     print("Yash CRM contract checks passed")
