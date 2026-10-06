@@ -4976,11 +4976,15 @@ def owner_send_password_reset(user_id: int, db: Session = Depends(get_db), actor
     db.commit()
     base = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
     reset_url = f"{base}/reset-password?token={raw}" if base else f"/reset-password?token={raw}"
-    delivered = _notify_account(
+    _notify_account(
         db, user, "password_reset_requested", "Yash CRM password reset",
         f"An Administrator requested a password reset for your Yash CRM account. Use this link within 30 minutes: {reset_url}"
     )
-    add_audit(db, "password_reset_requested", "users", user.id, f"Requested password reset for '{user.email}'", after={"notification_created": True, "external_delivery": bool(delivered)}, actor_id=actor.id)
+    external_delivery_configured = bool(
+        (os.getenv("SMTP_HOST", "").strip() and os.getenv("SMTP_FROM", "").strip())
+        or (user.phone and os.getenv("TWILIO_ACCOUNT_SID", "").strip() and os.getenv("TWILIO_AUTH_TOKEN", "").strip() and os.getenv("TWILIO_FROM_NUMBER", "").strip())
+    )
+    add_audit(db, "password_reset_requested", "users", user.id, f"Requested password reset for '{user.email}'", after={"notification_created": True, "external_delivery_configured": external_delivery_configured}, actor_id=actor.id)
     db.commit()
     return {"ok": True, "message": "Password reset instructions were created for the account."}
 
