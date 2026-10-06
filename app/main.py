@@ -1806,9 +1806,12 @@ def ensure_cloud_admin(db: Session) -> None:
     elif not admin.username or admin.username.lower() != admin_username:
         admin.username = admin_username
     fallback_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
-    if fallback_password and len(fallback_password) >= 8 and not admin.password_hash:
-        admin.password_hash = _password_hash(fallback_password)
-        admin.password_changed_at = datetime.utcnow()
+    if fallback_password:
+        if len(fallback_password) < 8:
+            raise RuntimeError("APP_PASSWORD must contain at least 8 characters")
+        if not _password_valid(fallback_password, admin.password_hash):
+            admin.password_hash = _password_hash(fallback_password)
+            admin.password_changed_at = datetime.utcnow()
     db.commit()
 
 
@@ -2329,8 +2332,7 @@ def startup() -> None:
     with SessionLocal() as db:
         if not IS_PRODUCTION or env_bool("SEED_DEMO_DATA"):
             seed_defaults(db)
-        elif IS_PRODUCTION:
-            ensure_cloud_admin(db)
+        ensure_cloud_admin(db)
         ensure_workspace_defaults(db)
         ensure_platform_defaults(db, include_demo=(not IS_PRODUCTION or env_bool("SEED_DEMO_DATA")))
 
