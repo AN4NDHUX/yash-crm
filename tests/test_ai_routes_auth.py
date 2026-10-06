@@ -51,7 +51,7 @@ def run_app_script(body: str, **env_overrides: str) -> dict:
 
 
 class PublicAssetTests(unittest.TestCase):
-    """manifest and favicon must load without credentials; everything else must not."""
+    """Public auth/brand surfaces load without credentials; CRM data stays protected."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -73,6 +73,8 @@ class PublicAssetTests(unittest.TestCase):
                 out['post_manifest'] = probe('POST', '/manifest.webmanifest')
                 out['dashboard'] = probe('GET', '/api/dashboard')
                 out['ai_page'] = probe('GET', '/ai')
+                out['login_page'] = probe('GET', '/login')
+                out['signup_page'] = probe('GET', '/signup')
             """
         )
 
@@ -96,9 +98,11 @@ class PublicAssetTests(unittest.TestCase):
         self.assertEqual(self.out["traversal"][0], 401)
         self.assertEqual(self.out["post_manifest"][0], 401)  # only GET/HEAD are exempt
 
-    def test_data_and_app_surfaces_stay_protected(self) -> None:
+    def test_auth_pages_are_public_and_app_surfaces_redirect(self) -> None:
+        self.assertEqual(self.out["login_page"][0], 200)
+        self.assertEqual(self.out["signup_page"][0], 200)
         self.assertEqual(self.out["dashboard"][0], 401)
-        self.assertEqual(self.out["ai_page"][0], 401)
+        self.assertEqual(self.out["ai_page"][0], 303)
 
 
 class AiRouteAuthTests(unittest.TestCase):
@@ -130,11 +134,11 @@ class AiRouteAuthTests(unittest.TestCase):
             """
         )
 
-    def test_missing_credentials_get_a_json_401_with_challenge(self) -> None:
+    def test_missing_credentials_get_session_aware_json_401(self) -> None:
         status, body, challenge = self.out["status_noauth"]
         self.assertEqual(status, 401)
-        self.assertEqual(body, {"detail": "Authentication required"})
-        self.assertTrue(challenge.startswith("Basic"))
+        self.assertEqual(body, {"detail": "Sign in to continue"})
+        self.assertEqual(challenge, "")
 
     def test_status_and_readiness_return_200(self) -> None:
         for key in ("status", "ready", "status_head", "ready_head", "ai_page", "ai_page_slash"):
