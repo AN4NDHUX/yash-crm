@@ -1,4 +1,6 @@
 """Add owner console subscription plans and user subscriptions."""
+from datetime import datetime
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -66,7 +68,7 @@ def upgrade() -> None:
         sa.column("created_at", sa.DateTime),
         sa.column("updated_at", sa.DateTime),
     )
-    now = sa.func.now()
+    now = datetime.utcnow()
     op.bulk_insert(plans, [
         {"code":"free","name":"Free","price_monthly":0.0,"currency":"USD","max_records":1000,"max_storage_mb":250,"max_custom_modules":2,"ai_limit_monthly":100,"active":True,"features":{"reports":True,"custom_modules":True,"apex":False},"created_at":now,"updated_at":now},
         {"code":"standard","name":"Standard","price_monthly":19.0,"currency":"USD","max_records":10000,"max_storage_mb":2048,"max_custom_modules":10,"ai_limit_monthly":1500,"active":True,"features":{"reports":True,"custom_modules":True,"apex":True},"created_at":now,"updated_at":now},
