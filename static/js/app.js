@@ -1601,6 +1601,13 @@ function bindPlatform(resource) {
 
 function bindGlobal() {
   document.addEventListener("click", (event) => {
+    const go = event.target.closest("[data-go]");
+    if (go) {
+      event.preventDefault();
+      const target = go.dataset.go;
+      if (target) navigate(target);
+      return;
+    }
     const link = event.target.closest("a[href]");
     if (link && !link.hasAttribute("download") && !link.getAttribute("href").startsWith("/api/") && !event.metaKey && !event.ctrlKey && !event.shiftKey && link.origin === window.location.origin && link.getAttribute("href").startsWith("/")) { event.preventDefault(); navigate(link.getAttribute("href")); return; }
     const retry = event.target.closest("[data-retry]"); if (retry) renderRoute();
