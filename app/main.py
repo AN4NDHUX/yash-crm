@@ -1399,10 +1399,10 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 raise ValueError(f"Unknown field '{field_name}' for {resource}")
             setattr(record, field_name, coerce_value(type(record), field_name, field_value))
     elif action_type in {"create_task", "task"}:
-        owner_id = getattr(record, "owner_id", None) or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+        owner_id = getattr(record, "owner_id", None)
         db.add(Activity(activity_type="Task", subject=str(value or action.get("subject") or f"Follow up: {title}"), owner_id=owner_id, status="Open", priority=str(action.get("priority") or "Normal"), related_type=resource, related_id=record.id))
     elif action_type in {"notification", "notify"}:
-        fallback_owner = getattr(record, "owner_id", None) or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+        fallback_owner = getattr(record, "owner_id", None)
         user_id = int(action.get("user_id") or fallback_owner)
         db.add(Notification(user_id=user_id, kind=str(action.get("kind") or "workflow"), title=str(action.get("title") or f"Workflow update: {title}"), body=str(value or action.get("body") or "A workflow action was triggered."), resource=resource, record_id=record.id))
     elif action_type in {"owner_change", "assign_owner"}:
@@ -2386,15 +2386,13 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
         raise HTTPException(422, "Enter your full name")
     if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise HTTPException(422, "Enter a valid email address")
-    if not phone:
-        raise HTTPException(422, "Phone number is required")
     if len(password) < 8:
         raise HTTPException(422, "Password must contain at least 8 characters")
     if db.scalar(select(User).where(func.lower(User.email) == email)):
         raise HTTPException(409, "An account already exists for this email address")
     if db.scalar(select(User).where(func.lower(User.username) == username)):
         raise HTTPException(409, "That username is already in use")
-    if db.scalar(select(User).where(User.phone == phone)):
+    if phone and db.scalar(select(User).where(User.phone == phone)):
         raise HTTPException(409, "An account already exists for this phone number")
     user = User(
         name=name,
@@ -5192,10 +5190,8 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
     config = platform_config(resource)
     values = platform_values(payload)
     authorize_field_values(db, resource, values, actor, "write")
-    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator":
-        values.setdefault("owner_id", actor.id)
-        if values.get("owner_id") != actor.id:
-            raise HTTPException(403, "You may only create records owned by yourself")
+    if isinstance(actor, User):
+        values["owner_id"] = actor.id
     normalize_platform_links(db, resource, values)
     validate_platform_values(resource, values)
     if config.get("singleton") and db.scalar(select(PlatformRecord.id).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)):
@@ -5460,6 +5456,8 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
                 if is_platform:
                     values = dict(raw_values)
                     authorize_field_values(db, resource, values, actor, "write")
+                    if isinstance(actor, User):
+                        values["owner_id"] = actor.id
                     normalize_platform_links(db, resource, values)
                     validate_platform_values(resource, values)
                     record = PlatformRecord(resource=resource, title=str(values.get("name") or config["singular"]), data={})
@@ -5475,10 +5473,8 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
                         raise HTTPException(422, f"Unknown column(s): {', '.join(unknown)}")
                     values = {key: coerce_value(model, key, value) for key, value in raw_values.items()}
                     authorize_field_values(db, resource, values, actor, "write")
-                    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator" and hasattr(model, "owner_id"):
-                        values.setdefault("owner_id", actor.id)
-                        if values.get("owner_id") != actor.id:
-                            raise HTTPException(403, "You may only import records owned by yourself")
+                    if isinstance(actor, User) and hasattr(model, "owner_id"):
+                        values["owner_id"] = actor.id
                     if resource == "contacts" and not values.get("first_name"):
                         raise HTTPException(422, "first_name is required")
                     if resource in {"leads", "accounts", "deals", "products"} and not values.get("name"):
