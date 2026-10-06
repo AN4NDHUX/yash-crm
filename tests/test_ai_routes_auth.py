@@ -93,10 +93,10 @@ class PublicAssetTests(unittest.TestCase):
         self.assertEqual(self.out["health"][0], 200)
 
     def test_exemption_is_exact_not_a_prefix(self) -> None:
-        self.assertEqual(self.out["css"][0], 401)
-        self.assertEqual(self.out["js"][0], 401)
-        self.assertEqual(self.out["traversal"][0], 401)
-        self.assertEqual(self.out["post_manifest"][0], 401)  # only GET/HEAD are exempt
+        self.assertEqual(self.out["css"][0], 303)
+        self.assertEqual(self.out["js"][0], 303)
+        self.assertEqual(self.out["traversal"][0], 303)
+        self.assertEqual(self.out["post_manifest"][0], 303)  # only GET/HEAD are exempt
 
     def test_auth_pages_are_public_and_app_surfaces_redirect(self) -> None:
         self.assertEqual(self.out["login_page"][0], 200)
@@ -252,3 +252,33 @@ class SessionStabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AccountSessionTests(unittest.TestCase):
+    def test_signup_login_logout_round_trip(self) -> None:
+        out = run_app_script(
+            """
+            with TestClient(main.app, follow_redirects=False) as c:
+                password = 'account-' + 'safe-' + '12345'
+                created = c.post('/api/auth/signup', json={'name':'Account User','email':'account.user@example.com','password':password})
+                out['created'] = created.status_code
+                out['secret_exposed'] = 'password_hash' in created.json().get('user', {})
+                out['session'] = c.get('/api/auth/session').status_code
+                out['dashboard'] = c.get('/api/dashboard').status_code
+                out['logout'] = c.post('/api/auth/logout').status_code
+                out['after_logout'] = c.get('/api/auth/session').status_code
+                signed_in = c.post('/api/auth/login', json={'email':'account.user@example.com','password':password})
+                out['login'] = signed_in.status_code
+                out['dashboard_again'] = c.get('/api/dashboard').status_code
+            """
+        )
+        self.assertEqual(out, {
+            'created': 201,
+            'secret_exposed': False,
+            'session': 200,
+            'dashboard': 200,
+            'logout': 200,
+            'after_logout': 401,
+            'login': 200,
+            'dashboard_again': 200,
+        })
