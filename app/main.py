@@ -2392,8 +2392,13 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
         raise HTTPException(409, "An account already exists for this email address")
     if db.scalar(select(User).where(func.lower(User.username) == username)):
         raise HTTPException(409, "That username is already in use")
-    if phone and db.scalar(select(User).where(User.phone == phone)):
-        raise HTTPException(409, "An account already exists for this phone number")
+    if phone:
+        normalized_phone = re.sub(r"\D", "", phone)
+        existing_phone = db.scalar(select(User).where(
+            func.replace(func.replace(func.replace(func.replace(User.phone, "+", ""), " ", ""), "-", ""), "(", "") == normalized_phone
+        ))
+        if existing_phone:
+            raise HTTPException(409, "An account already exists for this phone number")
     user = User(
         name=name,
         email=email,
