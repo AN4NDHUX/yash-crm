@@ -1139,7 +1139,6 @@ function bindCustomRuntime(module) {
     const data = new FormData(form);
     for (const [key,value] of data.entries()) {
       if (value === "") continue;
-      const field = (state.customModules || []).find(()=>false);
       payload[key] = value;
     }
     form.querySelectorAll('input[type="checkbox"]').forEach((input)=>{ payload[input.name] = input.checked; });
