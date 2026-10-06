@@ -37,15 +37,32 @@ SEED_DEMO_DATA=false
 
 Do not commit secrets. Rotate any secret that has appeared in screenshots, logs, chat messages, tickets, or source control.
 
-### Owner MFA
+### One-time login OTP
 
-Administrator TOTP MFA is supported. Provision a Base32 secret in your authenticator workflow and set:
+Production login uses the account password followed by a one-time 6-digit code. Configure:
 
 ```text
-YASHCRM_ADMIN_TOTP_SECRET=<base32 secret>
+YASHCRM_LOGIN_OTP_REQUIRED=true
+YASHCRM_OTP_SECRET=<long random secret>
 ```
 
-When this variable is set, Administrator login requires the current 6-digit authenticator code. Normal user accounts are not forced through the owner MFA secret.
+The code expires after 10 minutes, is single-use, and is hashed before storage. Configure at least one delivery channel:
+
+```text
+SMTP_HOST=<smtp host>
+SMTP_PORT=587
+SMTP_USERNAME=<smtp username>
+SMTP_PASSWORD=<smtp password>
+SMTP_FROM=<verified sender>
+SMTP_STARTTLS=true
+
+# Optional SMS delivery
+TWILIO_ACCOUNT_SID=<sid>
+TWILIO_AUTH_TOKEN=<token>
+TWILIO_FROM_NUMBER=<number>
+```
+
+If neither email nor SMS delivery succeeds, production login is rejected instead of exposing the OTP in the browser response.
 
 ### Proxy trust
 
@@ -77,7 +94,7 @@ Additional controls include:
 - Login, signup and reset throttling.
 - Same-origin protection on cookie-authenticated state-changing requests.
 - Administrator-only user administration and security overview.
-- Owner MFA when `YASHCRM_ADMIN_TOTP_SECRET` is configured.
+- Password plus one-time login OTP for production accounts.
 - CSP, HSTS, frame denial, MIME-sniffing protection and restricted browser permissions.
 - Password-reset session revocation.
 - Owner controls to suspend accounts, revoke sessions, trigger password resets and export account data.
