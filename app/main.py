@@ -2923,8 +2923,9 @@ def _ai_count_status(rows: list[PlatformRecord], *statuses: str) -> int:
 
 
 @app.get("/api/ai/dashboard")
-def ai_dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
-    """Management cockpit: one deterministic source of truth for the full revenue journey."""
+def ai_dashboard(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    """Management cockpit scoped to the signed-in workspace."""
+    _enforce_plan_feature(db, actor, "apex")
     leads = db.scalars(select(Lead).where(Lead.archived == False)).all()
     emails = db.scalars(select(Email).where(Email.archived == False)).all()
     activities = db.scalars(select(Activity).where(Activity.archived == False)).all()
@@ -2932,7 +2933,7 @@ def ai_dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
     quotes = _ai_dashboard_platform_rows(db, "quotes")
     invoices = _ai_dashboard_platform_rows(db, "invoices")
     payments = _ai_dashboard_platform_rows(db, "payments")
-    performance = sales_performance(db)
+    performance = sales_performance(db, actor)
     assigned = sum(1 for row in leads if row.owner_id)
     open_followups = sum(1 for row in activities if row.status != "Completed")
     collected = sum(float(row.amount or 0) for row in payments if str(row.status or "").lower() in {"received", "cleared"})
@@ -3077,11 +3078,12 @@ def _report_json(run: ReportRun) -> dict[str, Any]:
 
 
 @app.post("/api/reports/{report_id}/run")
-def run_saved_report(report_id: int, payload: dict[str, Any] | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+def run_saved_report(report_id: int, payload: dict[str, Any] | None = None, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_plan_feature(db, actor, "reports")
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.id == report_id, PlatformRecord.resource == "reports", PlatformRecord.archived == False))
     if record is None:
         raise HTTPException(404, "Report not found")
-    run = ReportRun(report_id=record.id, requested_by=db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)), status="running", definition=_report_definition(record, payload or {}), result={})
+    run = ReportRun(report_id=record.id, requested_by=actor.id, status="running", definition=_report_definition(record, payload or {}), result={})
     db.add(run)
     db.flush()
     try:
@@ -3100,13 +3102,17 @@ def run_saved_report(report_id: int, payload: dict[str, Any] | None = None, db: 
 
 
 @app.get("/api/reports/{report_id}/runs")
-def list_report_runs(report_id: int, limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)) -> dict[str, Any]:
-    rows = db.scalars(select(ReportRun).where(ReportRun.report_id == report_id).order_by(ReportRun.created_at.desc()).limit(limit)).all()
+def list_report_runs(report_id: int, limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    report = db.scalar(select(PlatformRecord).where(PlatformRecord.id == report_id, PlatformRecord.resource == "reports", PlatformRecord.archived == False))
+    if report is None:
+        raise HTTPException(404, "Report not found")
+    rows = db.scalars(select(ReportRun).where(ReportRun.report_id == report_id, ReportRun.requested_by == actor.id).order_by(ReportRun.created_at.desc()).limit(limit)).all()
     return {"items": [_report_json(row) for row in rows], "total": len(rows)}
 
 
 @app.post("/api/dashboards/{dashboard_id}/view")
-def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = None, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_plan_feature(db, actor, "reports")
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.id == dashboard_id, PlatformRecord.resource == "dashboards", PlatformRecord.archived == False))
     if record is None:
         raise HTTPException(404, "Dashboard not found")
@@ -3479,9 +3485,11 @@ def _ai_platform_rows(db: Session, resource: str, limit: int = 20) -> list[dict[
     } for row in rows]
 
 
-def ai_crm_context(db: Session, lead_id: int | None = None) -> tuple[dict[str, Any], list[str]]:
+def ai_crm_context(db: Session, lead_id: int | None = None, actor: User | None = None) -> tuple[dict[str, Any], list[str]]:
     if lead_id is not None:
-        journey = lead_journey(lead_id, db)
+        if actor is None:
+            raise HTTPException(401, "Sign in to continue")
+        journey = lead_journey(lead_id, db, actor)
         lead = journey["lead"]
         safe_lead = {key: lead.get(key) for key in ("id", "name", "company", "source", "status", "owner_id", "owner_name", "lead_score", "next_follow_up", "notes", "created_at", "updated_at")}
         context = {
@@ -3499,11 +3507,13 @@ def ai_crm_context(db: Session, lead_id: int | None = None) -> tuple[dict[str, A
         }
         return context, [f"Lead #{lead_id}", "Lead journey", "Activities", "Conversations"]
 
-    performance = sales_performance(db)
+    if actor is None:
+        raise HTTPException(401, "Sign in to continue")
+    performance = sales_performance(db, actor)
     leads = db.scalars(select(Lead).where(Lead.archived == False).order_by(Lead.updated_at.desc()).limit(25)).all()
     deals = db.scalars(select(Deal).where(Deal.archived == False).order_by(Deal.updated_at.desc()).limit(25)).all()
     activities = db.scalars(select(Activity).where(Activity.archived == False, Activity.status != "Completed").order_by(Activity.updated_at.desc()).limit(30)).all()
-    users = db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
+    users = [actor]
     context = {
         "scope": "management_workspace",
         "today": date.today().isoformat(),
@@ -3668,9 +3678,8 @@ def _apex_summary(db: Session, resource: str, record_id: int) -> dict[str, Any]:
     return {"resource": resource, "record": record, "highlights": [f"Status: {record.get('status') or record.get('stage') or 'not set'}", f"Owner: {record.get('owner_name') or 'unassigned'}", f"{activities} linked activities", f"{emails} recorded emails"], "related": {"activities": int(activities), "emails": int(emails)}, "confidence": "high"}
 
 
-def _apex_save_run(db: Session, question: str, intent: str, scope: str, confidence: str, result: dict[str, Any]) -> None:
-    actor = db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
-    db.add(ApexAssistantRun(question=question[:1500], intent=intent, scope=scope, confidence=confidence, result=result, requested_by=actor))
+def _apex_save_run(db: Session, actor: User, question: str, intent: str, scope: str, confidence: str, result: dict[str, Any]) -> None:
+    db.add(ApexAssistantRun(question=question[:1500], intent=intent, scope=scope, confidence=confidence, result=result, requested_by=actor.id))
     db.commit()
 
 
@@ -3683,7 +3692,8 @@ def _apex_answer(intent: str, result: dict[str, Any]) -> str:
 
 
 @app.post("/api/ai/assistant")
-def apex_assistant(payload: ApexAssistantPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def apex_assistant(payload: ApexAssistantPayload, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_ai_limit(db, actor)
     question, lower = payload.question.strip(), payload.question.lower()
     if any(term in lower for term in ("summarize", "summary", "tell me about")) and payload.record_id:
         intent, result = "summary", _apex_summary(db, _apex_resource(question, payload.resource), payload.record_id)
@@ -3692,27 +3702,30 @@ def apex_assistant(payload: ApexAssistantPayload, db: Session = Depends(get_db))
         intent, result = "lead_scoring", {"total": len(scored), "leads": scored, "method": "APEX deterministic fit-and-engagement v1", "confidence": "high"}
     else:
         intent, result = "search", _apex_search(db, question, payload.resource)
-    _apex_save_run(db, question, intent, result.get("resource", "workspace"), result.get("confidence", "medium"), result)
+    _apex_save_run(db, actor, question, intent, result.get("resource", "workspace"), result.get("confidence", "medium"), result)
     return {"assistant": "APEX", "intent": intent, "answer": _apex_answer(intent, result), "result": result, "provider": "APEX deterministic CRM engine", "uncertainty": result.get("uncertainty") or "Results are grounded in current CRM records."}
 
 
 @app.post("/api/ai/search")
-def apex_search_api(payload: ApexAssistantPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def apex_search_api(payload: ApexAssistantPayload, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_ai_limit(db, actor)
     result = _apex_search(db, payload.question, payload.resource)
-    _apex_save_run(db, payload.question, "search", result["resource"], result["confidence"], result)
+    _apex_save_run(db, actor, payload.question, "search", result["resource"], result["confidence"], result)
     return {"assistant": "APEX", **result}
 
 
 @app.post("/api/ai/summary")
-def apex_summary_api(payload: ApexSummaryPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def apex_summary_api(payload: ApexSummaryPayload, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_ai_limit(db, actor)
     resource = _apex_resource("", payload.resource)
     result = _apex_summary(db, resource, payload.record_id)
-    _apex_save_run(db, f"Summarize {resource} #{payload.record_id}", "summary", resource, result["confidence"], result)
+    _apex_save_run(db, actor, f"Summarize {resource} #{payload.record_id}", "summary", resource, result["confidence"], result)
     return {"assistant": "APEX", **result}
 
 
 @app.post("/api/ai/lead-scoring")
-def apex_lead_scoring_api(payload: ApexScoringPayload, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+def apex_lead_scoring_api(payload: ApexScoringPayload, request: Request, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_ai_limit(db, actor)
     if payload.persist:
         _require_ai_csrf(request)
     scored = _apex_score_all_leads(db, payload.lead_ids)
@@ -3728,8 +3741,8 @@ def apex_lead_scoring_api(payload: ApexScoringPayload, request: Request, db: Ses
 
 
 @app.get("/api/ai/assistant/runs")
-def apex_assistant_runs(limit: int = Query(default=30, ge=1, le=100), db: Session = Depends(get_db)) -> dict[str, Any]:
-    rows = db.scalars(select(ApexAssistantRun).order_by(ApexAssistantRun.created_at.desc()).limit(limit)).all()
+def apex_assistant_runs(limit: int = Query(default=30, ge=1, le=100), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    rows = db.scalars(select(ApexAssistantRun).where(ApexAssistantRun.requested_by == actor.id).order_by(ApexAssistantRun.created_at.desc()).limit(limit)).all()
     return {"items": [{"id": row.id, "question": row.question, "intent": row.intent, "scope": row.scope, "confidence": row.confidence, "created_at": row.created_at.isoformat()} for row in rows], "total": len(rows)}
 
 
@@ -3965,11 +3978,12 @@ def approve_ai_task_proposal(public_id: str, request: Request, db: Session = Dep
 
 
 @app.post("/api/ai/chat")
-def ai_chat(payload: AIChatPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def ai_chat(payload: AIChatPayload, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_ai_limit(db, actor)
     error = ai_config_error()
     if error:
         raise HTTPException(503, error)
-    context, sources = ai_crm_context(db, payload.lead_id)
+    context, sources = ai_crm_context(db, payload.lead_id, actor)
     try:
         insight, usage = ask_cloud_ai(payload.question, context)
     except RuntimeError as error_response:
@@ -4000,14 +4014,14 @@ def ai_unknown_endpoint(unknown_path: str) -> JSONResponse:
 
 
 @app.get("/api/analytics/sales-performance")
-def sales_performance_api(db: Session = Depends(get_db)) -> dict[str, Any]:
-    return sales_performance(db)
+def sales_performance_api(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    return sales_performance(db, actor)
 
 
 @app.get("/api/journey/leads/{lead_id}")
-def lead_journey(lead_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def lead_journey(lead_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     lead = db.get(Lead, lead_id)
-    if lead is None or lead.archived:
+    if lead is None or lead.archived or not can_access_record(db, "leads", lead, actor):
         raise HTTPException(404, "Lead not found")
     deal_ids = {lead.converted_deal_id} if lead.converted_deal_id else set()
     visits = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "site_visits", PlatformRecord.archived == False)).all() if int((item.data or {}).get("lead_id") or 0) == lead.id]
@@ -4022,7 +4036,7 @@ def lead_journey(lead_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
     activities = [item for item in db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc())).all() if (item.related_type, item.related_id) in related_pairs]
     emails = [item for item in db.scalars(select(Email).where(Email.archived == False).order_by(Email.created_at.desc())).all() if (item.related_type, item.related_id) in related_pairs]
     return {
-        "lead": serialize(lead, db),
+        "lead": serialize(lead, db, actor),
         "stages": [
             {"key": "lead", "label": "Lead", "count": 1, "complete": lead.status == "Converted"},
             {"key": "visit", "label": "Visit", "count": len(visits), "complete": any(item.status == "Completed" for item in visits)},
@@ -4030,7 +4044,7 @@ def lead_journey(lead_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
             {"key": "invoice", "label": "Invoice", "count": len(invoices), "complete": bool(invoices)},
             {"key": "payment", "label": "Payment", "count": len(payments), "complete": any(item.status in {"Received", "Cleared"} for item in payments)},
         ],
-        "visits": [serialize_platform(item, db) for item in visits], "quotes": [serialize_platform(item, db) for item in quotes], "sales_orders": [serialize_platform(item, db) for item in orders], "invoices": [serialize_platform(item, db) for item in invoices], "payments": [serialize_platform(item, db) for item in payments], "activities": [serialize(item, db) for item in activities], "emails": [serialize(item, db) for item in emails],
+        "visits": [serialize_platform(item, db, actor) for item in visits], "quotes": [serialize_platform(item, db, actor) for item in quotes], "sales_orders": [serialize_platform(item, db, actor) for item in orders], "invoices": [serialize_platform(item, db, actor) for item in invoices], "payments": [serialize_platform(item, db, actor) for item in payments], "activities": [serialize(item, db, actor) for item in activities], "emails": [serialize(item, db, actor) for item in emails],
     }
 
 
