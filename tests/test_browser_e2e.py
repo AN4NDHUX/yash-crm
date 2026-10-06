@@ -90,6 +90,9 @@ def test_browser_signup_login_and_module_navigation():
                 page.fill("#identifier", "browser.user")
                 page.fill("#password", "browser-password-123")
                 page.click("#submit-button")
+                page.locator("#otp-field").wait_for(state="visible", timeout=10000)
+                assert page.input_value("#otp")
+                page.click("#submit-button")
                 page.wait_for_url("**/dashboard", timeout=10000)
 
                 browser.close()
