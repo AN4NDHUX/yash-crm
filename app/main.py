@@ -3365,6 +3365,346 @@ def create_metadata_view(module_id: int, payload: dict[str, Any], db: Session = 
     return serialize(item)
 
 
+
+def _custom_module(db: Session, resource: str, *, enabled_only: bool = True) -> MetadataModule:
+    normalized = resource.strip().lower().replace(" ", "_")
+    query = select(MetadataModule).where(func.lower(MetadataModule.api_name) == normalized)
+    if enabled_only:
+        query = query.where(MetadataModule.enabled == True)
+    module = db.scalar(query)
+    if module is None:
+        raise HTTPException(404, "Custom module not found")
+    return module
+
+
+def _custom_fields(db: Session, module_id: int) -> list[MetadataField]:
+    return db.scalars(select(MetadataField).where(MetadataField.module_id == module_id).order_by(MetadataField.position, MetadataField.id)).all()
+
+
+def _custom_record_values(record: PlatformRecord, db: Session | None = None, actor: User | None = None) -> dict[str, Any]:
+    return serialize_platform(record, db, actor)
+
+
+def _coerce_custom_value(field: MetadataField, value: Any) -> Any:
+    if value in (None, ""):
+        return None
+    kind = str(field.field_type or "text").lower()
+    if kind in {"number"}:
+        return int(value)
+    if kind in {"decimal", "currency", "percentage"}:
+        return float(value)
+    if kind == "checkbox":
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    if kind == "date":
+        return parse_date_value(value).isoformat()
+    if kind == "datetime":
+        return parse_datetime_value(value).isoformat()
+    if kind in {"multi_select", "subform"}:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else [parsed]
+            except json.JSONDecodeError:
+                return [part.strip() for part in value.split(",") if part.strip()]
+    if kind in {"lookup", "user_lookup"}:
+        return int(value)
+    return value
+
+
+def _custom_layout_state(db: Session, module: MetadataModule, values: dict[str, Any]) -> dict[str, Any]:
+    fields = _custom_fields(db, module.id)
+    state: dict[str, Any] = {
+        "visible": {field.api_name: True for field in fields},
+        "required": {field.api_name: bool(field.required) for field in fields},
+        "read_only": {field.api_name: bool(field.read_only) for field in fields},
+        "messages": [],
+    }
+    layouts = db.scalars(select(MetadataLayout).where(MetadataLayout.module_id == module.id).order_by(MetadataLayout.id)).all()
+    for layout in layouts:
+        for rule in layout.rules or []:
+            if not isinstance(rule, dict):
+                continue
+            criteria = rule.get("criteria") or rule.get("conditions") or []
+            if not workflow_criteria_match(values, criteria):
+                continue
+            actions = rule.get("actions") or []
+            if isinstance(actions, dict):
+                actions = [actions]
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                action_type = str(action.get("type") or "").lower().replace("-", "_")
+                field_name = str(action.get("field") or "")
+                if action_type in {"show", "show_field"} and field_name:
+                    state["visible"][field_name] = True
+                elif action_type in {"hide", "hide_field"} and field_name:
+                    state["visible"][field_name] = False
+                elif action_type in {"require", "required", "make_required"} and field_name:
+                    state["required"][field_name] = True
+                elif action_type in {"optional", "make_optional"} and field_name:
+                    state["required"][field_name] = False
+                elif action_type in {"read_only", "readonly"} and field_name:
+                    state["read_only"][field_name] = True
+                elif action_type in {"editable", "make_editable"} and field_name:
+                    state["read_only"][field_name] = False
+                elif action_type in {"message", "show_message"}:
+                    message = str(action.get("message") or action.get("value") or "").strip()
+                    if message:
+                        state["messages"].append(message)
+    return state
+
+
+def _validate_custom_values(db: Session, module: MetadataModule, values: dict[str, Any], actor: User | None, *, partial: bool = False, record_id: int | None = None) -> dict[str, Any]:
+    fields = _custom_fields(db, module.id)
+    field_map = {field.api_name: field for field in fields}
+    allowed_system = {"name", "title", "status", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "tags"}
+    unknown = [key for key in values if key not in field_map and key not in allowed_system]
+    if unknown:
+        raise HTTPException(422, f"Unknown field(s): {', '.join(sorted(unknown))}")
+    normalized = dict(values)
+    for field in fields:
+        if field.api_name not in normalized and not partial and field.default_value not in (None, ""):
+            normalized[field.api_name] = field.default_value
+        if field.api_name in normalized:
+            if not field_allowed(db, module.api_name, field.api_name, actor, "write"):
+                raise HTTPException(403, f"You do not have write access to {field.label}")
+            if partial and field.read_only:
+                raise HTTPException(422, f"{field.label} is read-only")
+            try:
+                normalized[field.api_name] = _coerce_custom_value(field, normalized[field.api_name])
+            except (TypeError, ValueError) as error:
+                raise HTTPException(422, f"{field.label} has an invalid value") from error
+    layout_state = _custom_layout_state(db, module, normalized)
+    if not partial:
+        missing = [field.label for field in fields if layout_state["required"].get(field.api_name) and normalized.get(field.api_name) in (None, "", [])]
+        if missing:
+            raise HTTPException(422, f"Required field(s): {', '.join(missing)}")
+    for field in fields:
+        if field.api_name not in normalized or normalized[field.api_name] in (None, ""):
+            continue
+        value = normalized[field.api_name]
+        validation = field.validation or {}
+        if isinstance(value, str):
+            if validation.get("min_length") is not None and len(value) < int(validation["min_length"]):
+                raise HTTPException(422, f"{field.label} is too short")
+            if validation.get("max_length") is not None and len(value) > int(validation["max_length"]):
+                raise HTTPException(422, f"{field.label} is too long")
+            if validation.get("regex") and re.fullmatch(str(validation["regex"]), value) is None:
+                raise HTTPException(422, f"{field.label} has an invalid format")
+            if field.field_type == "email" and parseaddr(value)[1] != value:
+                raise HTTPException(422, f"{field.label} must be a valid email address")
+        if isinstance(value, (int, float)):
+            if validation.get("min") is not None and value < float(validation["min"]):
+                raise HTTPException(422, f"{field.label} is below the minimum")
+            if validation.get("max") is not None and value > float(validation["max"]):
+                raise HTTPException(422, f"{field.label} exceeds the maximum")
+        options = validation.get("options") or validation.get("allowed_values")
+        if options and value not in options and not (isinstance(value, list) and all(item in options for item in value)):
+            raise HTTPException(422, f"{field.label} contains an unsupported value")
+        if field.unique_value:
+            rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == module.api_name, PlatformRecord.archived == False)).all()
+            for row in rows:
+                if row.id == record_id:
+                    continue
+                if (row.data or {}).get(field.api_name) == value:
+                    raise HTTPException(409, f"{field.label} must be unique")
+    return normalized
+
+
+def _custom_record_title(module: MetadataModule, values: dict[str, Any]) -> str:
+    config = module.config or {}
+    key = str(config.get("record_name_field") or "").strip()
+    if key and values.get(key) not in (None, ""):
+        return str(values[key]).strip()
+    for candidate in ("name", "title", "subject"):
+        if values.get(candidate) not in (None, ""):
+            return str(values[candidate]).strip()
+    return f"{module.label} record"
+
+
+@app.get("/api/custom/{resource}/schema")
+def custom_module_schema(resource: str, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    fields = []
+    for field in _custom_fields(db, module.id):
+        if field_allowed(db, module.api_name, field.api_name, actor, "read"):
+            fields.append(serialize(field))
+    layouts = [serialize(item) for item in db.scalars(select(MetadataLayout).where(MetadataLayout.module_id == module.id).order_by(MetadataLayout.id)).all()]
+    views = [serialize(item) for item in db.scalars(select(MetadataView).where(MetadataView.module_id == module.id).order_by(MetadataView.id)).all()]
+    return {"module": _metadata_module_json(module, db), "fields": fields, "layouts": layouts, "views": views}
+
+
+@app.post("/api/custom/{resource}/layout-state")
+def custom_layout_state(resource: str, payload: dict[str, Any], db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    state = _custom_layout_state(db, module, payload or {})
+    state["visible"] = {key: value for key, value in state["visible"].items() if field_allowed(db, module.api_name, key, actor, "read")}
+    return state
+
+
+@app.get("/api/custom/{resource}")
+def list_custom_records(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0), db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    query = select(PlatformRecord).where(PlatformRecord.resource == module.api_name, PlatformRecord.archived == False)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where(or_(PlatformRecord.title.ilike(pattern), PlatformRecord.status.ilike(pattern)))
+    if status:
+        query = query.where(PlatformRecord.status == status)
+    if owner_id:
+        query = query.where(PlatformRecord.owner_id == owner_id)
+    rows = [row for row in db.scalars(query.order_by(PlatformRecord.updated_at.desc())).all() if can_access_record(db, module.api_name, row, actor)]
+    page = rows[offset:offset + limit]
+    return {"items": [_custom_record_values(row, db, actor) for row in page], "total": len(rows), "limit": limit, "offset": offset}
+
+
+@app.post("/api/custom/{resource}", status_code=201)
+def create_custom_record(resource: str, payload: dict[str, Any], db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    values = _validate_custom_values(db, module, dict(payload or {}), actor)
+    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator":
+        values.setdefault("owner_id", actor.id)
+        if values.get("owner_id") != actor.id:
+            raise HTTPException(403, "You may only create records owned by yourself")
+    title = _custom_record_title(module, values)
+    sync_values = dict(values)
+    sync_values["title"] = title
+    record = PlatformRecord(resource=module.api_name, title=title, data={})
+    sync_platform_columns(record, sync_values)
+    db.add(record); db.flush()
+    run_record_automation(db, module.api_name, "create", record, values)
+    add_audit(db, "create", module.api_name, record.id, f"Created {module.label} '{title}'", after=serialize_platform(record))
+    db.commit(); db.refresh(record)
+    return _custom_record_values(record, db, actor)
+
+
+@app.get("/api/custom/{resource}/{item_id}")
+def get_custom_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == module.api_name, PlatformRecord.id == item_id, PlatformRecord.archived == False))
+    if record is None or not can_access_record(db, module.api_name, record, actor):
+        raise HTTPException(404, "Record not found")
+    return _custom_record_values(record, db, actor)
+
+
+@app.patch("/api/custom/{resource}/{item_id}")
+def update_custom_record(resource: str, item_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == module.api_name, PlatformRecord.id == item_id, PlatformRecord.archived == False))
+    if record is None:
+        raise HTTPException(404, "Record not found")
+    if not can_access_record(db, module.api_name, record, actor, "write"):
+        raise HTTPException(403, "You do not have access to update this record")
+    before = serialize_platform(record)
+    changes = _validate_custom_values(db, module, dict(payload or {}), actor, partial=True, record_id=item_id)
+    values = dict(record.data or {}); values.update(changes)
+    values = _validate_custom_values(db, module, values, actor, partial=False, record_id=item_id)
+    title = _custom_record_title(module, values)
+    sync_values = dict(values); sync_values["title"] = title
+    sync_platform_columns(record, sync_values); record.version = int(record.version or 1) + 1
+    run_record_automation(db, module.api_name, "update", record, values, before_values=before)
+    add_audit(db, "update", module.api_name, record.id, f"Updated {module.label} '{title}'", before=before, after=serialize_platform(record))
+    db.commit(); db.refresh(record)
+    return _custom_record_values(record, db, actor)
+
+
+@app.delete("/api/custom/{resource}/{item_id}")
+def archive_custom_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    module = _custom_module(db, resource)
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == module.api_name, PlatformRecord.id == item_id, PlatformRecord.archived == False))
+    if record is None:
+        raise HTTPException(404, "Record not found")
+    if not can_access_record(db, module.api_name, record, actor, "write"):
+        raise HTTPException(403, "You do not have access to archive this record")
+    record.archived = True; record.version = int(record.version or 1) + 1
+    add_audit(db, "archive", module.api_name, record.id, f"Archived {module.label} '{record.title}'", before=serialize_platform(record))
+    db.commit()
+    return {"ok": True, "id": item_id, "archived": True}
+
+
+def _automation_record(db: Session, resource: str, record_id: int) -> Any | None:
+    model = RESOURCE_MAP.get(resource)
+    if model is not None:
+        return db.get(model, record_id)
+    return db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == record_id, PlatformRecord.archived == False))
+
+
+@app.get("/api/automation/workflows/executions")
+def workflow_execution_history(status: str | None = None, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    if str(actor.role or "").lower() != "administrator":
+        raise HTTPException(403, "Administrator access is required")
+    query = select(WorkflowExecution)
+    if status:
+        query = query.where(WorkflowExecution.status == status)
+    rows = db.scalars(query.order_by(WorkflowExecution.created_at.desc()).limit(limit)).all()
+    return {"items": [serialize(row) for row in rows], "total": len(rows)}
+
+
+@app.post("/api/automation/workflows/run-due")
+def run_due_workflows(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    if str(actor.role or "").lower() != "administrator":
+        raise HTTPException(403, "Administrator access is required")
+    now = datetime.utcnow()
+    rows = db.scalars(select(WorkflowExecution).where(WorkflowExecution.status == "queued", or_(WorkflowExecution.scheduled_for == None, WorkflowExecution.scheduled_for <= now)).order_by(WorkflowExecution.scheduled_for, WorkflowExecution.id).limit(limit)).all()
+    completed = 0; failed = 0; skipped = 0
+    for execution in rows:
+        record = _automation_record(db, execution.resource, execution.record_id)
+        if record is None:
+            execution.status = "failed"; execution.error = "Target record no longer exists"; execution.completed_at = now; failed += 1; continue
+        execution.status = "running"
+        try:
+            values = serialize_platform(record) if isinstance(record, PlatformRecord) else serialize(record, db)
+            for action in execution.actions or []:
+                _execute_workflow_action(db, action, execution.resource, record, values)
+            execution.status = "completed"; execution.completed_at = datetime.utcnow(); execution.error = None; completed += 1
+            add_audit(db, "automation_due", execution.resource, execution.record_id, f"Executed scheduled workflow #{execution.id}", actor_id=actor.id)
+        except Exception as error:
+            execution.status = "failed"; execution.error = str(error)[:2000]; execution.completed_at = datetime.utcnow(); failed += 1
+            add_audit(db, "automation_error", execution.resource, execution.record_id, f"Scheduled workflow #{execution.id} failed: {error}", actor_id=actor.id)
+    db.commit()
+    return {"processed": len(rows), "completed": completed, "failed": failed, "skipped": skipped, "run_at": now.isoformat()}
+
+
+def _forecast_rows(db: Session, start: date, end: date, owner_id: int | None, actor: User | None) -> list[Deal]:
+    query = select(Deal).where(Deal.archived == False, Deal.expected_close_date >= start, Deal.expected_close_date <= end)
+    if owner_id:
+        query = query.where(Deal.owner_id == owner_id)
+    return [row for row in db.scalars(query.order_by(Deal.expected_close_date)).all() if can_access_record(db, "deals", row, actor)]
+
+
+@app.get("/api/forecast/summary")
+def forecast_summary(start: date | None = None, end: date | None = None, owner_id: int | None = None, target: float = Query(0, ge=0), db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    today = date.today(); start = start or today.replace(day=1); end = end or (start + timedelta(days=92))
+    if end < start:
+        raise HTTPException(422, "Forecast end date must be on or after the start date")
+    deals = _forecast_rows(db, start, end, owner_id, actor)
+    stage_totals: dict[str, dict[str, Any]] = {}
+    owners: dict[int | None, dict[str, Any]] = {}
+    pipeline = committed = best_case = closed = weighted = 0.0
+    for deal in deals:
+        amount = float(deal.amount or 0); probability = float(deal.probability or 0); status = str(deal.status or "Open").lower(); stage = str(deal.stage or "Unspecified")
+        weighted_amount = amount * probability / 100.0
+        weighted += weighted_amount
+        if status == "won" or stage.lower() in {"closed won", "won"}:
+            closed += amount
+        elif status not in {"lost", "closed lost"} and stage.lower() not in {"closed lost", "lost"}:
+            pipeline += amount
+            if probability >= 70: committed += amount
+            if probability >= 40: best_case += amount
+        bucket = stage_totals.setdefault(stage, {"stage": stage, "count": 0, "amount": 0.0, "weighted": 0.0})
+        bucket["count"] += 1; bucket["amount"] += amount; bucket["weighted"] += weighted_amount
+        owner = owners.setdefault(deal.owner_id, {"owner_id": deal.owner_id, "owner_name": serialize(deal, db).get("owner_name"), "count": 0, "pipeline": 0.0, "weighted": 0.0, "closed": 0.0})
+        owner["count"] += 1; owner["weighted"] += weighted_amount
+        if status == "won" or stage.lower() in {"closed won", "won"}: owner["closed"] += amount
+        elif status not in {"lost", "closed lost"}: owner["pipeline"] += amount
+    achievement = (closed / target * 100.0) if target else None
+    return {"period": {"start": start.isoformat(), "end": end.isoformat()}, "target": target, "pipeline": pipeline, "best_case": best_case, "committed": committed, "closed_won": closed, "weighted_pipeline": weighted, "achievement_percent": achievement, "gap": max(target - closed, 0.0) if target else None, "deal_count": len(deals), "stages": list(stage_totals.values()), "owners": list(owners.values())}
+
+
 def _developer_records(db: Session, resource: str) -> list[dict[str, Any]]:
     rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False).order_by(PlatformRecord.updated_at.desc()).limit(100)).all()
     return [serialize_platform(row, db) for row in rows]
@@ -4409,22 +4749,59 @@ def restore_platform_record(resource: str, item_id: int, db: Session = Depends(g
     return serialize_platform(record, db)
 
 
+
 @app.get("/api/audit")
 def audit_history(
     resource: str | None = None,
     action: str | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
+    actor_id: int | None = None,
+    record_id: int | None = None,
+    search: str | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    _: User = Depends(require_admin_actor),
 ) -> dict[str, Any]:
     query = select(AuditEvent)
     if resource:
         query = query.where(AuditEvent.resource == resource)
     if action:
         query = query.where(AuditEvent.action == action)
+    if actor_id:
+        query = query.where(AuditEvent.actor_id == actor_id)
+    if record_id:
+        query = query.where(AuditEvent.record_id == record_id)
+    if start:
+        query = query.where(AuditEvent.occurred_at >= start)
+    if end:
+        query = query.where(AuditEvent.occurred_at <= end)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        query = query.where(or_(AuditEvent.summary.ilike(pattern), AuditEvent.action.ilike(pattern), AuditEvent.resource.ilike(pattern)))
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = db.scalars(query.order_by(AuditEvent.occurred_at.desc()).limit(limit).offset(offset)).all()
     return {"items": [{"id": row.id, "occurred_at": row.occurred_at.isoformat(), "actor_id": row.actor_id, "action": row.action, "resource": row.resource, "record_id": row.record_id, "summary": row.summary, "before": row.before, "after": row.after} for row in rows], "total": int(total), "limit": limit, "offset": offset}
+
+
+@app.get("/api/audit/export.csv")
+def export_audit_csv(resource: str | None = None, action: str | None = None, actor_id: int | None = None, record_id: int | None = None, start: datetime | None = None, end: datetime | None = None, db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> StreamingResponse:
+    query = select(AuditEvent)
+    if resource: query = query.where(AuditEvent.resource == resource)
+    if action: query = query.where(AuditEvent.action == action)
+    if actor_id: query = query.where(AuditEvent.actor_id == actor_id)
+    if record_id: query = query.where(AuditEvent.record_id == record_id)
+    if start: query = query.where(AuditEvent.occurred_at >= start)
+    if end: query = query.where(AuditEvent.occurred_at <= end)
+    rows = db.scalars(query.order_by(AuditEvent.occurred_at.desc()).limit(10000)).all()
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=["id", "occurred_at", "actor_id", "action", "resource", "record_id", "summary", "before", "after"])
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({"id": row.id, "occurred_at": row.occurred_at.isoformat(), "actor_id": row.actor_id, "action": row.action, "resource": row.resource, "record_id": row.record_id, "summary": row.summary, "before": json.dumps(row.before, ensure_ascii=False, default=str) if row.before is not None else "", "after": json.dumps(row.after, ensure_ascii=False, default=str) if row.after is not None else ""})
+    content = stream.getvalue().encode("utf-8-sig")
+    return StreamingResponse(iter([content]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="yash-crm-audit-log.csv"'})
 
 
 @app.get("/api/administration/recycle-bin")
