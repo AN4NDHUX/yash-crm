@@ -8,6 +8,7 @@ import binascii
 import csv
 import io
 import threading
+import time
 import re
 import hashlib
 import hmac
@@ -60,6 +61,9 @@ ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_ROOT = ROOT / "uploads"
 DOCUMENT_UPLOAD_ROOT = UPLOAD_ROOT / "documents"
 LEAD_CONVERSION_LOCK = threading.Lock()
+AUTH_RATE_LIMIT_LOCK = threading.Lock()
+AUTH_RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
+MIN_PASSWORD_LENGTH = 12
 
 
 class ReadinessTrustedHostMiddleware(TrustedHostMiddleware):
@@ -757,6 +761,64 @@ def env_bool(name: str, default: bool = False) -> bool:
 AI_EXCEPTIONS_ENABLED = env_bool("YASHCRM_AI_EXCEPTIONS_ENABLED", not IS_PRODUCTION)
 
 
+def _auth_rate_limit(request: Request, scope: str, identifier: str = "", *, limit: int = 10, window_seconds: int = 300) -> None:
+    """Process-local abuse guard for public authentication endpoints.
+
+    Railway normally runs one application instance for this project. For a future
+    multi-instance deployment this should be backed by Redis or another shared store.
+    """
+    client = request.client.host if request.client else "unknown"
+    identity = hashlib.sha256(str(identifier or "").strip().lower().encode("utf-8")).hexdigest()[:20]
+    key = f"{scope}:{client}:{identity}"
+    now = time.monotonic()
+    cutoff = now - window_seconds
+    with AUTH_RATE_LIMIT_LOCK:
+        attempts = [stamp for stamp in AUTH_RATE_LIMIT_BUCKETS.get(key, []) if stamp >= cutoff]
+        if len(attempts) >= limit:
+            retry_after = max(1, int(window_seconds - (now - attempts[0])))
+            raise HTTPException(
+                429,
+                detail={"code": "RATE_LIMITED", "message": "Too many attempts. Try again later."},
+                headers={"Retry-After": str(retry_after)},
+            )
+        attempts.append(now)
+        AUTH_RATE_LIMIT_BUCKETS[key] = attempts
+
+
+def _same_origin_browser_request(request: Request) -> bool:
+    origin = request.headers.get("origin", "").strip()
+    referer = request.headers.get("referer", "").strip()
+    host = request.headers.get("host", "").strip().lower()
+    source = origin or referer
+    if not source:
+        return False
+    try:
+        return urlsplit(source).netloc.lower() == host
+    except ValueError:
+        return False
+
+
+def _totp_valid(code: str, secret: str) -> bool:
+    """Validate a standard RFC 6238 6-digit TOTP without an external dependency."""
+    cleaned = re.sub(r"\s+", "", str(secret or "")).upper()
+    supplied = re.sub(r"\D", "", str(code or ""))
+    if not cleaned or len(supplied) != 6:
+        return False
+    try:
+        padding = "=" * ((8 - len(cleaned) % 8) % 8)
+        key = base64.b32decode(cleaned + padding, casefold=True)
+    except (binascii.Error, ValueError):
+        return False
+    counter = int(time.time() // 30)
+    for drift in (-1, 0, 1):
+        digest = hmac.new(key, int(counter + drift).to_bytes(8, "big"), hashlib.sha1).digest()
+        offset = digest[-1] & 0x0F
+        value = (int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF) % 1_000_000
+        if secrets.compare_digest(f"{value:06d}", supplied):
+            return True
+    return False
+
+
 def _stable_csrf_token() -> str:
     """CSRF token that survives restarts, redeploys and multiple workers.
 
@@ -1182,7 +1244,7 @@ def validate_platform_values(resource: str, values: dict[str, Any], *, partial: 
             if item.get("required") and values.get(item["key"]) in (None, "", []):
                 raise HTTPException(422, f"{item['label']} is required")
     for key in values:
-        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "paid_amount", "balance_due", "criteria", "actions", "scheduled_for"}:
+        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "storage_key", "paid_amount", "balance_due", "criteria", "actions", "scheduled_for"}:
             raise HTTPException(422, f"Unknown field '{key}' for {config['label']}")
     for item in config.get("fields", []):
         if item.get("type") == "json" and item["key"] in values and values[item["key"]] is not None and not isinstance(values[item["key"]], (dict, list)):
@@ -1816,8 +1878,8 @@ def ensure_cloud_admin(db: Session) -> None:
         admin.status = "Active"
     fallback_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
     if fallback_password:
-        if len(fallback_password) < 8:
-            raise RuntimeError("APP_PASSWORD must contain at least 8 characters")
+        if len(fallback_password) < MIN_PASSWORD_LENGTH:
+            raise RuntimeError(f"APP_PASSWORD must contain at least {MIN_PASSWORD_LENGTH} characters")
         if not _password_valid(fallback_password, admin.password_hash):
             admin.password_hash = _password_hash(fallback_password)
             admin.password_changed_at = datetime.utcnow()
@@ -1884,8 +1946,8 @@ PASSWORD_ITERATIONS = 260_000
 
 def _password_hash(password: str) -> str:
     password = str(password or "")
-    if len(password) < 8:
-        raise ValueError("Password must contain at least 8 characters")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must contain at least {MIN_PASSWORD_LENGTH} characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
     return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${base64.urlsafe_b64encode(salt).decode()}${base64.urlsafe_b64encode(digest).decode()}"
@@ -2218,7 +2280,7 @@ def current_actor(request: Request, db: Session = Depends(get_db)) -> User | Non
     actor = _session_user(request, db)
     if actor is not None:
         return actor
-    username = _basic_username(request.headers.get("Authorization", ""))
+    username = _basic_username(request.headers.get("Authorization", "")) if not IS_PRODUCTION else ""
     if username:
         actor = db.scalar(select(User).where(func.lower(User.email) == username.lower(), User.status == "Active"))
         if actor is None:
@@ -2406,7 +2468,7 @@ async def cloud_security(request: Request, call_next):
                     request.state.actor_id = actor.id
         except Exception:
             actor = None
-        if actor is None and _basic_auth_valid(request.headers.get("Authorization", "")):
+        if actor is None and not IS_PRODUCTION and _basic_auth_valid(request.headers.get("Authorization", "")):
             username = _basic_username(request.headers.get("Authorization", ""))
             try:
                 with SessionLocal() as db:
@@ -2424,6 +2486,17 @@ async def cloud_security(request: Request, call_next):
                 return add_security_headers(JSONResponse(status_code=401, content={"detail": "Sign in to continue"}), request)
             next_path = path if path.startswith("/") else "/dashboard"
             return add_security_headers(RedirectResponse(url=f"/login?next={next_path}", status_code=303), request)
+        if (
+            IS_PRODUCTION
+            and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and path not in PUBLIC_AUTH_PATHS
+            and request.cookies.get(AUTH_COOKIE)
+            and not _same_origin_browser_request(request)
+        ):
+            return add_security_headers(
+                JSONResponse(status_code=403, content={"detail": {"code": "CSRF_REJECTED", "message": "Cross-site request rejected."}}),
+                request,
+            )
     tenant_token = None
     actor_id = getattr(request.state, "actor_id", None)
     if actor_id:
@@ -2441,6 +2514,14 @@ def add_security_headers(response: Response, request: Request) -> Response:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; "
+        "form-action 'self'; img-src 'self' data:; connect-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:"
+    )
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     if IS_PRODUCTION:
@@ -2473,7 +2554,6 @@ app.add_middleware(ApiTrailingSlashMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
 
 
 @app.exception_handler(IntegrityError)
@@ -2550,6 +2630,8 @@ def reset_password_page() -> FileResponse:
 
 @app.post("/api/auth/signup")
 def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
+    email_hint = str(payload.get("email") or "").strip().lower()
+    _auth_rate_limit(request, "signup", email_hint, limit=6, window_seconds=600)
     name = str(payload.get("name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     username = _clean_username(payload.get("username") or email.split("@", 1)[0])
@@ -2559,8 +2641,8 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
         raise HTTPException(422, "Enter your full name")
     if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
         raise HTTPException(422, "Enter a valid email address")
-    if len(password) < 8:
-        raise HTTPException(422, "Password must contain at least 8 characters")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(422, f"Password must contain at least {MIN_PASSWORD_LENGTH} characters")
     if db.scalar(select(User).where(func.lower(User.email) == email)):
         raise HTTPException(409, "An account already exists for this email address")
     if db.scalar(select(User).where(func.lower(User.username) == username)):
@@ -2602,6 +2684,7 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
 @app.post("/api/auth/login")
 def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> Response:
     identifier = str(payload.get("identifier") or payload.get("email") or "").strip()
+    _auth_rate_limit(request, "login", identifier, limit=10, window_seconds=300)
     password = str(payload.get("password") or "")
     user = _account_by_identifier(db, identifier)
 
@@ -2626,6 +2709,11 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
                 or identifier.strip().lower() == admin_email
             )
         )
+
+    if credentials_valid and user is not None and str(user.role or "").lower() == "administrator":
+        totp_secret = os.getenv("YASHCRM_ADMIN_TOTP_SECRET", "").strip()
+        if totp_secret and not _totp_valid(str(payload.get("otp") or ""), totp_secret):
+            raise HTTPException(401, detail={"code": "MFA_REQUIRED", "message": "Enter the current 6-digit authenticator code."})
 
     if not credentials_valid:
         db.add(LoginHistory(
@@ -2652,6 +2740,11 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
 
 @app.post("/api/auth/logout")
 def auth_logout(request: Request, db: Session = Depends(get_db)) -> Response:
+    actor = _session_user(request, db)
+    if actor is not None:
+        db.add(LoginHistory(user_id=actor.id, event="logout", success=True, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent", "")[:500], metadata_json={"path": request.url.path}))
+        add_audit(db, "logout", "users", actor.id, f"User '{actor.email}' logged out", actor_id=actor.id)
+        db.commit()
     _revoke_session(request, db)
     response = JSONResponse({"ok": True, "redirect": "/login"})
     _clear_session_cookie(response)
@@ -2667,8 +2760,9 @@ def auth_session(request: Request, db: Session = Depends(get_db)) -> dict[str, A
 
 
 @app.post("/api/auth/forgot-password")
-def auth_forgot_password(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def auth_forgot_password(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     identifier = str(payload.get("identifier") or payload.get("email") or "").strip()
+    _auth_rate_limit(request, "forgot", identifier, limit=5, window_seconds=900)
     user = _account_by_identifier(db, identifier)
     if user is not None and user.status == "Active":
         raw = secrets.token_urlsafe(40)
@@ -2690,11 +2784,12 @@ def auth_forgot_password(payload: dict[str, Any], db: Session = Depends(get_db))
 
 
 @app.post("/api/auth/reset-password")
-def auth_reset_password(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def auth_reset_password(payload: dict[str, Any], request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
     token = str(payload.get("token") or "")
+    _auth_rate_limit(request, "reset", token, limit=6, window_seconds=900)
     password = str(payload.get("password") or "")
-    if len(password) < 8:
-        raise HTTPException(422, "Password must contain at least 8 characters")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(422, f"Password must contain at least {MIN_PASSWORD_LENGTH} characters")
     row = db.scalar(select(PasswordResetToken).where(
         PasswordResetToken.token_hash == _session_token_hash(token),
         PasswordResetToken.used_at.is_(None),
@@ -2794,7 +2889,7 @@ def ai_dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
     }
 
 
-REPORT_SOURCE_BLOCKLIST = {"reports", "dashboards", "workflow_rules", "approval_processes"}
+REPORT_SOURCE_BLOCKLIST = {"reports", "dashboards", "workflow_rules", "approval_processes", "users"}
 REPORT_OPERATORS = {"equals", "not_equals", "contains", "starts_with", "gt", "gte", "lt", "lte", "is_empty", "is_not_empty"}
 
 
@@ -4491,7 +4586,7 @@ def developer_sdk(language: str, db: Session = Depends(get_db)) -> dict[str, Any
 
 
 @app.get("/api/security/overview")
-def security_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
+def security_overview(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
     def records(resource: str) -> list[dict[str, Any]]:
         return _developer_records(db, resource)
     return {"roles": records("roles"), "profiles": records("profiles"), "permissions": records("permissions"), "sharing_rules": records("sharing_rules"), "field_security": [{"module": item.api_name, "label": item.label, "fields": [{"api_name": field.api_name, "label": field.label, "permissions": field.permissions or {}, "visibility": field.visibility or {}} for field in db.scalars(select(MetadataField).where(MetadataField.module_id == item.id).order_by(MetadataField.position, MetadataField.id)).all()]} for item in db.scalars(select(MetadataModule).order_by(MetadataModule.label)).all()], "audit": audit_history(limit=25, offset=0, db=db)["items"]}
@@ -4503,12 +4598,9 @@ def require_admin_actor(actor: User = Depends(current_actor)) -> User:
     return actor
 
 
-@app.post("/api/auth/logout")
-def logout(request: Request, actor: User = Depends(current_actor), db: Session = Depends(get_db)) -> dict[str, Any]:
-    db.add(LoginHistory(user_id=actor.id, event="logout", success=True, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent", "")[:500], metadata_json={"path": request.url.path}))
-    add_audit(db, "logout", "users", actor.id, f"User '{actor.email}' logged out", actor_id=actor.id)
-    db.commit()
-    return {"ok": True}
+def _require_admin_resource(resource: str, actor: User | None) -> None:
+    if resource == "users" and (not isinstance(actor, User) or str(actor.role or "").lower() != "administrator"):
+        raise HTTPException(403, detail={"code": "ADMIN_REQUIRED", "message": "User administration is restricted to Administrators."})
 
 
 def _admin_user_payload(user: User, db: Session) -> dict[str, Any]:
@@ -5937,6 +6029,7 @@ async def upload_document(
     status: str = Form("Active"),
     description: str | None = Form(None),
     db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
 ) -> dict[str, Any]:
     original = Path(file.filename or "").name
     extension = Path(original).suffix.lower()
@@ -5955,19 +6048,51 @@ async def upload_document(
     target.write_bytes(content)
     values: dict[str, Any] = {
         "name": name.strip(), "document_type": document_type or extension.lstrip(".").upper(),
-        "url": f"/uploads/documents/{stored_name}", "version": version, "related_type": related_type,
-        "related_id": related_id, "owner_id": owner_id, "status": status, "description": description,
+        "url": "", "version": version, "related_type": related_type,
+        "related_id": related_id, "owner_id": actor.id, "status": status, "description": description,
         "file_name": original, "file_size": len(content), "content_type": file.content_type,
+        "storage_key": stored_name,
     }
     try:
-        return create_platform_record("documents", PlatformPayload(**values), db)
+        created = create_platform_record("documents", PlatformPayload(**values), db, actor)
+        record = db.get(PlatformRecord, int(created["id"]))
+        if record is None:
+            raise RuntimeError("Document record was not created")
+        merged = dict(record.data or {})
+        merged["url"] = f"/api/documents/{record.id}/download"
+        merged["storage_key"] = stored_name
+        sync_platform_columns(record, merged)
+        db.commit()
+        db.refresh(record)
+        return serialize_platform(record, db, actor)
     except Exception:
         target.unlink(missing_ok=True)
         raise
 
 
+@app.get("/api/documents/{item_id}/download")
+def download_document(item_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> FileResponse:
+    record = db.scalar(select(PlatformRecord).where(
+        PlatformRecord.resource == "documents",
+        PlatformRecord.id == item_id,
+        PlatformRecord.archived == False,
+    ))
+    if record is None or not can_access_record(db, "documents", record, actor):
+        raise HTTPException(404, "Document not found")
+    data = dict(record.data or {})
+    storage_key = Path(str(data.get("storage_key") or Path(str(record.url or "")).name)).name
+    if not storage_key:
+        raise HTTPException(404, "Document file is unavailable")
+    target = DOCUMENT_UPLOAD_ROOT / storage_key
+    if not target.is_file():
+        raise HTTPException(404, "Document file is unavailable")
+    download_name = Path(str(data.get("file_name") or record.title or storage_key)).name
+    return FileResponse(target, filename=download_name, media_type=str(data.get("content_type") or "application/octet-stream"))
+
+
 @app.get("/api/{resource}")
 def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, activity_type: str | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset, activity_type, actor)
@@ -5992,6 +6117,7 @@ def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db
 
 @app.post("/api/{resource}")
 def create_record(resource: str, payload: RecordPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     model = RESOURCE_MAP[resource]
@@ -6038,6 +6164,7 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
 
 @app.get("/api/{resource}/{item_id}")
 def get_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     item = db.get(RESOURCE_MAP[resource], item_id)
@@ -6050,6 +6177,7 @@ def get_record(resource: str, item_id: int, db: Session = Depends(get_db), actor
 
 @app.patch("/api/{resource}/{item_id}")
 def update_record(resource: str, item_id: int, payload: RecordPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     item = db.get(RESOURCE_MAP[resource], item_id)
@@ -6090,6 +6218,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
 
 @app.delete("/api/{resource}/{item_id}")
 def delete_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     item = db.get(RESOURCE_MAP[resource], item_id)
