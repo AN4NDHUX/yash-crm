@@ -1789,3 +1789,86 @@ textarea:focus-visible {
   .detail-meta-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .detail-tab { min-width: 112px; }
 }
+
+
+/* Cross-device compatibility hardening — phone, tablet, laptop, desktop */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+body { min-width: 0; }
+button, input, select, textarea { font: inherit; }
+img, svg, canvas, video, iframe { max-width: 100%; }
+.main-area, .content-area, .page-heading, .module-toolbar, .card, .settings-section,
+.detail-record-main, .setup-page-shell, .setup-workspace { min-width: 0; }
+.table-wrap, .data-table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.data-table { min-width: 720px; }
+.modal-backdrop { padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.modal { max-width: min(720px, calc(100vw - 24px)); max-height: min(760px, calc(100dvh - 24px)); }
+.modal-body { overflow-y: auto; overscroll-behavior: contain; }
+.sidebar { padding-left: env(safe-area-inset-left); }
+.topbar { padding-top: env(safe-area-inset-top); }
+button, a, input, select, textarea { touch-action: manipulation; }
+
+@media (hover: none) and (pointer: coarse) {
+  .button, .icon-button, .table-action, .quick-action, .detail-related-link, .detail-tab,
+  .primary-nav a, .settings-nav a, .setup-hub-link { min-height: 44px; }
+  .table-action:hover, .quick-action:hover, .record-link:hover { transform: none; }
+}
+
+@media (max-width: 1000px) {
+  .app-shell { display: block; }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(320px, 88vw) !important; max-width: 88vw; transform: translateX(-105%); z-index: 1000; }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-resizer { display: none !important; }
+  .main-area { width: 100%; margin-left: 0; }
+  .menu-toggle, .sidebar-close { display: inline-grid; }
+  body.nav-open { overflow: hidden; touch-action: none; }
+}
+
+@media (max-width: 760px) {
+  .content-area { padding-left: 14px; padding-right: 14px; }
+  .topbar { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .topbar-actions { min-width: 0; gap: 6px; }
+  .global-search { min-width: 0; width: min(46vw, 280px); }
+  .top-profile-copy, .breadcrumbs span, .breadcrumbs b { display: none; }
+  .page-heading, .settings-heading-row, .detail-plain-head, .module-toolbar {
+    align-items: stretch; flex-direction: column;
+  }
+  .heading-actions, .module-toolbar-actions, .journey-actions { width: 100%; }
+  .heading-actions .button, .module-toolbar-actions .button { flex: 1 1 auto; }
+  .stats-grid, .dashboard-grid, .form-grid, .detail-meta-grid { grid-template-columns: 1fr !important; }
+  .record-grid { grid-template-columns: 1fr; }
+  .detail-record-layout, .setup-workspace, .module-split-view { grid-template-columns: 1fr; }
+  .detail-related-nav, .setup-workspace .settings-nav { position: static; }
+  .detail-tab-strip { width: 100%; overflow-x: auto; justify-content: flex-start; border-radius: 14px; }
+  .detail-tab { flex: 1 0 auto; min-width: 104px; }
+  .setup-toolbar { grid-template-columns: 1fr; }
+  .setup-hub-grid { grid-template-columns: 1fr; }
+  .ai-cockpit-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-journey-track { scroll-snap-type: x proximity; }
+  .ai-journey-stage { flex: 0 0 min(78vw, 280px); scroll-snap-align: start; }
+  .modal { width: 100%; max-width: none; border-radius: 16px; }
+}
+
+@media (max-width: 480px) {
+  .content-area { padding-left: 10px; padding-right: 10px; }
+  .global-search { width: 42vw; }
+  .top-icon { display: none; }
+  .page-heading h1 { font-size: clamp(22px, 7vw, 30px); }
+  .stats-grid, .ai-cockpit-stats { grid-template-columns: 1fr !important; }
+  .button { white-space: normal; }
+  .modal-backdrop { align-items: flex-end; padding: 0; }
+  .modal { max-height: 92dvh; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .modal-foot { position: sticky; bottom: 0; background: var(--surface); }
+  .toast-region { left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .toast { width: 100%; max-width: none; }
+}
+
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 1000px) {
+  .topbar { min-height: 52px; }
+  .modal { max-height: calc(100dvh - 12px); }
+  .sidebar-footer { display: none; }
+}
+
+@supports not (height: 100dvh) {
+  .modal { max-height: calc(100vh - 24px); }
+}
