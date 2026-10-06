@@ -291,15 +291,10 @@ SETUP_NAVIGATION: dict[str, list[tuple[str, str]]] = {
     ],
     "Experience Center": [("signals","Signals"),("command_center","CommandCenter"),("segmentation","Segmentation")],
     "Data Administration": [
-        ("import","Import"),("export","Export"),("data_backup","Data Backup"),("remove_sample_data","Remove sample data"),
-        ("storage","Storage"),("recycle_bin","Recycle Bin"),("sandboxes","Sandbox"),("copy_customization","Copy Customization"),
+        ("import","Import"),("export","Export"),("data_backup","Data Backup"),("storage","Storage"),("recycle_bin","Recycle Bin"),("sandboxes","Sandbox"),("copy_customization","Copy Customization"),
         ("duplicates","Duplicate Management"),("data_quality","Data Quality"),("migration","Migration")
     ],
-    "Marketplace": [
-        ("marketplace_integrations","All"),("marketplace_zoho","Zoho"),("marketplace_google","Google"),
-        ("marketplace_microsoft","Microsoft"),("marketplace_facebook","Facebook"),("marketplace_linkedin","LinkedIn"),
-        ("marketplace_quickbooks","QuickBooks")
-    ],
+    "Marketplace": [("marketplace_integrations","All Integrations")],
     "Developer Hub": [
         ("mcp_servers","MCP for AI Agents"),("api_settings","APIs and SDKs"),("connections","Connections"),
         ("variables","Variables"),("circuits","Circuits"),("functions","Functions"),("widgets","Widgets"),
@@ -311,7 +306,7 @@ SETUP_NAVIGATION: dict[str, list[tuple[str, str]]] = {
         ("apex_recommendation","Recommendation"),("apex_communication","Communication"),("apex_vision","Vision"),
         ("apex_notifications","Notifications"),("apex_voc","Voice of the Customer"),("apex_models","Models"),
         ("apex_presentation","Presentation"),("apex_studio","Custom AI Studio"),
-        ("apex_competitors","Competitors"),("apex_usage_data","Usage Data")
+        ("apex_competitors","Competitors")
     ],
     "CPQ": [("product_configurators","Product Configurator"),("price_rules","Price Rules"),("guided_selling","Guided Selling")],
 }
