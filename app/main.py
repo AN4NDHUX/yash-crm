@@ -2843,6 +2843,11 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
     if not otp_required:
         _claim_legacy_custom_modules(db, user)
         token = _create_session(request, db, user, auth_method="password")
+        _notify_account_once(
+            db, user, "login", "New Yash CRM sign-in",
+            f"Your Yash CRM account was signed in on {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')}. If this was not you, reset your password immediately.",
+            within_minutes=10,
+        )
         response = JSONResponse({"ok": True, "user": serialize(user, db), "redirect": "/dashboard"})
         _set_session_cookie(response, token)
         return response
