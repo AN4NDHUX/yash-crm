@@ -1960,90 +1960,177 @@ button, a, input, select, textarea { touch-action: manipulation; }
 }
 
 
-/* Sidebar stability hotfix — desktop navigation must never collapse or inherit mobile drawer geometry. */
+/* Sidebar architecture hard fix — header/footer stay fixed; only navigation scrolls. */
 @media (min-width: 1001px) {
-  :root {
-    --sidebar-width: 280px;
-  }
+  :root { --sidebar-width: 300px; }
 
   .app-shell {
-    display: flex !important;
-    align-items: stretch;
+    display: block !important;
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .sidebar,
   #sidebar {
-    position: sticky !important;
-    inset: auto !important;
+    position: fixed !important;
+    inset: 0 auto 0 0 !important;
     top: 0 !important;
     left: 0 !important;
-    width: 280px !important;
-    min-width: 280px !important;
-    max-width: 280px !important;
-    flex: 0 0 280px !important;
+    bottom: 0 !important;
+    width: var(--sidebar-width) !important;
+    min-width: var(--sidebar-width) !important;
+    max-width: var(--sidebar-width) !important;
     height: 100vh !important;
     height: 100dvh !important;
-    padding: 24px 18px 20px !important;
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    padding: 20px 16px 16px !important;
+    overflow: hidden !important;
     border-radius: 0 !important;
     transform: none !important;
+    z-index: 100 !important;
+  }
+
+  .sidebar .brand-lockup {
+    display: flex !important;
+    align-items: center !important;
+    min-height: 58px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 6px 16px !important;
+    flex: 0 0 auto !important;
+    position: relative !important;
+    z-index: 2 !important;
+  }
+
+  .sidebar .primary-nav,
+  .sidebar .expanded-nav {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 4px 4px 18px 0 !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,.24) transparent;
   }
 
-  .sidebar .brand-lockup,
-  .sidebar .expanded-nav,
-  .sidebar .sidebar-footer {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .sidebar .primary-nav {
-    width: 100%;
-    min-width: 0;
+  .sidebar .primary-nav::-webkit-scrollbar { width: 6px; }
+  .sidebar .primary-nav::-webkit-scrollbar-track { background: transparent; }
+  .sidebar .primary-nav::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(255,255,255,.20);
   }
 
   .sidebar .primary-nav a {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
-    flex: 0 0 40px;
-    padding-left: 12px;
-    padding-right: 12px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    flex: 0 0 42px !important;
+    padding: 0 12px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
 
   .sidebar .nav-label,
   .sidebar .nav-label-settings {
-    width: 100%;
-    max-width: 100%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 18px 0 6px !important;
+    padding: 0 12px !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
   }
+
+  .sidebar .expanded-nav > .nav-label:first-child { margin-top: 0 !important; }
 
   .sidebar-footer {
-    margin-top: auto;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 12px 4px 0 !important;
+    border-top: 1px solid rgba(255,255,255,.10) !important;
+    position: relative !important;
+    z-index: 2 !important;
+    background: linear-gradient(180deg, rgba(5,23,50,.03), rgba(5,23,50,.96) 24%);
   }
 
-  .sidebar-resizer {
-    display: none !important;
+  .sidebar .user-mini {
+    padding: 10px 0 0 !important;
+    border-top: 0 !important;
   }
+
+  .sidebar-resizer { display: none !important; pointer-events: none !important; }
 
   .main-area {
-    width: calc(100% - 280px) !important;
+    width: calc(100% - var(--sidebar-width)) !important;
+    margin-left: var(--sidebar-width) !important;
     min-width: 0 !important;
-    flex: 1 1 auto !important;
+    min-height: 100vh !important;
+    min-height: 100dvh !important;
   }
 }
 
-/* Keep safe-area padding additive instead of replacing the desktop panel padding. */
 @media (max-width: 1000px) {
   .sidebar,
   #sidebar {
+    display: grid !important;
+    grid-template-rows: auto minmax(0,1fr) auto !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
     padding-left: max(18px, env(safe-area-inset-left)) !important;
     padding-right: max(18px, env(safe-area-inset-right)) !important;
   }
+
+  .sidebar .primary-nav,
+  .sidebar .expanded-nav {
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .main-area { margin-left: 0 !important; width: 100% !important; }
+}
+
+/* Loader: transparent particle field, no card behind the Yash logo. */
+.brand-orbs-shell {
+  width: 112px !important;
+  height: 112px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.brand-orbs-shell .brand-orbs-loader,
+.brand-orbs-loader {
+  width: 112px !important;
+  height: 112px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.yash-loading-logo {
+  width: 62px !important;
+  height: 62px !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.yash-loading-logo img {
+  width: 54px !important;
+  height: 54px !important;
+  filter: drop-shadow(0 8px 18px rgba(23,105,224,.22));
 }
