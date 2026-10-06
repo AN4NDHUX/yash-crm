@@ -270,11 +270,15 @@
 
           <div class="field signin-only signup-only reset-only">
             <label for="password">Password</label>
-            <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" placeholder="At least 8 characters" />
+            <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" placeholder="At least 12 characters" />
+          </div>
+          <div class="field signin-only" id="mfa-field" hidden>
+            <label for="otp">Authenticator code</label>
+            <input id="otp" name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code" />
           </div>
           <div class="field signup-only reset-only">
             <label for="confirm-password">Confirm password</label>
-            <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" placeholder="Repeat your password" />
+            <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="12" placeholder="Repeat your password" />
           </div>
 
           <div class="row signin-only"><a href="/forgot-password">Forgot password?</a><a href="/signup">Create an account</a></div>
@@ -337,7 +341,8 @@
     if (mode === "signin") {
       payload = {
         identifier: String(data.get("identifier") || "").trim(),
-        password: String(data.get("password") || "")
+        password: String(data.get("password") || ""),
+        otp: String(data.get("otp") || "").trim()
       };
       if (!payload.identifier) return showError("Enter your username, email, or phone number.");
     } else if (mode === "signup") {
@@ -352,7 +357,7 @@
       if (payload.name.length < 2) return showError("Enter your full name.");
       if (payload.username.length < 3) return showError("Username must contain at least 3 characters.");
       if (!payload.email) return showError("Email address is required.");
-      if (payload.password.length < 8) return showError("Password must contain at least 8 characters.");
+      if (payload.password.length < 8) return showError("Password must contain at least 12 characters.");
       if (payload.password !== confirm) return showError("Passwords do not match.");
       endpoint = "/api/auth/signup";
     } else if (mode === "forgot") {
@@ -364,7 +369,7 @@
       payload = {token, password: String(data.get("password") || "")};
       const confirm = String(data.get("confirm_password") || "");
       if (!token) return showError("This password reset link is missing its security token.");
-      if (payload.password.length < 8) return showError("Password must contain at least 8 characters.");
+      if (payload.password.length < 8) return showError("Password must contain at least 12 characters.");
       if (payload.password !== confirm) return showError("Passwords do not match.");
       endpoint = "/api/auth/reset-password";
     }
@@ -378,7 +383,18 @@
         body: JSON.stringify(payload)
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not continue.");
+      if (!response.ok) {
+        if (mode === "signin" && result.detail && result.detail.code === "MFA_REQUIRED") {
+          const mfaField = document.getElementById("mfa-field");
+          const otp = document.getElementById("otp");
+          mfaField.hidden = false;
+          showError(result.detail.message || "Enter your authenticator code.");
+          submit.disabled = false;
+          otp.focus();
+          return;
+        }
+        throw new Error(typeof result.detail === "string" ? result.detail : (result.detail?.message || "Could not continue."));
+      }
 
       if (mode === "forgot") {
         errorBox.textContent = result.message || "If the account exists, reset instructions were sent.";
