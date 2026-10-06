@@ -4585,13 +4585,6 @@ def developer_sdk(language: str, db: Session = Depends(get_db)) -> dict[str, Any
     return {"language": language, "base_path": base, "generated_at": datetime.utcnow().isoformat(), "code": examples[language], "security": "Keep CRM_URL, TOKEN, OAuth secrets, and connection credentials outside source control."}
 
 
-@app.get("/api/security/overview")
-def security_overview(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
-    def records(resource: str) -> list[dict[str, Any]]:
-        return _developer_records(db, resource)
-    return {"roles": records("roles"), "profiles": records("profiles"), "permissions": records("permissions"), "sharing_rules": records("sharing_rules"), "field_security": [{"module": item.api_name, "label": item.label, "fields": [{"api_name": field.api_name, "label": field.label, "permissions": field.permissions or {}, "visibility": field.visibility or {}} for field in db.scalars(select(MetadataField).where(MetadataField.module_id == item.id).order_by(MetadataField.position, MetadataField.id)).all()]} for item in db.scalars(select(MetadataModule).order_by(MetadataModule.label)).all()], "audit": audit_history(limit=25, offset=0, db=db)["items"]}
-
-
 def require_admin_actor(actor: User = Depends(current_actor)) -> User:
     if str(actor.role or "").lower() != "administrator":
         raise HTTPException(403, detail={"code": "ADMIN_REQUIRED", "message": "Administrator access is required."})
@@ -4601,6 +4594,13 @@ def require_admin_actor(actor: User = Depends(current_actor)) -> User:
 def _require_admin_resource(resource: str, actor: User | None) -> None:
     if resource == "users" and (not isinstance(actor, User) or str(actor.role or "").lower() != "administrator"):
         raise HTTPException(403, detail={"code": "ADMIN_REQUIRED", "message": "User administration is restricted to Administrators."})
+
+
+@app.get("/api/security/overview")
+def security_overview(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    def records(resource: str) -> list[dict[str, Any]]:
+        return _developer_records(db, resource)
+    return {"roles": records("roles"), "profiles": records("profiles"), "permissions": records("permissions"), "sharing_rules": records("sharing_rules"), "field_security": [{"module": item.api_name, "label": item.label, "fields": [{"api_name": field.api_name, "label": field.label, "permissions": field.permissions or {}, "visibility": field.visibility or {}} for field in db.scalars(select(MetadataField).where(MetadataField.module_id == item.id).order_by(MetadataField.position, MetadataField.id)).all()]} for item in db.scalars(select(MetadataModule).order_by(MetadataModule.label)).all()], "audit": audit_history(limit=25, offset=0, db=db)["items"]}
 
 
 def _admin_user_payload(user: User, db: Session) -> dict[str, Any]:
