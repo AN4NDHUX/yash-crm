@@ -2227,6 +2227,76 @@ def _subscription_payload(db: Session, user_id: int) -> dict[str, Any]:
     }
 
 
+def _active_plan(db: Session, actor: User) -> Plan | None:
+    if str(actor.role or "").lower() == "administrator":
+        return None
+    subscription = _ensure_user_subscription(db, actor)
+    if str(subscription.status or "").lower() not in {"active", "trialing", "trial"}:
+        raise HTTPException(403, detail={"code": "SUBSCRIPTION_INACTIVE", "message": "Your subscription is not active."})
+    plan = db.get(Plan, subscription.plan_id)
+    if plan is None or not plan.active:
+        raise HTTPException(403, detail={"code": "PLAN_UNAVAILABLE", "message": "Your subscription plan is unavailable."})
+    return plan
+
+
+def _enforce_plan_feature(db: Session, actor: User, feature: str) -> None:
+    plan = _active_plan(db, actor)
+    if plan is None:
+        return
+    if not bool((plan.features or {}).get(feature, False)):
+        raise HTTPException(403, detail={"code": "PLAN_UPGRADE_REQUIRED", "message": f"Your {plan.name} plan does not include this feature."})
+
+
+def _owned_record_count(db: Session, actor: User) -> int:
+    total = 0
+    for model in (Lead, Contact, Account, Deal, Activity):
+        if hasattr(model, "owner_id"):
+            total += int(db.scalar(select(func.count()).select_from(model).where(model.owner_id == actor.id)) or 0)
+    total += int(db.scalar(select(func.count()).select_from(PlatformRecord).where(PlatformRecord.owner_id == actor.id, PlatformRecord.archived == False)) or 0)
+    return total
+
+
+def _enforce_record_limit(db: Session, actor: User) -> None:
+    plan = _active_plan(db, actor)
+    if plan is None or plan.max_records is None:
+        return
+    if _owned_record_count(db, actor) >= int(plan.max_records):
+        raise HTTPException(403, detail={"code": "PLAN_RECORD_LIMIT", "message": f"Your {plan.name} plan record limit has been reached."})
+
+
+def _enforce_custom_module_limit(db: Session, actor: User) -> None:
+    _enforce_plan_feature(db, actor, "custom_modules")
+    plan = _active_plan(db, actor)
+    if plan is None or plan.max_custom_modules is None:
+        return
+    current = int(db.scalar(select(func.count()).select_from(MetadataModule).where(MetadataModule.owner_id == actor.id)) or 0)
+    if current >= int(plan.max_custom_modules):
+        raise HTTPException(403, detail={"code": "PLAN_CUSTOM_MODULE_LIMIT", "message": f"Your {plan.name} plan custom-module limit has been reached."})
+
+
+def _enforce_storage_limit(db: Session, actor: User, incoming_bytes: int) -> None:
+    plan = _active_plan(db, actor)
+    if plan is None or plan.max_storage_mb is None:
+        return
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "documents", PlatformRecord.owner_id == actor.id, PlatformRecord.archived == False)).all()
+    used = sum(int((row.data or {}).get("file_size") or 0) for row in rows)
+    maximum = int(plan.max_storage_mb) * 1024 * 1024
+    if used + max(0, int(incoming_bytes)) > maximum:
+        raise HTTPException(403, detail={"code": "PLAN_STORAGE_LIMIT", "message": f"Your {plan.name} plan storage limit has been reached."})
+
+
+def _enforce_ai_limit(db: Session, actor: User) -> None:
+    _enforce_plan_feature(db, actor, "apex")
+    plan = _active_plan(db, actor)
+    if plan is None or plan.ai_limit_monthly is None:
+        return
+    now = datetime.utcnow()
+    start = datetime(now.year, now.month, 1)
+    used = int(db.scalar(select(func.count()).select_from(ApexAssistantRun).where(ApexAssistantRun.requested_by == actor.id, ApexAssistantRun.created_at >= start)) or 0)
+    if used >= int(plan.ai_limit_monthly):
+        raise HTTPException(403, detail={"code": "PLAN_AI_LIMIT", "message": f"Your {plan.name} plan monthly AI limit has been reached."})
+
+
 def _claim_legacy_custom_modules(db: Session, actor: User) -> None:
     unowned = db.scalars(select(MetadataModule).where(MetadataModule.owner_id.is_(None))).all()
     changed = False
@@ -4044,6 +4114,7 @@ def list_metadata_modules(db: Session = Depends(get_db), actor: User = Depends(c
 
 @app.post("/api/admin/metadata/modules", status_code=201)
 def create_metadata_module(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _enforce_custom_module_limit(db, actor)
     requested_api_name = re.sub(r"[^a-z0-9_]+", "_", str(payload.get("api_name") or "").strip().lower().replace(" ", "_")).strip("_")
     label = str(payload.get("label") or "").strip()
     if not requested_api_name or not label:
@@ -5697,6 +5768,8 @@ def list_platform_records(
 
 @app.post("/api/platform/{resource}", status_code=201)
 def create_platform_record(resource: str, payload: PlatformPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    if isinstance(actor, User):
+        _enforce_record_limit(db, actor)
     config = platform_config(resource)
     values = platform_values(payload)
     authorize_field_values(db, resource, values, actor, "write")
@@ -6041,6 +6114,7 @@ async def upload_document(
         raise HTTPException(422, "The selected document is empty")
     if len(content) > 10_000_000:
         raise HTTPException(413, "Documents are limited to 10 MB")
+    _enforce_storage_limit(db, actor, len(content))
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original).stem).strip("-._")[:80] or "document"
     stored_name = f"{datetime.utcnow():%Y%m%d%H%M%S}-{secrets.token_hex(5)}-{safe_stem}{extension}"
     DOCUMENT_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
@@ -6120,6 +6194,8 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
     _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
+    if resource != "users":
+        _enforce_record_limit(db, actor)
     model = RESOURCE_MAP[resource]
     values = {}
     for key, value in payload.model_dump(exclude_unset=True).items():
