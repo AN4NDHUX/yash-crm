@@ -2475,8 +2475,8 @@ def auth_reset_password(payload: dict[str, Any], db: Session = Depends(get_db)) 
 
 
 @app.get("/api/meta")
-def meta(db: Session = Depends(get_db)) -> dict[str, Any]:
-    users = db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
+def meta(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    users = [actor]
     return {"users": [serialize(user, db) for user in users], "lead_statuses": ["New", "Contacted", "Qualified", "Unqualified", "Converted"], "deal_stages": ["Qualification", "Needs Analysis", "Proposal", "Negotiation", "Closed Won", "Closed Lost"], "activity_types": ["Task", "Call", "Meeting"], "industries": ["Technology", "Retail", "Logistics", "Healthcare", "Finance", "Education", "Other"]}
 
 
@@ -2699,17 +2699,17 @@ def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = N
 
 
 @app.get("/api/dashboard")
-def dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
+def dashboard(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     closed = ["Closed Won", "Closed Lost"]
-    total_leads = db.scalar(select(func.count()).select_from(Lead).where(Lead.archived == False)) or 0
-    open_deals = db.scalar(select(func.count()).select_from(Deal).where(Deal.archived == False, Deal.stage.not_in(closed))) or 0
-    pipeline_value = db.scalar(select(func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.stage.not_in(closed))) or 0
-    activities_due = db.scalar(select(func.count()).select_from(Activity).where(Activity.archived == False, Activity.status != "Completed", Activity.due_at <= datetime.utcnow() + timedelta(days=7))) or 0
-    stage_rows = db.execute(select(Deal.stage, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.stage.not_in(closed)).group_by(Deal.stage)).all()
-    lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False).group_by(Lead.status)).all()
-    recent = db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc()).limit(6)).all()
-    performance = sales_performance(db)
-    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
+    total_leads = db.scalar(select(func.count()).select_from(Lead).where(Lead.archived == False, Lead.owner_id == actor.id)) or 0
+    open_deals = db.scalar(select(func.count()).select_from(Deal).where(Deal.archived == False, Deal.owner_id == actor.id, Deal.stage.not_in(closed))) or 0
+    pipeline_value = db.scalar(select(func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.owner_id == actor.id, Deal.stage.not_in(closed))) or 0
+    activities_due = db.scalar(select(func.count()).select_from(Activity).where(Activity.archived == False, Activity.owner_id == actor.id, Activity.status != "Completed", Activity.due_at <= datetime.utcnow() + timedelta(days=7))) or 0
+    stage_rows = db.execute(select(Deal.stage, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.owner_id == actor.id, Deal.stage.not_in(closed)).group_by(Deal.stage)).all()
+    lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False, Lead.owner_id == actor.id).group_by(Lead.status)).all()
+    recent = db.scalars(select(Activity).where(Activity.archived == False, Activity.owner_id == actor.id).order_by(Activity.created_at.desc()).limit(6)).all()
+    performance = sales_performance(db, actor)
+    return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db, actor) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
 
 
 def _date_value(value: Any) -> date | None:
@@ -2721,9 +2721,9 @@ def _date_value(value: Any) -> date | None:
         return None
 
 
-def sales_performance(db: Session) -> dict[str, Any]:
+def sales_performance(db: Session, actor: User | None = None) -> dict[str, Any]:
     today = date.today()
-    users = db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
+    users = [actor] if isinstance(actor, User) else db.scalars(select(User).where(User.status == "Active").order_by(User.name)).all()
     targets = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "sales_targets", PlatformRecord.archived == False)).all()
     payments = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "payments", PlatformRecord.archived == False, PlatformRecord.status.in_(["Received", "Cleared"]))).all()
     people: list[dict[str, Any]] = []
@@ -2748,7 +2748,10 @@ def sales_performance(db: Session) -> dict[str, Any]:
         conversions = db.scalar(select(func.count()).select_from(Lead).where(Lead.owner_id == user.id, Lead.status == "Converted", Lead.archived == False, Lead.updated_at >= datetime.combine(start, datetime.min.time()), Lead.updated_at <= datetime.combine(end, datetime.max.time()))) or 0
         people.append({"owner_id": user.id, "name": user.name, "role": user.role, "target": target_amount, "achieved": achieved, "achievement_percent": achievement, "conversions": int(conversions), "incentive": incentive, "period_start": start.isoformat(), "period_end": end.isoformat(), "target_configured": target_record is not None})
 
-    stuck_leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]), or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
+    stuck_query = select(Lead).where(Lead.archived == False, Lead.status.not_in(["Converted", "Unqualified"]),
+    if isinstance(actor, User):
+        stuck_query = stuck_query.where(Lead.owner_id == actor.id)
+    stuck_leads = db.scalars(stuck_query.where( or_(Lead.next_follow_up < today, Lead.updated_at < datetime.utcnow() - timedelta(days=7))).order_by(Lead.next_follow_up.asc()).limit(8)).all()
     open_quotes = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False, PlatformRecord.status.in_(["Draft", "Pending Approval", "Approved", "Sent"]))).all()
     quote_attention = []
     for quote in open_quotes:
@@ -3678,20 +3681,21 @@ def _metadata_module_json(item: MetadataModule, db: Session) -> dict[str, Any]:
 
 
 @app.get("/api/admin/metadata/modules")
-def list_metadata_modules(db: Session = Depends(get_db)) -> dict[str, Any]:
-    items = db.scalars(select(MetadataModule).order_by(MetadataModule.label)).all()
+def list_metadata_modules(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _claim_legacy_custom_modules(db, actor)
+    items = db.scalars(select(MetadataModule).where(MetadataModule.owner_id == actor.id).order_by(MetadataModule.label)).all()
     return {"items": [_metadata_module_json(item, db) for item in items], "total": len(items)}
 
 
 @app.post("/api/admin/metadata/modules", status_code=201)
-def create_metadata_module(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_metadata_module(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     api_name = str(payload.get("api_name") or "").strip().lower().replace(" ", "_")
     label = str(payload.get("label") or "").strip()
     if not api_name or not label:
         raise HTTPException(422, "Module label and API name are required")
     if db.scalar(select(MetadataModule).where(MetadataModule.api_name == api_name)):
         raise HTTPException(409, "That module API name already exists")
-    item = MetadataModule(api_name=api_name, label=label, plural_label=str(payload.get("plural_label") or label), description=payload.get("description"), enabled=bool(payload.get("enabled", True)), config=payload.get("config") or {})
+    item = MetadataModule(api_name=api_name, label=label, plural_label=str(payload.get("plural_label") or label), description=payload.get("description"), enabled=bool(payload.get("enabled", True)), owner_id=actor.id, config=payload.get("config") or {})
     db.add(item)
     db.flush()
     add_audit(db, "create", "metadata_modules", item.id, f"Created metadata module '{item.label}'", after=_metadata_module_json(item, db))
@@ -3701,13 +3705,13 @@ def create_metadata_module(payload: dict[str, Any], db: Session = Depends(get_db
 
 
 @app.post("/api/admin/metadata/modules/{module_id}/fields", status_code=201)
-def create_metadata_field(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_metadata_field(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     module = db.get(MetadataModule, module_id)
     api_name = str(payload.get("api_name") or "").strip().lower().replace(" ", "_")
     label = str(payload.get("label") or "").strip()
     field_type = str(payload.get("field_type") or "text").strip().lower()
     allowed_types = {"text", "multiline", "rich_text", "number", "decimal", "currency", "percentage", "email", "phone", "url", "date", "datetime", "checkbox", "picklist", "multi_select", "lookup", "user_lookup", "auto_number", "formula", "file", "image", "subform"}
-    if module is None:
+    if module is None or module.owner_id != actor.id:
         raise HTTPException(404, "Metadata module not found")
     if not api_name or not label or field_type not in allowed_types:
         raise HTTPException(422, "Field API name, label, and a supported field type are required")
@@ -3725,9 +3729,9 @@ def create_metadata_field(module_id: int, payload: dict[str, Any], db: Session =
 
 
 @app.patch("/api/admin/metadata/modules/{module_id}")
-def update_metadata_module(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_metadata_module(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     item = db.get(MetadataModule, module_id)
-    if item is None:
+    if item is None or item.owner_id != actor.id:
         raise HTTPException(404, "Metadata module not found")
     if "api_name" in payload:
         api_name = str(payload["api_name"]).strip().lower().replace(" ", "_")
@@ -3747,9 +3751,10 @@ def update_metadata_module(module_id: int, payload: dict[str, Any], db: Session 
 
 
 @app.patch("/api/admin/metadata/fields/{field_id}")
-def update_metadata_field(field_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_metadata_field(field_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     item = db.get(MetadataField, field_id)
-    if item is None:
+    module = db.get(MetadataModule, item.module_id) if item else None
+    if item is None or module is None or module.owner_id != actor.id:
         raise HTTPException(404, "Metadata field not found")
     for key in ("label", "field_type", "default_value", "validation", "permissions", "visibility"):
         if key in payload:
@@ -3773,6 +3778,8 @@ def delete_metadata_field(field_id: int, db: Session = Depends(get_db), actor: U
     if item is None:
         raise HTTPException(404, "Metadata field not found")
     module = db.get(MetadataModule, item.module_id)
+    if module is None or (isinstance(actor, User) and module.owner_id != actor.id):
+        raise HTTPException(404, "Metadata field not found")
     before = serialize(item)
     label = item.label
     db.delete(item)
@@ -3784,7 +3791,7 @@ def delete_metadata_field(field_id: int, db: Session = Depends(get_db), actor: U
 @app.delete("/api/admin/metadata/modules/{module_id}")
 def delete_metadata_module(module_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     item = db.get(MetadataModule, module_id)
-    if item is None:
+    if item is None or (isinstance(actor, User) and item.owner_id != actor.id):
         raise HTTPException(404, "Metadata module not found")
     before = _metadata_module_json(item, db)
     resource = item.api_name
@@ -3804,10 +3811,10 @@ def delete_metadata_module(module_id: int, db: Session = Depends(get_db), actor:
 
 
 @app.post("/api/admin/metadata/modules/{module_id}/layouts", status_code=201)
-def create_metadata_layout(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_metadata_layout(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     module = db.get(MetadataModule, module_id)
     name = str(payload.get("name") or "").strip()
-    if module is None:
+    if module is None or module.owner_id != actor.id:
         raise HTTPException(404, "Metadata module not found")
     if not name:
         raise HTTPException(422, "Layout name is required")
@@ -3821,10 +3828,10 @@ def create_metadata_layout(module_id: int, payload: dict[str, Any], db: Session 
 
 
 @app.post("/api/admin/metadata/modules/{module_id}/views", status_code=201)
-def create_metadata_view(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_metadata_view(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     module = db.get(MetadataModule, module_id)
     name = str(payload.get("name") or "").strip()
-    if module is None:
+    if module is None or module.owner_id != actor.id:
         raise HTTPException(404, "Metadata module not found")
     if not name:
         raise HTTPException(422, "View name is required")
@@ -3838,11 +3845,13 @@ def create_metadata_view(module_id: int, payload: dict[str, Any], db: Session = 
 
 
 
-def _custom_module(db: Session, resource: str, *, enabled_only: bool = True) -> MetadataModule:
+def _custom_module(db: Session, resource: str, *, enabled_only: bool = True, actor: User | None = None) -> MetadataModule:
     normalized = resource.strip().lower().replace(" ", "_")
     query = select(MetadataModule).where(func.lower(MetadataModule.api_name) == normalized)
     if enabled_only:
         query = query.where(MetadataModule.enabled == True)
+    if isinstance(actor, User):
+        query = query.where(MetadataModule.owner_id == actor.id)
     module = db.scalar(query)
     if module is None:
         raise HTTPException(404, "Custom module not found")
@@ -4001,7 +4010,7 @@ def _custom_record_title(module: MetadataModule, values: dict[str, Any]) -> str:
 
 @app.get("/api/custom/{resource}/schema")
 def custom_module_schema(resource: str, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
-    module = _custom_module(db, resource)
+    module = _custom_module(db, resource, actor=actor)
     fields = []
     for field in _custom_fields(db, module.id):
         if field_allowed(db, module.api_name, field.api_name, actor, "read"):
