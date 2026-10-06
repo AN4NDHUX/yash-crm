@@ -2014,6 +2014,25 @@ def _account_by_identifier(db: Session, identifier: str) -> User | None:
     return db.scalar(select(User).where(or_(*clauses)))
 
 
+def _environment_admin_credentials_valid(identifier: str, password: str) -> bool:
+    configured_username = os.getenv("APP_USERNAME", "").strip()
+    configured_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    configured_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
+    if not configured_password or len(configured_password) < 8:
+        return False
+    supplied_identifier = str(identifier or "").strip().lower()
+    username_ok = bool(configured_username) and secrets.compare_digest(
+        supplied_identifier.encode(), configured_username.lower().encode()
+    )
+    email_ok = bool(configured_email) and secrets.compare_digest(
+        supplied_identifier.encode(), configured_email.encode()
+    )
+    password_ok = secrets.compare_digest(
+        str(password or "").encode(), configured_password.encode()
+    )
+    return (username_ok or email_ok) and password_ok
+
+
 def _send_email_message(to_email: str, subject: str, body: str) -> bool:
     host = os.getenv("SMTP_HOST", "").strip()
     sender = os.getenv("SMTP_FROM", "").strip()
@@ -2585,7 +2604,30 @@ def auth_login(payload: dict[str, Any], request: Request, db: Session = Depends(
     identifier = str(payload.get("identifier") or payload.get("email") or "").strip()
     password = str(payload.get("password") or "")
     user = _account_by_identifier(db, identifier)
-    if user is None or user.status != "Active" or not _password_valid(password, user.password_hash):
+
+    credentials_valid = bool(
+        user is not None
+        and user.status == "Active"
+        and _password_valid(password, user.password_hash)
+    )
+
+    if not credentials_valid and _environment_admin_credentials_valid(identifier, password):
+        ensure_cloud_admin(db)
+        admin_username = os.getenv("APP_USERNAME", "").strip().lower()
+        admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+        user = db.scalar(select(User).where(
+            func.lower(User.role) == "administrator",
+            User.status == "Active",
+        ).order_by(User.id))
+        credentials_valid = bool(
+            user
+            and (
+                identifier.strip().lower() == admin_username
+                or identifier.strip().lower() == admin_email
+            )
+        )
+
+    if not credentials_valid:
         db.add(LoginHistory(
             user_id=user.id if user else None,
             event="login",
