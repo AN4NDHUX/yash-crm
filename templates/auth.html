@@ -46,10 +46,18 @@
     .error{display:none;margin:0 0 16px;padding:11px 12px;border-radius:10px;background:#fff2f2;color:var(--danger);font-size:12px;border:1px solid #ffd7d7}
     .secure{display:flex;align-items:center;gap:7px;margin-top:18px;justify-content:center;color:#8a94a8;font-size:11px}.secure:before{content:"✓";display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#edf5ff;color:#1769e0;font-weight:800}
     .signup-only,.forgot-only,.reset-only{display:none}
-    body.signup .signup-only{display:grid} body.signup .signin-only{display:none}
-    body.forgot .forgot-only{display:grid} body.forgot .signin-only{display:none}
-    body.reset .reset-only{display:grid} body.reset .signin-only{display:none}
-    body.forgot .signup-only,body.forgot .reset-only,body.reset .signup-only,body.reset .forgot-only{display:none}
+    body.signup .signin-only,body.forgot .signin-only,body.reset .signin-only{display:none!important}
+    body.signup .field.signup-only,body.forgot .field.forgot-only,body.reset .field.reset-only{display:grid!important}
+    body.signup span.signup-only,body.forgot span.forgot-only,body.reset span.reset-only{display:inline!important}
+    body.signup .switch.signup-only,body.forgot .switch.forgot-only,body.reset .switch.reset-only{display:block!important}
+    body.signup .row.signup-only,body.forgot .row.forgot-only,body.reset .row.reset-only{display:flex!important}
+    body:not(.signup):not(.forgot):not(.reset) .field.signin-only{display:grid!important}
+    body:not(.signup):not(.forgot):not(.reset) span.signin-only{display:inline!important}
+    body:not(.signup):not(.forgot):not(.reset) .row.signin-only{display:flex!important}
+    body:not(.signup):not(.forgot):not(.reset) .switch.signin-only{display:block!important}
+    body.signup .panel-wrap{align-items:flex-start;overflow-y:auto;padding-top:28px;padding-bottom:28px}
+    body.signup .panel{margin:0 auto}
+    body.forgot .panel-wrap,body.reset .panel-wrap{align-items:center}
     @media(max-width:980px){.auth-shell{grid-template-columns:1fr}.hero{min-height:360px;padding:34px}.hero-art{right:-80px;bottom:-35px;transform:scale(.8)}.hero h1{font-size:48px}.panel-wrap{padding:34px 20px 48px}}
     @media(max-width:560px){.hero{min-height:280px}.hero-copy{padding-top:34px}.hero h1{font-size:38px}.hero p{font-size:14px}.hero-art{display:none}.panel{padding:30px 22px;border-radius:20px}.panel h2{font-size:32px}.panel-wrap{padding:22px 14px 36px}}
   </style>
@@ -100,7 +108,7 @@
             <input id="signup-email" name="email" type="email" autocomplete="email" placeholder="you@company.com" />
           </div>
           <div class="field signup-only">
-            <label for="phone">Phone number</label>
+            <label for="phone">Phone number <span style="font-weight:500;color:#8a94a8">(optional)</span></label>
             <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+91XXXXXXXXXX" />
           </div>
 
@@ -193,7 +201,6 @@
       if (payload.name.length < 2) return showError("Enter your full name.");
       if (payload.username.length < 3) return showError("Username must contain at least 3 characters.");
       if (!payload.email) return showError("Email address is required.");
-      if (!payload.phone) return showError("Phone number is required.");
       if (payload.password.length < 8) return showError("Password must contain at least 8 characters.");
       if (payload.password !== confirm) return showError("Passwords do not match.");
       endpoint = "/api/auth/signup";
