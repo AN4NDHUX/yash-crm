@@ -365,7 +365,7 @@
     document.querySelectorAll(".lang-option").forEach((option) => {
       option.setAttribute("aria-current", option.dataset.lang === language ? "true" : "false");
     });
-    localStorage.setItem("yashcrm.auth.language", language);
+    try { localStorage.setItem("yashcrm.auth.language", language); } catch (_) {}
 
     setText(".kicker", lang.kicker);
     setText(".hero h1", lang.headline);
@@ -410,14 +410,36 @@
     setText(".secure",lang.security);
   };
 
-  document.querySelectorAll(".lang-option").forEach((option) => option.addEventListener("click", () => {
-    applyLanguage(option.dataset.lang);
+  const selectLanguage = (language) => {
+    if (!translations[language]) return;
+    applyLanguage(language);
     languagePicker.removeAttribute("open");
-  }));
+    languageToggle.focus();
+  };
+
+  languageMenu.addEventListener("click", (event) => {
+    const option = event.target.closest(".lang-option");
+    if (!option) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectLanguage(option.dataset.lang);
+  });
+
+  languageMenu.addEventListener("keydown", (event) => {
+    const option = event.target.closest(".lang-option");
+    if (!option || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    selectLanguage(option.dataset.lang);
+  });
+
   document.addEventListener("click", (event) => {
     if (!languagePicker.contains(event.target)) languagePicker.removeAttribute("open");
   });
-  const savedLanguage = localStorage.getItem("yashcrm.auth.language");
+
+  let savedLanguage = "";
+  try {
+    savedLanguage = localStorage.getItem("yashcrm.auth.language") || "";
+  } catch (_) {}
   const browserLanguage = (navigator.language || "en").slice(0,2).toLowerCase();
   applyLanguage(translations[savedLanguage] ? savedLanguage : (translations[browserLanguage] ? browserLanguage : "en"));
 
