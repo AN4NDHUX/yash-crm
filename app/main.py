@@ -791,6 +791,11 @@ def ensure_additive_schema() -> None:
         "users": {
             "password_hash": "VARCHAR(255) NULL",
             "password_changed_at": "DATETIME NULL",
+            "username": "VARCHAR(80) NULL",
+            "phone": "VARCHAR(40) NULL",
+        },
+        "metadata_modules": {
+            "owner_id": "INTEGER NULL",
         },
     }
     inspector = inspect(engine)
@@ -1711,7 +1716,7 @@ def ensure_cloud_admin(db: Session) -> None:
         db.add(admin)
         db.flush()
     fallback_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
-    if fallback_password and len(fallback_password) >= 10 and not admin.password_hash:
+    if fallback_password and len(fallback_password) >= 8 and not admin.password_hash:
         admin.password_hash = _password_hash(fallback_password)
         admin.password_changed_at = datetime.utcnow()
     db.commit()
@@ -2327,6 +2332,16 @@ def login_page() -> FileResponse:
 
 @app.get("/signup", response_class=HTMLResponse)
 def signup_page() -> FileResponse:
+    return FileResponse(ROOT / "templates" / "auth.html", media_type="text/html")
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+def forgot_password_page() -> FileResponse:
+    return FileResponse(ROOT / "templates" / "auth.html", media_type="text/html")
+
+
+@app.get("/reset-password", response_class=HTMLResponse)
+def reset_password_page() -> FileResponse:
     return FileResponse(ROOT / "templates" / "auth.html", media_type="text/html")
 
 
