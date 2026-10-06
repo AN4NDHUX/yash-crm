@@ -743,8 +743,49 @@ async function developerHubView() {
 
 async function setupConsoleView() {
   const data = await api("/api/admin/metadata/modules");
-  const moduleRows = data.items.length ? data.items.map((module) => `<section class="card setup-module-card"><div class="settings-section-head settings-heading-row"><div><h2>${esc(module.label)}</h2><p><code>${esc(module.api_name)}</code> · ${esc(module.description || "No description")}</p></div><span class="status-dot ${module.enabled ? "active" : "inactive"}">${module.enabled ? "Enabled" : "Disabled"}</span></div><div class="metadata-field-table"><div class="metadata-field-head"><span>Field</span><span>Type</span><span>Rules</span><span>Visibility</span></div>${module.fields.length ? module.fields.map((field) => `<div class="metadata-field-row"><strong>${esc(field.label)}<small>${esc(field.api_name)}</small></strong><span>${esc(field.field_type)}</span><span>${field.required ? "Required" : "Optional"}${field.read_only ? " · Read only" : ""}</span><span>${esc(JSON.stringify(field.visibility || {}))}</span></div>`).join("") : `<p class="related-empty">No custom fields yet.</p>`}</div><div class="setup-module-actions"><button class="button button-ghost button-small" data-add-metadata-field="${module.id}">＋ Add field</button><button class="button button-ghost button-small" data-add-metadata-layout="${module.id}">＋ Add layout</button><button class="button button-ghost button-small" data-add-metadata-view="${module.id}">＋ Add view</button></div></section>`).join("") : emptyState("◇", "No custom modules", "Create your first metadata-driven module below.");
-  return `${pageHeader("Administration", "Setup Console", "Customize modules and fields with API names, validation, permissions, layouts, and saved views.", `<button class="button button-primary" data-focus-module-form>＋ New module</button>`)}<div class="setup-console-grid"><div>${moduleRows}</div><section class="card settings-section" data-module-form-card><div class="settings-section-head"><h2>New module</h2><p>Module definitions are stored in metadata tables and can be consumed by APIs, views, and AI agents.</p></div><form class="settings-form" data-metadata-module-form><div class="form-grid"><div class="field"><label>Label</label><input class="field-input" name="label" required placeholder="Service Requests" /></div><div class="field"><label>API name</label><input class="field-input" name="api_name" required pattern="[a-z][a-z0-9_]*" placeholder="service_requests" /></div><div class="field"><label>Plural label</label><input class="field-input" name="plural_label" placeholder="Service Requests" /></div><div class="field field-full"><label>Description</label><textarea class="field-textarea" name="description" rows="3"></textarea></div></div><div class="form-actions"><button class="button button-primary" type="submit">Create module</button></div></form></section></div><section class="card settings-section"><div class="settings-section-head"><h2>Field types and capabilities</h2><p>Supported metadata fields include text, rich text, numbers, currency, dates, picklists, lookups, formulas, files, images, and subforms.</p></div><div class="setup-capability-list"><span>Required / read-only</span><span>Unique values</span><span>Defaults</span><span>Validation rules</span><span>Field permissions</span><span>Layout visibility</span></div></section>`;
+  const moduleRows = data.items.length ? data.items.map((module) => `
+    <section class="card setup-module-card">
+      <div class="setup-module-head">
+        <div class="setup-module-title">
+          <div class="setup-module-title-line"><h2>${esc(module.label)}</h2><span class="status-dot ${module.enabled ? "active" : "inactive"}">${module.enabled ? "Enabled" : "Disabled"}</span></div>
+          <p><code>${esc(module.api_name)}</code><span>·</span><span>${esc(module.description || "No description")}</span></p>
+        </div>
+        <details class="action-menu">
+          <summary class="action-menu-trigger" aria-label="Module actions" title="Module actions">⋯</summary>
+          <div class="action-menu-popover">
+            <button type="button" data-custom-module-builder="${module.id}">Edit fields</button>
+            <button type="button" data-custom-module-toggle="${module.id}" data-enabled="${module.enabled}">${module.enabled ? "Disable module" : "Enable module"}</button>
+            <button type="button" class="danger-action" data-custom-module-delete="${module.id}">Delete module</button>
+          </div>
+        </details>
+      </div>
+      <div class="metadata-field-table">
+        <div class="metadata-field-head"><span>Field</span><span>Type</span><span>Rules</span><span>Visibility</span></div>
+        ${module.fields.length ? module.fields.map((field) => `<div class="metadata-field-row"><strong>${esc(field.label)}<small>${esc(field.api_name)}</small></strong><span>${esc(field.field_type)}</span><span>${field.required ? "Required" : "Optional"}${field.read_only ? " · Read only" : ""}</span><span class="metadata-visibility">${metadataFieldEnabled(field) ? "Visible" : "Hidden"}</span></div>`).join("") : `<p class="related-empty metadata-empty">No custom fields yet.</p>`}
+      </div>
+      <div class="setup-module-actions">
+        <button class="button button-ghost button-small" data-add-metadata-field="${module.id}">＋ Add field</button>
+        <button class="button button-ghost button-small" data-add-metadata-layout="${module.id}">＋ Add layout</button>
+        <button class="button button-ghost button-small" data-add-metadata-view="${module.id}">＋ Add view</button>
+      </div>
+    </section>`).join("") : emptyState("◇", "No custom modules", "Create your first metadata-driven module below.");
+  return `${pageHeader("Administration", "Setup Console", "Customize modules and fields with API names, validation, permissions, layouts, and saved views.", `<button class="button button-primary" data-focus-module-form>＋ New module</button>`)}
+    <div class="setup-console-grid">
+      <div class="setup-console-modules">${moduleRows}</div>
+      <section class="card settings-section setup-module-create-card" data-module-form-card>
+        <div class="settings-section-head"><h2>New module</h2><p>Module definitions are stored in metadata tables and can be consumed by APIs, views, and AI agents.</p></div>
+        <form class="settings-form" data-metadata-module-form>
+          <div class="form-grid">
+            <div class="field"><label>Label</label><input class="field-input" name="label" required placeholder="Service Requests" /></div>
+            <div class="field"><label>API name</label><input class="field-input" name="api_name" required pattern="[a-z][a-z0-9_]*" placeholder="service_requests" /></div>
+            <div class="field"><label>Plural label</label><input class="field-input" name="plural_label" placeholder="Service Requests" /></div>
+            <div class="field field-full"><label>Description</label><textarea class="field-textarea" name="description" rows="3"></textarea></div>
+          </div>
+          <div class="form-actions"><button class="button button-primary" type="submit">Create module</button></div>
+        </form>
+      </section>
+    </div>
+    <section class="card settings-section setup-capabilities-card"><div class="settings-section-head"><h2>Field types and capabilities</h2><p>Supported metadata fields include text, rich text, numbers, currency, dates, picklists, lookups, formulas, files, images, and subforms.</p></div><div class="setup-capability-list"><span>Required / read-only</span><span>Unique values</span><span>Defaults</span><span>Validation rules</span><span>Field permissions</span><span>Layout visibility</span></div></section>`;
 }
 
 function bindDeveloperHub() {
@@ -752,6 +793,36 @@ function bindDeveloperHub() {
   const select = $(`[data-developer-sdk]`), output = $(`[data-developer-sdk-output]`);
   const loadSdk = async () => { if (!select || !output) return; try { const data = await api(`/api/developer/sdk/${select.value}`); output.innerHTML = `<pre>${esc(data.code)}</pre>`; } catch (error) { output.innerHTML = `<p class="apex-error">${esc(error.message)}</p>`; } };
   select?.addEventListener("change", loadSdk); loadSdk();
+}
+
+function bindMetadataModuleActions() {
+  $('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
+  $('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
+    const id = Number(button.dataset.customModuleToggle);
+    const enabled = button.dataset.enabled !== "true";
+    try {
+      await api(`/api/admin/metadata/modules/${id}`, {method:"PATCH", body:JSON.stringify({enabled})});
+      await ensureCustomModules();
+      enhanceCustomModuleNavigation();
+      toast(enabled ? "Module enabled" : "Module disabled");
+      await renderRoute();
+    } catch (error) { toast("Could not update module", error.message, "error"); }
+  }));
+  $('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
+    const id = Number(button.dataset.customModuleDelete);
+    if (!await confirmAction("Delete this custom module?","Its active custom records will be archived and the module definition, fields, layouts and views will be removed.","Delete module")) return;
+    try {
+      await api(`/api/admin/metadata/modules/${id}`, {method:"DELETE"});
+      await ensureCustomModules();
+      enhanceCustomModuleNavigation();
+      toast("Custom module deleted");
+      await renderRoute();
+    } catch (error) { toast("Could not delete module", error.message, "error"); }
+  }));
+  $('details.action-menu').forEach((menu) => menu.addEventListener("toggle", () => {
+    if (!menu.open) return;
+    $('details.action-menu').forEach((other) => { if (other !== menu) other.open = false; });
+  }));
 }
 
 function bindSetupConsole() {
@@ -781,20 +852,28 @@ async function customModulesAdminView() {
   state.customModules = data.items || [];
   enhanceCustomModuleNavigation();
   const rows = state.customModules.length ? state.customModules.map((module) => `
-    <tr>
-      <td><strong>${esc(module.label)}</strong><span class="sub-cell">${esc(module.api_name)}</span></td>
-      <td>${esc(module.plural_label || module.label)}</td>
-      <td>${module.fields?.length || 0}</td>
-      <td>${badge(module.enabled ? "Active" : "Inactive")}</td>
-      <td>${formatDateTime(module.updated_at)}</td>
-      <td><div class="table-actions">
-        <button class="table-action" data-custom-module-builder="${module.id}">Edit fields</button>
-        <button class="table-action" data-custom-module-toggle="${module.id}" data-enabled="${module.enabled}">${module.enabled ? "Disable" : "Enable"}</button>
-        <button class="table-action danger-action" data-custom-module-delete="${module.id}">Delete</button>
-      </div></td>
-    </tr>`).join("") : `<tr><td colspan="6">${emptyState("◇","No custom modules yet","Create your first custom module and design its fields visually.")}</td></tr>`;
+    <article class="custom-module-row">
+      <div class="custom-module-primary"><strong>${esc(module.label)}</strong><span>${esc(module.api_name)}</span></div>
+      <div class="custom-module-cell"><span class="mobile-cell-label">Plural label</span><strong>${esc(module.plural_label || module.label)}</strong></div>
+      <div class="custom-module-cell"><span class="mobile-cell-label">Fields</span><strong>${module.fields?.length || 0}</strong></div>
+      <div class="custom-module-cell"><span class="mobile-cell-label">Status</span>${badge(module.enabled ? "Active" : "Inactive")}</div>
+      <div class="custom-module-cell"><span class="mobile-cell-label">Updated</span><span>${formatDateTime(module.updated_at)}</span></div>
+      <div class="custom-module-actions">
+        <details class="action-menu">
+          <summary class="action-menu-trigger" aria-label="Module actions" title="Module actions">⋯</summary>
+          <div class="action-menu-popover">
+            <button type="button" data-custom-module-builder="${module.id}">Edit fields</button>
+            <button type="button" data-custom-module-toggle="${module.id}" data-enabled="${module.enabled}">${module.enabled ? "Disable" : "Enable"}</button>
+            <button type="button" class="danger-action" data-custom-module-delete="${module.id}">Delete</button>
+          </div>
+        </details>
+      </div>
+    </article>`).join("") : `<div class="custom-module-empty">${emptyState("◇","No custom modules yet","Create your first custom module and design its fields visually.")}</div>`;
   return `${pageHeader("Customization", "Custom Modules & Fields", "Create unlimited metadata-driven modules, design fields visually, and control whether each module is available to users.", `<button class="button button-primary" data-custom-module-new>＋ Create Custom Module</button>`)}
-    <section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Module</th><th>Plural label</th><th>Fields</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    <section class="card custom-module-list">
+      <div class="custom-module-list-head"><span>Module</span><span>Plural label</span><span>Fields</span><span>Status</span><span>Updated</span><span></span></div>
+      ${rows}
+    </section>`;
 }
 
 async function customModuleBuilderView(moduleId = null) {
@@ -841,11 +920,17 @@ async function customModuleBuilderView(moduleId = null) {
 
 function builderFieldCards(fields) {
   return (fields || []).map((field, index) => `<article class="builder-field-card ${field.enabled === false ? "disabled" : ""}" draggable="true" data-builder-field-id="${field.id || ""}" data-builder-local-index="${index}">
-    <span class="builder-field-grip">⋮⋮</span><div class="builder-field-copy"><strong>${esc(field.label)}</strong><small>${esc(field.field_type)} · ${esc(field.api_name || "new field")}</small></div>
+    <span class="builder-field-grip">⋮⋮</span>
+    <div class="builder-field-copy"><strong>${esc(field.label)}</strong><small>${esc(field.field_type)} · ${esc(field.api_name || "new field")}</small></div>
     <span class="status-dot ${field.enabled === false ? "inactive" : "active"}">${field.enabled === false ? "Disabled" : "Enabled"}</span>
-    <button type="button" class="table-action" data-builder-field-toggle="${index}">${field.enabled === false ? "Enable" : "Disable"}</button>
-    <button type="button" class="table-action" data-builder-field-edit="${index}">Edit</button>
-    <button type="button" class="table-action danger-action" data-builder-field-delete="${index}">Delete</button>
+    <details class="action-menu builder-field-menu">
+      <summary class="action-menu-trigger" aria-label="Field actions" title="Field actions">⋯</summary>
+      <div class="action-menu-popover">
+        <button type="button" data-builder-field-edit="${index}">Edit field</button>
+        <button type="button" data-builder-field-toggle="${index}">${field.enabled === false ? "Enable field" : "Disable field"}</button>
+        <button type="button" class="danger-action" data-builder-field-delete="${index}">Delete field</button>
+      </div>
+    </details>
   </article>`).join("");
 }
 
@@ -940,17 +1025,7 @@ async function saveCustomBuilder(closeAfter = false) {
 
 function bindCustomModuleAdmin() {
   $('[data-custom-module-new]')?.addEventListener("click", () => navigate("/setup/custom_modules/new"));
-  $$('[data-custom-module-builder]').forEach((button) => button.addEventListener("click", () => navigate(`/setup/custom_modules/builder/${button.dataset.customModuleBuilder}`)));
-  $$('[data-custom-module-toggle]').forEach((button) => button.addEventListener("click", async () => {
-    const id = Number(button.dataset.customModuleToggle);
-    const enabled = button.dataset.enabled !== "true";
-    try { await api(`/api/admin/metadata/modules/${id}`, {method:"PATCH", body:JSON.stringify({enabled})}); await ensureCustomModules(); enhanceCustomModuleNavigation(); toast(enabled ? "Module enabled" : "Module disabled"); await renderRoute(); } catch(error){ toast("Could not update module",error.message,"error"); }
-  }));
-  $$('[data-custom-module-delete]').forEach((button) => button.addEventListener("click", async () => {
-    const id = Number(button.dataset.customModuleDelete);
-    if (!await confirmAction("Delete this custom module?","Its active custom records will be archived and the module definition, fields, layouts and views will be removed.","Delete module")) return;
-    try { await api(`/api/admin/metadata/modules/${id}`, {method:"DELETE"}); await ensureCustomModules(); enhanceCustomModuleNavigation(); toast("Custom module deleted"); await renderRoute(); } catch(error){ toast("Could not delete module",error.message,"error"); }
-  }));
+  bindMetadataModuleActions();
 
   const drop = $('[data-builder-drop]');
   $$('[data-builder-field-type]').forEach((item) => {
