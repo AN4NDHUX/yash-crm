@@ -1482,6 +1482,15 @@ function bindGlobal() {
   });
   $("#record-form").addEventListener("submit", submitRecord);
   $("#top-profile").addEventListener("click", () => navigate("/settings/profile-users")); $("#profile-shortcut").addEventListener("click", () => navigate("/settings/profile-users"));
+  $("#logout-button")?.addEventListener("click", async () => {
+    const button = $("#logout-button");
+    button.disabled = true;
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" } });
+    } finally {
+      window.location.replace("/login");
+    }
+  });
   const notificationsButton = $("#notifications-button");
   const notificationsPanel = $("#notifications-panel");
   notificationsButton?.addEventListener("click", async () => {
