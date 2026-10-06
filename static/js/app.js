@@ -332,10 +332,10 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "setup") {
-      const resource = parts[1] || "company_details";
-      setBreadcrumb(titleCase(resource), "Setup");
+      const resource = parts[1] || "index";
+      setBreadcrumb(resource === "index" ? "Setup" : titleCase(resource), "Setup");
       content.innerHTML = await setupView(resource);
-      bindPlatform(resource);
+      bindSettings();
       return;
     }
     if (parts[0] === "settings") {
@@ -729,7 +729,16 @@ function bindSetupConsole() {
   $$(`[data-add-metadata-view]`).forEach((button) => button.addEventListener("click", async () => { const name = window.prompt("View name:", "My records"); if (!name) return; try { await api(`/api/admin/metadata/modules/${button.dataset.addMetadataView}/views`, {method:"POST", body:JSON.stringify({name, criteria:[], columns:[], sorting:[], visibility:{scope:"private"}})}); toast("View created", "The saved view is now available to the module engine."); await renderRoute(); } catch (error) { toast("Could not create view", error.message, "error"); } }));
 }
 
+function setupLandingView() {
+  let hiddenGroups = []; let hiddenItems = [];
+  try { hiddenGroups = JSON.parse(localStorage.getItem('yash.setup.hidden_groups') || '[]'); hiddenItems = JSON.parse(localStorage.getItem('yash.setup.hidden_items') || '[]'); } catch (_) {}
+  const groups = Object.entries(state.platformCatalog.setup_navigation || {}).filter(([group]) => !hiddenGroups.includes(group));
+  const cards = groups.map(([group, links]) => `<section class="card setup-hub-card setup-search-group" data-search-group="${esc(group.toLowerCase())}"><div class="setup-hub-head"><h2>${esc(group)}</h2></div><div class="setup-hub-links">${links.filter(([resource]) => !hiddenItems.includes(resource)).map(([resource, label]) => `<a href="/setup/${resource}" class="setup-hub-link setup-search-item" data-search-text="${esc(`${group} ${label} ${resource}`.toLowerCase())}">${esc(label)}</a>`).join("")}</div></section>`).join("");
+  return `<section class="setup-page-shell"><div class="setup-toolbar"><div class="setup-toolbar-title">Setup</div><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" autofocus /></label><button class="button button-ghost" data-go="/setup/customize_setup">Customize Setup</button></div><p class="related-empty setup-toolbar-note" data-setup-search-count>Browse ${Object.values(state.platformCatalog.setup_navigation || {}).flat().length} setup options.</p><div class="setup-hub-grid" data-setup-search-results>${cards}</div></section>`;
+}
+
 async function setupView(resource) {
+  if (resource === 'index') return setupLandingView();
   let content;
   if (resource === "search_setup") content = setupSearchView();
   else if (resource === "customize_setup") content = await customizeSetupView();
@@ -744,8 +753,7 @@ async function setupView(resource) {
   else if (resource === "duplicates") content = duplicateView();
   else if (state.platformCatalog.resources[resource]) content = `<section class="foundation-note">This is a working foundation: records persist, validate, filter, sort, export, audit and recycle. External delivery, identity-provider enforcement and background scheduling require deployment-specific workers or integrations.</section>${await platformPanel(resource, true)}`;
   else content = `<section class="card">${emptyState("!", "Unknown setup page", "Choose a setup item from the directory.")}</section>`;
-  const actions = `<button class="button button-ghost button-small" data-go="/setup/search_setup">Search Setup</button><button class="button button-ghost button-small" data-go="/setup/customize_setup">Customize Setup</button>`;
-  return `${pageHeader("Setup", resource === "search_setup" ? "Search Setup" : resource === "customize_setup" ? "Customize Setup" : titleCase(resource), "Configure Yash CRM without changing its source code.", actions)}<div class="settings-layout">${setupDirectory(resource)}<div class="settings-content">${content}</div></div>`;
+  return `<section class="setup-page-shell"><div class="setup-toolbar"><button class="button button-ghost button-small" data-go="/setup">← Back to Setup</button><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" /></label><button class="button button-ghost" data-go="/setup/customize_setup">Customize Setup</button></div><div class="setup-workspace">${setupDirectory(resource)}<div class="settings-content">${content}</div></div></section>`;
 }
 
 function tableView(resource, data) {
@@ -841,7 +849,8 @@ async function detailView(resource, id) {
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
   const details = detailFields(resource, record);
   return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
-    <div class="detail-layout"><div class="dashboard-column"><section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !record.converted_contact_id ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>${resource === "deals" ? `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Stage progress</h2><small>Move the deal forward as the conversation evolves.</small></div></div><div class="card-body">${dealProgress(record)}</div></section>` : ""}</div><div class="detail-side"><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Related records</h2><small>Connected context around this ${config.singular.toLowerCase()}.</small></div><button class="card-head-link" data-create="activities">＋ Activity</button></div><div class="card-body">${relatedContent(resource, related)}</div></section><section class="card"><div class="card-head"><div class="card-head-copy"><h2>Timeline</h2><small>Latest activity updates</small></div></div><div class="card-body"><div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p style="color:var(--text-faint);font-size:11px">No linked activity yet.</p>`}</div></div></section></div></div>`;
+    <section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !record.converted_contact_id ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>
+    <div class="detail-record-layout"><aside class="detail-related-nav"><div class="detail-related-nav-head"><h3>Related List</h3></div>${relatedNavigation(resource, related)}</aside><section class="detail-record-main"><div class="detail-tab-strip"><button class="detail-tab active" type="button" data-detail-tab="overview">Overview</button><button class="detail-tab" type="button" data-detail-tab="timeline">Timeline</button></div><div class="detail-tab-panel" data-detail-panel="overview">${resource === "deals" ? `<section class="detail-plain-section" id="detail-section-stage_progress"><div class="detail-plain-head"><h3>Stage progress</h3></div><div class="detail-plain-body">${dealProgress(record)}</div></section>` : ""}${relatedContent(resource, related)}</div><div class="detail-tab-panel" data-detail-panel="timeline" hidden><section class="detail-plain-section" id="detail-section-timeline"><div class="detail-plain-head"><h3>Timeline</h3></div><div class="detail-plain-body"><div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p class="related-empty">No linked activity yet.</p>`}</div></div></section></div></section></div>`;
 }
 
 function detailFields(resource, record) {
@@ -854,29 +863,53 @@ function detailFields(resource, record) {
   return [{ label: "Type", value: titleCase(record.activity_type) }, { label: "Status", html: badge(record.status) }, { label: "Priority", html: badge(record.priority) }, { label: "Starts", value: formatDateTime(record.start_at) }, { label: "Due", value: formatDateTime(record.due_at) }, { label: "Owner", value: owner }, { label: "Related to", value: record.related_label }];
 }
 
-function relatedContent(resource, related) {
-  const sections = [];
-  const addSection = (key, label, icon, rows, createResource) => {
-    sections.push(`<div class="related-group flat-related-list"><div class="related-group-head"><strong>${label}</strong><button class="card-head-link" data-create="${createResource}">＋ Add</button></div>${rows.length ? `<div class="related-list-head"><span>Name</span><span>Details</span><span aria-hidden="true"></span></div>${rows.join("")}` : `<p class="related-empty">No ${label.toLowerCase()} yet.</p>`}</div>`);
-  };
-  if (related.journey) {
-    const stages = related.journey.stages || [];
-    sections.push(`<div class="related-group journey-group"><div class="related-group-head"><strong>Customer journey</strong><span class="eyebrow">Lead to cash</span></div><div class="journey-track">${stages.map((stage) => `<span class="journey-stage ${stage.complete ? "complete" : ""}"><i>${stage.complete ? "✓" : stage.count}</i><b>${esc(stage.label)}</b></span>`).join("")}</div><div class="journey-actions"><button class="button button-small button-ghost" data-platform-create="site_visits" data-lead-id="${related.journey.lead.id}">+ Site visit</button>${related.journey.lead.converted_deal_id ? `<button class="button button-small button-ghost" data-platform-create="quotes" data-deal-id="${related.journey.lead.converted_deal_id}">+ Quotation</button>` : ""}</div></div>`);
-  }
-  addSection("activities", "Open activities", "✓", (related.activities || []).filter((item) => item.status !== "Completed").map((item) => relatedRow("✓", item.subject, `${titleCase(item.activity_type)} · ${formatDateTime(item.due_at)}`, "activities", item.id)), "activities");
-  addSection("notes", "Notes", "▤", (related.notes || []).map((item) => relatedRow("▤", item.title, item.content || "Open note", "notes", item.id, false)), "notes");
-  addSection("products", "Products", "□", (related.products || []).map((item) => relatedRow("□", item.name, `${formatMoney(item.unit_price)} · ${item.sku || "No SKU"}`, "products", item.id)), "products");
-  addSection("attachments", "Attachments", "↗", (related.attachments || []).map((item) => relatedRow("↗", item.name, `${item.file_type || "File"} · ${item.file_size || "Size not set"}`, "attachments", item.id, false)), "attachments");
-  addSection("emails", "Email", "@", (related.emails || []).map((item) => relatedRow("@", item.subject, `${item.status} · ${item.to_email || "No recipient"}`, "emails", item.id, false)), "emails");
-  if (["accounts", "contacts", "leads", "deals"].includes(resource)) {
-    if (related.accounts?.length) addSection("accounts", "Accounts", "▣", related.accounts.map((item) => relatedRow("▣", item.name, item.industry || item.type, "accounts", item.id)), "accounts");
-    if (related.contacts?.length) addSection("contacts", "Contacts", "◎", related.contacts.map((item) => relatedRow("◎", item.full_name || `${item.first_name} ${item.last_name}`, item.job_title || item.email, "contacts", item.id)), "contacts");
-    if (related.deals?.length) addSection("deals", "Deals", "◇", related.deals.map((item) => relatedRow("◇", item.name, `${formatMoney(item.amount)} · ${item.stage}`, "deals", item.id)), "deals");
-  }
-  return sections.join("");
+function relatedNavigation(resource, related) {
+  const openActivities = (related.activities || []).filter((item) => item.status !== 'Completed').length;
+  const closedActivities = (related.activities || []).filter((item) => item.status === 'Completed').length;
+  const connectedCount = (related.accounts || []).length + (related.contacts || []).length + (related.deals || []).length;
+  const items = [
+    ['customer_journey', 'Customer journey', !!related.journey],
+    ['notes', 'Notes', true],
+    ['connected_records', 'Connected records', ['accounts', 'contacts', 'deals'].includes(resource) || connectedCount > 0],
+    ['attachments', 'Attachments', true],
+    ['products', 'Products', true],
+    ['open_activities', 'Open activities', true, openActivities],
+    ['closed_activities', 'Closed activities', closedActivities > 0, closedActivities],
+    ['emails', 'Emails', true],
+    ['timeline', 'Timeline', true],
+  ].filter(([, , visible]) => visible);
+  return `<nav class="detail-related-links">${items.map(([key, label, , count]) => `<button class="detail-related-link" type="button" data-detail-nav="${key}" data-detail-target="detail-section-${key}"><span>${esc(label)}</span>${count != null ? `<small>${count}</small>` : ''}</button>`).join('')}</nav>`;
 }
 
-function relatedRow(icon, title, meta, resource, id, navigable = true) { const action = navigable && MODULES[resource] ? `data-open-record="${resource}"` : `data-edit-record="${resource}"`; return `<button class="related-item" ${action} data-id="${id}"><span class="related-name"><span class="related-dot">${icon}</span><strong>${esc(title)}</strong></span><span class="related-details">${esc(meta || "")}</span><span class="related-action">${navigable && MODULES[resource] ? "›" : "✎"}</span></button>`; }
+function relatedPlainRow(title, meta, resource, id, navigable = true) {
+  const action = navigable && MODULES[resource] ? `data-open-record="${resource}"` : `data-edit-record="${resource}"`;
+  return `<button class="detail-related-row" ${action} data-id="${id}"><span class="detail-related-row-copy"><strong>${esc(title)}</strong><small>${esc(meta || '')}</small></span><span class="detail-related-row-action">${navigable && MODULES[resource] ? '›' : '✎'}</span></button>`;
+}
+
+function relatedPlainSection(id, label, rows, createResource, emptyMessage) {
+  return `<section class="detail-plain-section" id="detail-section-${id}"><div class="detail-plain-head"><h3>${esc(label)}</h3>${createResource ? `<button class="card-head-link" data-create="${createResource}">Add</button>` : ''}</div><div class="detail-plain-body">${rows.length ? rows.join('') : `<p class="related-empty">${esc(emptyMessage)}</p>`}</div></section>`;
+}
+
+function relatedContent(resource, related) {
+  const sections = [];
+  if (related.journey) {
+    const stages = related.journey.stages || [];
+    sections.push(`<section class="detail-plain-section" id="detail-section-customer_journey"><div class="detail-plain-head"><h3>Customer journey</h3><span class="eyebrow">Lead to cash</span></div><div class="detail-plain-body"><div class="journey-track">${stages.map((stage) => `<span class="journey-stage ${stage.complete ? 'complete' : ''}"><i>${stage.complete ? '✓' : stage.count}</i><b>${esc(stage.label)}</b></span>`).join('')}</div><div class="journey-actions"><button class="button button-small button-ghost" data-platform-create="site_visits" data-lead-id="${related.journey.lead.id}">+ Site visit</button>${related.journey.lead.converted_deal_id ? `<button class="button button-small button-ghost" data-platform-create="quotes" data-deal-id="${related.journey.lead.converted_deal_id}">+ Quotation</button>` : ''}</div></div></section>`);
+  }
+  sections.push(relatedPlainSection('notes', 'Notes', (related.notes || []).map((item) => relatedPlainRow(item.title, item.content || 'Open note', 'notes', item.id, false)), 'notes', 'No notes yet.'));
+  const connectedRows = [];
+  if (related.accounts?.length) connectedRows.push(...related.accounts.map((item) => relatedPlainRow(item.name, item.industry || item.type || 'Account', 'accounts', item.id)));
+  if (related.contacts?.length) connectedRows.push(...related.contacts.map((item) => relatedPlainRow(item.full_name || `${item.first_name} ${item.last_name}`, item.job_title || item.email || 'Contact', 'contacts', item.id)));
+  if (related.deals?.length) connectedRows.push(...related.deals.map((item) => relatedPlainRow(item.name, `${formatMoney(item.amount)} · ${item.stage}`, 'deals', item.id)));
+  sections.push(relatedPlainSection('connected_records', 'Connected records', connectedRows, null, 'No connected records found.'));
+  sections.push(relatedPlainSection('attachments', 'Attachments', (related.attachments || []).map((item) => relatedPlainRow(item.name, `${item.file_type || 'File'} · ${item.file_size || 'Size not set'}`, 'attachments', item.id, false)), 'attachments', 'No attachments yet.'));
+  sections.push(relatedPlainSection('products', 'Products', (related.products || []).map((item) => relatedPlainRow(item.name, `${formatMoney(item.unit_price)} · ${item.sku || 'No SKU'}`, 'products', item.id)), 'products', 'No products yet.'));
+  sections.push(relatedPlainSection('open_activities', 'Open activities', (related.activities || []).filter((item) => item.status !== 'Completed').map((item) => relatedPlainRow(item.subject, `${titleCase(item.activity_type)} · ${formatDateTime(item.due_at)}`, 'activities', item.id)), 'activities', 'No open activities yet.'));
+  const closedActivities = (related.activities || []).filter((item) => item.status === 'Completed').map((item) => relatedPlainRow(item.subject, `${titleCase(item.activity_type)} · completed ${formatDateTime(item.updated_at || item.due_at)}`, 'activities', item.id));
+  if (closedActivities.length) sections.push(relatedPlainSection('closed_activities', 'Closed activities', closedActivities, 'activities', 'No closed activities yet.'));
+  sections.push(relatedPlainSection('emails', 'Emails', (related.emails || []).map((item) => relatedPlainRow(item.subject, `${item.status} · ${item.to_email || 'No recipient'}`, 'emails', item.id, false)), 'emails', 'No email yet.'));
+  return sections.join('');
+}
 
 function dealProgress(record) {
   const stages = MODULES.deals.status;
@@ -892,6 +925,18 @@ function bindDetail(resource, id) {
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $("[data-convert-lead]")?.addEventListener("click", () => openConvertModal(Number(id)));
   $$('[data-stage-update]').forEach((button) => button.addEventListener("click", async () => { try { await api(`/api/deals/${button.dataset.stageUpdate}`, { method: "PATCH", body: JSON.stringify({ stage: button.dataset.stage }) }); toast("Deal updated", `Moved to ${button.dataset.stage}`); await renderRoute(); } catch (error) { toast("Could not update deal", error.message, "error"); } }));
+  const showDetailTab = (tab) => {
+    $$('[data-detail-tab]').forEach((button) => button.classList.toggle('active', button.dataset.detailTab === tab));
+    $$('[data-detail-panel]').forEach((panel) => { panel.hidden = panel.dataset.detailPanel !== tab; });
+  };
+  $$('[data-detail-tab]').forEach((button) => button.addEventListener('click', () => showDetailTab(button.dataset.detailTab)));
+  $$('[data-detail-nav]').forEach((button) => button.addEventListener('click', () => {
+    const isTimeline = button.dataset.detailNav === 'timeline';
+    showDetailTab(isTimeline ? 'timeline' : 'overview');
+    requestAnimationFrame(() => {
+      document.getElementById(button.dataset.detailTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }));
 }
 
 function fieldHtml(field, value = "") {
@@ -1363,14 +1408,13 @@ function bindAI() {
 }
 
 async function settingsView(tab) {
-  const tabs = [{ id: "general", label: "General settings", icon: "⚙" }, { id: "profile-users", label: "Profile & users", icon: "◎" }, { id: "approval-process", label: "Approval process", icon: "✓" }, { id: "blueprint", label: "Blueprint", icon: "◇" }];
-  const nav = `<section class="card settings-nav">${tabs.map((item) => `<a href="/settings/${item.id}" class="${tab === item.id ? "active" : ""}"><span>${item.icon}</span>${item.label}</a>`).join("")}</section>`;
-  let content = "";
-  if (tab === "general") content = `${await generalSettingsView()}${await settingsPlatformSummary("company_details", "Company details")}${await settingsPlatformSummary("fiscal_years", "Fiscal years")}`;
-  if (tab === "profile-users") content = await profileUsersView();
-  if (tab === "approval-process") content = await approvalSettingsView();
-  if (tab === "blueprint") content = await blueprintSettingsView();
-  return `${pageHeader("Manage", "Settings", "Shape how Yash CRM works for your team.")}<div class="settings-layout">${nav}<div class="settings-content">${content}</div></div>`;
+  let content = '';
+  if (tab === 'general') content = `${await generalSettingsView()}${await settingsPlatformSummary("company_details", "Company details")}${await settingsPlatformSummary("fiscal_years", "Fiscal years")}`;
+  if (tab === 'profile-users') content = await profileUsersView();
+  if (tab === 'approval-process') content = await approvalSettingsView();
+  if (tab === 'blueprint') content = await blueprintSettingsView();
+  const labels = { general: 'General settings', 'profile-users': 'Profile & users', 'approval-process': 'Approval process', blueprint: 'Blueprint' };
+  return `<section class="setup-page-shell"><div class="setup-toolbar"><button class="button button-ghost button-small" data-go="/setup">← Back to Setup</button><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input value="${esc(labels[tab] || 'Settings')}" disabled /></label><button class="button button-ghost" data-go="/setup/customize_setup">Customize Setup</button></div><div class="setup-workspace">${setupDirectory(tab === 'general' ? 'company_details' : tab === 'profile-users' ? 'users' : tab === 'approval-process' ? 'approval_processes' : 'blueprints')}<div class="settings-content">${content}</div></div></section>`;
 }
 
 async function settingsPlatformSummary(resource, title) {
