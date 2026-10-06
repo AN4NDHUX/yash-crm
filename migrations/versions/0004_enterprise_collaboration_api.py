@@ -9,6 +9,18 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Alembic creates alembic_version.version_num as VARCHAR(32) by default.
+    # This revision ID is 33 characters (and 0005 is 34), so PostgreSQL
+    # would roll back the migration when Alembic records the new version.
+    # Widen the version column before Alembic updates it. SQLite does not
+    # enforce VARCHAR lengths, so no change is required there.
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        op.execute(
+            "ALTER TABLE alembic_version "
+            "ALTER COLUMN version_num TYPE VARCHAR(128)"
+        )
+
     op.create_table(
         "teamspaces",
         sa.Column("id", sa.Integer(), primary_key=True),
