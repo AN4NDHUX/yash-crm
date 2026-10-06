@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import textwrap
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,17 +45,6 @@ def run_app_script(body: str, **env_overrides: str) -> dict:
         raise AssertionError(result.stderr[-5000:])
     line = [row for row in result.stdout.splitlines() if row.startswith("RESULT")][-1]
     return json.loads(line[6:])
-
-
-def totp(secret: str) -> str:
-    cleaned = secret.replace(" ", "").upper()
-    padding = "=" * ((8 - len(cleaned) % 8) % 8)
-    key = base64.b32decode(cleaned + padding, casefold=True)
-    counter = int(time.time() // 30)
-    digest = hmac.new(key, counter.to_bytes(8, "big"), hashlib.sha1).digest()
-    offset = digest[-1] & 0x0F
-    value = (int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF) % 1_000_000
-    return f"{value:06d}"
 
 
 def test_normal_account_cannot_administer_users_or_security():
@@ -105,22 +90,37 @@ def test_login_rate_limit_triggers():
     assert out['codes'][10] == 429
 
 
-def test_admin_totp_is_enforced_when_configured():
-    secret = "JBSWY3DPEHPK3PXP"
-    code = totp(secret)
-    out = run_app_script(f"""
+def test_one_time_login_code_is_required_and_single_use():
+    out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        missing = c.post('/api/auth/login', json={{
-            'identifier':'admin','password':'supersecretpass123'
-        }})
-        good = c.post('/api/auth/login', json={{
-            'identifier':'admin','password':'supersecretpass123','otp':'{code}'
-        }})
-        out['missing'] = missing.status_code
-        out['missing_code'] = missing.json().get('detail', {{}}).get('code')
-        out['good'] = good.status_code
-    """, YASHCRM_ADMIN_TOTP_SECRET=secret)
-    assert out == {'missing': 401, 'missing_code': 'MFA_REQUIRED', 'good': 200}
+        first = c.post('/api/auth/login', json={
+            'identifier':'admin',
+            'password':'supersecretpass123'
+        })
+        payload = first.json()
+        out['request_status'] = first.status_code
+        out['required'] = payload.get('otp_required')
+        out['has_challenge'] = bool(payload.get('challenge_id'))
+        out['has_debug_otp'] = bool(payload.get('debug_otp'))
+        verify = c.post('/api/auth/login/verify-otp', json={
+            'challenge_id': payload.get('challenge_id'),
+            'otp': payload.get('debug_otp')
+        })
+        out['verify'] = verify.status_code
+        replay = c.post('/api/auth/login/verify-otp', json={
+            'challenge_id': payload.get('challenge_id'),
+            'otp': payload.get('debug_otp')
+        })
+        out['replay'] = replay.status_code
+    """, YASHCRM_LOGIN_OTP_REQUIRED="true")
+    assert out == {
+        'request_status': 202,
+        'required': True,
+        'has_challenge': True,
+        'has_debug_otp': True,
+        'verify': 200,
+        'replay': 400,
+    }
 
 
 def test_security_headers_and_no_duplicate_routes():
