@@ -4895,6 +4895,100 @@ def owner_update_subscription(user_id: int, payload: dict[str, Any], db: Session
     return _subscription_payload(db, user.id)
 
 
+@app.patch("/api/owner/users/{user_id}/status")
+def owner_update_user_status(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    status = str(payload.get("status") or "").strip().title()
+    if status not in {"Active", "Inactive"}:
+        raise HTTPException(422, "Status must be Active or Inactive")
+    if user.id == actor.id and status == "Inactive":
+        raise HTTPException(409, "You cannot deactivate the signed-in owner account")
+    before = user.status
+    user.status = status
+    if status == "Inactive":
+        db.execute(
+            AuthSession.__table__.update().where(
+                AuthSession.user_id == user.id,
+                AuthSession.revoked_at.is_(None),
+            ).values(revoked_at=datetime.utcnow())
+        )
+    add_audit(db, "owner_status_update", "users", user.id, f"Changed account status for '{user.email}'", before={"status": before}, after={"status": status}, actor_id=actor.id)
+    db.commit()
+    return _admin_user_payload(user, db)
+
+
+@app.post("/api/owner/users/{user_id}/sessions/revoke")
+def owner_revoke_user_sessions(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    now = datetime.utcnow()
+    active = db.scalars(select(AuthSession).where(
+        AuthSession.user_id == user.id,
+        AuthSession.revoked_at.is_(None),
+        AuthSession.expires_at > now,
+    )).all()
+    for session in active:
+        session.revoked_at = now
+    add_audit(db, "sessions_revoked", "users", user.id, f"Revoked {len(active)} active session(s) for '{user.email}'", actor_id=actor.id)
+    db.commit()
+    return {"ok": True, "revoked": len(active)}
+
+
+@app.post("/api/owner/users/{user_id}/password-reset")
+def owner_send_password_reset(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    if user.status != "Active":
+        raise HTTPException(409, "Password reset can only be sent to an active account")
+    raw = secrets.token_urlsafe(40)
+    now = datetime.utcnow()
+    db.add(PasswordResetToken(
+        user_id=user.id,
+        token_hash=_session_token_hash(raw),
+        created_at=now,
+        expires_at=now + timedelta(minutes=30),
+    ))
+    db.commit()
+    base = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+    reset_url = f"{base}/reset-password?token={raw}" if base else f"/reset-password?token={raw}"
+    delivered = _notify_account(
+        db, user, "password_reset_requested", "Yash CRM password reset",
+        f"An Administrator requested a password reset for your Yash CRM account. Use this link within 30 minutes: {reset_url}"
+    )
+    add_audit(db, "password_reset_requested", "users", user.id, f"Requested password reset for '{user.email}'", after={"notification_created": True, "external_delivery": bool(delivered)}, actor_id=actor.id)
+    db.commit()
+    return {"ok": True, "message": "Password reset instructions were created for the account."}
+
+
+@app.get("/api/owner/users/{user_id}/export")
+def owner_export_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> StreamingResponse:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    records: dict[str, Any] = {}
+    for resource, model in RESOURCE_MAP.items():
+        if resource == "users" or not hasattr(model, "owner_id"):
+            continue
+        rows = db.scalars(select(model).where(model.owner_id == user.id)).all()
+        records[resource] = [serialize(row, db) for row in rows]
+    platform_rows = db.scalars(select(PlatformRecord).where(PlatformRecord.owner_id == user.id)).all()
+    records["platform_records"] = [serialize_platform(row, db) for row in platform_rows]
+    export = {
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "user": _admin_user_payload(user, db),
+        "records": records,
+    }
+    payload = json.dumps(export, ensure_ascii=False, default=str, indent=2).encode("utf-8")
+    filename = f"yash-crm-user-{user.id}-export.json"
+    return StreamingResponse(iter([payload]), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+
+
 @app.get("/api/admin/users")
 def admin_users(status: str | None = None, role: str | None = None, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0), db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
     query = select(User).order_by(User.name)
