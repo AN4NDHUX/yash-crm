@@ -6080,7 +6080,7 @@ def download_document(item_id: int, db: Session = Depends(get_db), actor: User =
     if record is None or not can_access_record(db, "documents", record, actor):
         raise HTTPException(404, "Document not found")
     data = dict(record.data or {})
-    storage_key = Path(str(data.get("storage_key") or Path(str(record.url or "")).name)).name
+    storage_key = Path(str(data.get("storage_key") or Path(str(data.get("url") or "")).name)).name
     if not storage_key:
         raise HTTPException(404, "Document file is unavailable")
     target = DOCUMENT_UPLOAD_ROOT / storage_key
