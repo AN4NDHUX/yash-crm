@@ -1,79 +1,158 @@
-# Deploy Yash CRM on Render
+# Deploy Yash CRM on Railway
 
-This repository is cloud-ready source, not an already deployed service. A public URL exists only after a Render account deploys the Blueprint successfully.
+Yash CRM is deployed as a Dockerized FastAPI service backed by PostgreSQL. The browser uses database-backed user sessions; production HTTP Basic authentication is disabled.
 
-## 1. Create the Blueprint
+## 1. Railway services
 
-1. In Render, choose **New > Blueprint**.
-2. Connect `AN4NDHUX/yash-crm` and select the `main` branch.
-3. Confirm Render found the root `render.yaml`.
-4. Enter the prompted values:
-   - `APP_PASSWORD`: a unique random value of at least 12 characters.
-   - `ADMIN_EMAIL`: the real email for the initial administrator record.
-5. Create the Blueprint and wait for both `yashcrm-db` and `yashcrm` to become available.
+Create or keep these Railway services in the same project:
 
-The Blueprint keeps PostgreSQL off the public network, injects its private connection string into `DATABASE_URL`, and derives `ALLOWED_HOSTS` from Render's assigned external hostname.
+1. **yashcrm** — GitHub-connected service from `AN4NDHUX/yash-crm`, branch `main`.
+2. **PostgreSQL** — Railway PostgreSQL service.
 
-## 2. Verify the first deploy
+The web service uses the root `Dockerfile` and `railway.toml`. On every deploy, `cloud-entrypoint.sh` runs:
 
-The deploy log must show the migration reaching `0001_initial`, followed by Uvicorn listening on Render's `PORT`. Then verify:
-
-1. `https://<render-host>/health` returns HTTP 200 with `status: ok` without credentials.
-2. `https://<render-host>/ready` returns HTTP 200 with `database: ready` without credentials.
-3. Opening the root URL requests the `APP_USERNAME` / `APP_PASSWORD` credentials.
-4. The dashboard loads after login.
-5. Create a disposable lead and convert it; confirm an account, contact, and deal are linked.
-6. In **Settings > Users & profile**, change the administrator email and save it.
-
-For an automated check from a trusted machine:
-
-```bash
-YASH_CRM_URL=https://<render-host> \
-YASH_CRM_USERNAME=admin \
-YASH_CRM_PASSWORD='<secret>' \
-python scripts/check_contracts.py
+```text
+alembic upgrade head
+uvicorn app.main:app
 ```
 
-The validation script writes disposable records and archives them. Run it only against an environment where that is acceptable.
+The deploy must fail rather than start the application if a migration fails.
 
-## Custom domains
+## 2. Required production variables
 
-Render terminates TLS and redirects HTTP to HTTPS. After adding a custom domain, add that hostname to the existing comma-separated `ALLOWED_HOSTS` value. Do not replace the Render hostname unless you have disabled the Render subdomain.
+Configure these on the `yashcrm` Railway service:
 
-The UI calls the API on the same origin, so `CORS_ORIGINS` should remain empty. Set it only if a separate trusted web origin genuinely needs browser access to the API.
+```text
+APP_ENV=production
+ENABLE_AUTH=true
+DATABASE_URL=<Railway PostgreSQL connection string>
+ALLOWED_HOSTS=yashcrm-production.up.railway.app
+APP_PUBLIC_URL=https://yashcrm-production.up.railway.app
+APP_USERNAME=admin
+APP_PASSWORD=<unique random password, 12+ characters>
+ADMIN_NAME=Administrator
+ADMIN_EMAIL=<real owner email>
+SEED_DEMO_DATA=false
+```
 
-## Operations
+Do not commit secrets. Rotate any secret that has appeared in screenshots, logs, chat messages, tickets, or source control.
 
-- Enable automated PostgreSQL backups appropriate to the data's value.
-- Take an on-demand database backup before applying later migrations.
-- Rotate `APP_PASSWORD` in Render; never put it in Git or a local `.env` committed to the repository.
-- Keep `SEED_DEMO_DATA=false` in production.
-- Use `/health` for liveness and `/ready` for traffic readiness.
-- Review Render deploy logs after every Blueprint sync or migration.
+### Owner MFA
 
-## Enable the quotation AI workspace
+Administrator TOTP MFA is supported. Provision a Base32 secret in your authenticator workflow and set:
 
-The deterministic quotation-exception queue is cloud code and runs inside the CRM service. The optional model call is also cloud-to-cloud; no local model server is required.
+```text
+YASHCRM_ADMIN_TOTP_SECRET=<base32 secret>
+```
 
-For Railway or Render, add these service variables in the provider dashboard:
+When this variable is set, Administrator login requires the current 6-digit authenticator code. Normal user accounts are not forced through the owner MFA secret.
 
-- `YASHCRM_AI_EXCEPTIONS_ENABLED=true`
-- `YASHCRM_AI_PROVIDER=Hugging Face Inference Providers`
-- `YASHCRM_AI_BASE_URL=https://router.huggingface.co/v1`
-- `YASHCRM_AI_MODEL=openai/gpt-oss-20b:cheapest`
-- `YASHCRM_AI_API_KEY=<fine-grained Hugging Face token>`
-- `YASHCRM_AI_TIMEOUT=90`
+### Proxy trust
 
-Deploy once with the exception flag disabled first. The existing cloud entrypoint automatically applies database migration `0003_ai_revenue_exceptions`. Confirm `/ready` is healthy, enable the exception flag, and redeploy. In the authenticated CRM, open `/ai` and confirm:
+The entrypoint no longer trusts arbitrary `X-Forwarded-*` headers. It defaults to:
 
-1. The readiness panel shows the deterministic queue ready.
-2. An eligible open quotation appears without making an AI request.
-3. **AI-ranked order** consumes one provider request and returns the exact same exception set.
-4. The Task preview shows owner, due date, priority, source, subject, and description before approval.
-5. Approving twice returns the original Task and does not create a duplicate.
+```text
+FORWARDED_ALLOW_IPS=127.0.0.1
+```
 
-The queue still works when the token is absent, exhausted, or the provider is unavailable. The `:cheapest` route does not guarantee a fixed inference provider; pin an approved provider route before sending real customer data where provider identity or region matters. Do not describe the free allowance as unlimited production capacity.
+Only change this to Railway's actual trusted proxy range if required. Do not use `*` unless the service is otherwise network-isolated and the risk is explicitly accepted.
 
-## Authentication boundary
+## 3. Security model
 
-The current production gate is shared HTTP Basic authentication. That is acceptable for a small, tightly controlled internal deployment, but it does not provide individual login accounts, audit-grade identity, password recovery, MFA, or role enforcement. For broader or sensitive use, put the service behind an OIDC/SSO access proxy and implement server-side authorization before treating the CRM's owner/role records as security identities.
+Production browser authentication is:
+
+```text
+username / email / phone + password
+            ↓
+database-backed account
+            ↓
+HttpOnly + Secure session cookie
+            ↓
+tenant-scoped CRM access
+```
+
+Additional controls include:
+
+- 12-character minimum for newly created/reset passwords.
+- Login, signup and reset throttling.
+- Same-origin protection on cookie-authenticated state-changing requests.
+- Administrator-only user administration and security overview.
+- Owner MFA when `YASHCRM_ADMIN_TOTP_SECRET` is configured.
+- CSP, HSTS, frame denial, MIME-sniffing protection and restricted browser permissions.
+- Password-reset session revocation.
+- Owner controls to suspend accounts, revoke sessions, trigger password resets and export account data.
+- Tenant-authorized document downloads.
+- Document content stored durably in PostgreSQL instead of relying on Railway's ephemeral filesystem.
+- Subscription record, storage, custom-module and AI feature limits.
+
+Development-only Basic authentication remains available to existing automated tests and local compatibility tooling. It is not accepted as the production authentication path.
+
+## 4. Verify a deployment
+
+Wait until Railway shows the service as healthy. Then verify:
+
+1. `GET /health` returns HTTP 200.
+2. `GET /ready` returns HTTP 200 and reports the database ready.
+3. `/login` loads without authentication.
+4. Owner login succeeds using the configured Administrator account.
+5. `/owner` loads only for the Administrator.
+6. Create a disposable non-admin account and confirm it cannot access `/api/users`, `/api/security/overview` or `/owner`.
+7. Create a lead, contact, account and deal and confirm a second account cannot see them.
+8. Upload a disposable document and confirm another account receives 404 from the document download endpoint.
+9. Confirm logout invalidates the session.
+10. Confirm password reset invalidates existing sessions.
+
+## 5. CI gates
+
+Every push and pull request to `main` now validates:
+
+- Python compilation.
+- JavaScript syntax.
+- Full pytest regression suite.
+- Real Chromium signup/login/navigation smoke flow with Playwright.
+- `pip-audit` against production dependencies.
+- high-severity Bandit findings.
+- a clean PostgreSQL `alembic upgrade head`.
+
+A green SQLite-only test run is not sufficient for release. PostgreSQL migration verification is required because production uses PostgreSQL.
+
+## 6. Database operations
+
+Before a risky production migration:
+
+1. Verify Railway PostgreSQL backups are enabled.
+2. Take an on-demand backup/snapshot when the data warrants it.
+3. Check that CI has applied the full migration chain successfully.
+4. Deploy one version at a time.
+5. Verify `/ready` immediately after deployment.
+
+The current migration chain includes durable document blobs, owner subscription data, user sessions and tenant workspace settings.
+
+## 7. Cloud AI
+
+The deterministic quotation-exception workflow remains available without an AI provider. To enable cloud ranking/explanation, set:
+
+```text
+YASHCRM_AI_EXCEPTIONS_ENABLED=true
+YASHCRM_AI_PROVIDER=Hugging Face Inference Providers
+YASHCRM_AI_BASE_URL=https://router.huggingface.co/v1
+YASHCRM_AI_MODEL=openai/gpt-oss-20b:cheapest
+YASHCRM_AI_API_KEY=<fine-grained provider token>
+YASHCRM_AI_TIMEOUT=90
+```
+
+Use a pinned, approved provider route before sending real customer data if provider identity or data region matters.
+
+## 8. Operational checks
+
+Periodically review:
+
+- Owner Console login history and active sessions.
+- Failed login bursts.
+- Account status and subscription assignments.
+- PostgreSQL backup health.
+- Railway deployment and restart logs.
+- AI provider errors and quota use.
+- SMTP/SMS delivery configuration if those integrations are enabled.
+
+SMTP, SMS and external AI delivery depend on provider credentials and cannot be proven healthy by repository CI alone. Validate them in the target Railway environment after secrets are configured.
