@@ -11,12 +11,14 @@ import threading
 import re
 import hashlib
 import hmac
+import smtplib
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pathlib import Path
 from typing import Any, Generator
 from email.utils import parseaddr
+from email.message import EmailMessage
 from urllib.error import HTTPError as URLHTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request as URLRequest, urlopen
@@ -86,6 +88,8 @@ class User(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(180), unique=True)
+    username: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True)
     role: Mapped[str] = mapped_column(String(80), default="Sales rep")
     status: Mapped[str] = mapped_column(String(30), default="Active")
     last_active: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -117,6 +121,16 @@ class AuthSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     ip_address: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Territory(TimestampMixin, Base):
@@ -244,6 +258,7 @@ class MetadataModule(TimestampMixin, Base):
     plural_label: Mapped[str] = mapped_column(String(160))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     config: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
 
 
@@ -1703,7 +1718,7 @@ def ensure_cloud_admin(db: Session) -> None:
 
 
 PUBLIC_PROBE_PATHS = frozenset({"/health", "/ready"})
-PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session"})
+PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/auth/forgot-password", "/api/auth/reset-password"})
 # Static, non-sensitive files that browsers request WITHOUT the page's Basic-auth
 # credentials: the manifest fetch, favicon requests and the manifest's icons. Putting
 # them behind auth makes installability and the tab icon fail with 401. Exact paths
@@ -1762,8 +1777,8 @@ PASSWORD_ITERATIONS = 260_000
 
 def _password_hash(password: str) -> str:
     password = str(password or "")
-    if len(password) < 10:
-        raise ValueError("Password must contain at least 10 characters")
+    if len(password) < 8:
+        raise ValueError("Password must contain at least 8 characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
     return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${base64.urlsafe_b64encode(salt).decode()}${base64.urlsafe_b64encode(digest).decode()}"
@@ -1860,6 +1875,108 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(AUTH_COOKIE, path="/", secure=IS_PRODUCTION, httponly=True, samesite="lax")
+
+
+def _normalize_phone(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    prefix = "+" if raw.startswith("+") else ""
+    digits = re.sub(r"\D", "", raw)
+    if not 8 <= len(digits) <= 15:
+        raise HTTPException(422, "Enter a valid phone number with 8 to 15 digits")
+    return prefix + digits
+
+
+def _clean_username(value: Any) -> str:
+    username = re.sub(r"[^a-z0-9._-]+", "", str(value or "").strip().lower())
+    if not 3 <= len(username) <= 40:
+        raise HTTPException(422, "Username must contain 3 to 40 letters, numbers, dots, dashes, or underscores")
+    return username
+
+
+def _account_by_identifier(db: Session, identifier: str) -> User | None:
+    value = str(identifier or "").strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    normalized_phone = re.sub(r"\D", "", value)
+    clauses = [func.lower(User.email) == lowered, func.lower(User.username) == lowered]
+    if normalized_phone:
+        clauses.append(func.replace(func.replace(func.replace(User.phone, "+", ""), " ", ""), "-", "") == normalized_phone)
+    return db.scalar(select(User).where(or_(*clauses)))
+
+
+def _send_email_message(to_email: str, subject: str, body: str) -> bool:
+    host = os.getenv("SMTP_HOST", "").strip()
+    sender = os.getenv("SMTP_FROM", "").strip()
+    if not host or not sender or not to_email:
+        return False
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    use_tls = env_bool("SMTP_STARTTLS", True)
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.set_content(body)
+    try:
+        with smtplib.SMTP(host, port, timeout=12) as client:
+            if use_tls:
+                client.starttls()
+            if username:
+                client.login(username, password)
+            client.send_message(message)
+        return True
+    except Exception:
+        return False
+
+
+def _send_sms_message(phone: str, body: str) -> bool:
+    sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
+    token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
+    sender = os.getenv("TWILIO_FROM_NUMBER", "").strip()
+    if not sid or not token or not sender or not phone:
+        return False
+    payload = urlencode({"From": sender, "To": phone, "Body": body}).encode()
+    req = URLRequest(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json", data=payload, method="POST")
+    req.add_header("Authorization", "Basic " + base64.b64encode(f"{sid}:{token}".encode()).decode())
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urlopen(req, timeout=12) as response:
+            return 200 <= int(response.status) < 300
+    except Exception:
+        return False
+
+
+def _dispatch_account_message(user: User, subject: str, body: str) -> None:
+    email = str(user.email or "")
+    phone = str(user.phone or "")
+    threading.Thread(target=lambda: _send_email_message(email, subject, body), daemon=True).start()
+    if phone:
+        threading.Thread(target=lambda: _send_sms_message(phone, body[:1400]), daemon=True).start()
+
+
+def _notify_account(db: Session, user: User, kind: str, title: str, body: str) -> None:
+    db.add(Notification(user_id=user.id, kind=kind, title=title[:220], body=body, resource="account", record_id=user.id))
+    db.commit()
+    _dispatch_account_message(user, title, body)
+
+
+def _claim_legacy_custom_modules(db: Session, actor: User) -> None:
+    unowned = db.scalars(select(MetadataModule).where(MetadataModule.owner_id.is_(None))).all()
+    changed = False
+    for module in unowned:
+        owned_record = db.scalar(select(PlatformRecord.id).where(
+            PlatformRecord.resource == module.api_name,
+            PlatformRecord.owner_id == actor.id,
+        ).limit(1))
+        if owned_record:
+            module.owner_id = actor.id
+            changed = True
+    if changed:
+        db.commit()
 
 
 def record_login_event(request: Request, username: str, event: str, success: bool) -> None:
@@ -1967,7 +2084,9 @@ def _sharing_allows(db: Session, resource: str, actor: User, record_owner_id: in
 def can_access_record(db: Session, resource: str, record: Any, actor: User | None, access: str = "read") -> bool:
     if not isinstance(actor, User):
         return True
-    return _sharing_allows(db, resource, actor, getattr(record, "owner_id", None), access)
+    if hasattr(record, "owner_id"):
+        return getattr(record, "owner_id", None) == actor.id
+    return True
 
 
 def _metadata_fields(db: Session, resource: str) -> list[MetadataField]:
@@ -3846,10 +3965,8 @@ def list_custom_records(resource: str, search: str | None = None, status: str | 
 def create_custom_record(resource: str, payload: dict[str, Any], db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     module = _custom_module(db, resource)
     values = _validate_custom_values(db, module, dict(payload or {}), actor)
-    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator":
-        values.setdefault("owner_id", actor.id)
-        if values.get("owner_id") != actor.id:
-            raise HTTPException(403, "You may only create records owned by yourself")
+    if isinstance(actor, User):
+        values["owner_id"] = actor.id
     title = _custom_record_title(module, values)
     sync_values = dict(values)
     sync_values["title"] = title
@@ -5312,10 +5429,8 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
             continue
         values[key] = coerce_value(model, key, value)
     authorize_field_values(db, resource, values, actor, "write")
-    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator" and hasattr(model, "owner_id"):
-        values.setdefault("owner_id", actor.id)
-        if values.get("owner_id") != actor.id:
-            raise HTTPException(403, "You may only create records owned by yourself")
+    if isinstance(actor, User) and hasattr(model, "owner_id"):
+        values["owner_id"] = actor.id
     if resource == "users" and not (values.get("name") and values.get("email")):
         raise HTTPException(422, "Name and email are required")
     if resource == "approval_processes" and not values.get("name"):
