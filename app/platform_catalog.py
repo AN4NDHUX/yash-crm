@@ -258,17 +258,61 @@ PLATFORM_RESOURCES.update({
 
 
 SETUP_NAVIGATION: dict[str, list[tuple[str, str]]] = {
-    "General": [("personal_settings","Personal Settings"),("users","Users"),("company_details","Company Settings"),("calendar_booking","Calendar Booking"),("motivator","Motivator"),("agents","Agents"),("fiscal_years","Fiscal Year"),("business_hours","Business Hours"),("shifts","Shifts"),("holidays","Holidays"),("currencies","Currencies"),("calendar_settings","Calendar Settings")],
-    "Security Control": [("profiles","Profiles"),("roles","Roles and Sharing"),("mail_users","Email / Mail Users"),("compliance_settings","Compliance Settings"),("territory_management","Territory Management"),("trusted_domains","Trusted Domain"),("support_access","Support Access"),("sso_saml","Single Sign-On (SAML)"),("security_policies","Security Policies"),("active_directory_sync","Active Directory Sync"),("login_history","Login History"),("audit_log","Audit Log")],
-    "Channels": [("email_channels","Email"),("telephony","Telephony"),("business_messaging","Business Messaging"),("notification_sms","Notification SMS"),("webforms","Webforms"),("social_channels","Social"),("chat_channels","Chat"),("portals","Portals")],
-    "Customization": [("custom_modules","Modules and Fields"),("pipelines","Pipelines"),("wizards","Wizards"),("kiosk_builder","Kiosk-style Process Builder"),("page_designer","Canvas-style Page Designer"),("home_customization","Customize Home Page"),("translations","Translations"),("template_library","Templates"),("teamspace_settings","Teamspace")],
-    "Automation": [("workflow_rules","Workflow Rules"),("automation_actions","Actions"),("schedules","Schedules"),("assignment_rules","Assignment"),("scoring_rules","Scoring Rules"),("cadences","Cadences")],
-    "Process Management": [("blueprints","Blueprint"),("approval_processes","Approval Processes"),("review_processes","Review Processes"),("connected_workflows","Connected Workflow")],
+    "General": [
+        ("personal_settings","Personal Settings"),("users","Users"),("company_details","Company Settings"),
+        ("calendar_booking","Calendar Booking"),("motivator","Motivator"),("agents","Agents"),
+        ("fiscal_years","Fiscal Year"),("business_hours","Business Hours"),("shifts","Shifts"),
+        ("holidays","Holidays"),("currencies","Currencies"),("calendar_settings","Calendar Settings")
+    ],
+    "Security Control": [
+        ("profiles","Profiles"),("roles","Roles and Sharing"),("mail_users","Mail Add-on Users"),
+        ("compliance_settings","Compliance Settings"),("territory_management","Territory Management"),
+        ("trusted_domains","Trusted Domain"),("support_access","Support Access"),("sso_saml","Single Sign-On (SAML)"),
+        ("security_policies","Security Policies"),("active_directory_sync","Active Directory Sync"),
+        ("login_history","Login History"),("audit_log","Audit Log")
+    ],
+    "Channels": [
+        ("email_channels","Email"),("telephony","Telephony"),("business_messaging","Business Messaging"),
+        ("notification_sms","Notification SMS"),("webforms","Webforms"),("social_channels","Social"),
+        ("chat_channels","Chat"),("portals","Portals")
+    ],
+    "Customization": [
+        ("custom_modules","Modules and Fields"),("pipelines","Pipelines"),("wizards","Wizards"),
+        ("kiosk_builder","Kiosk Studio"),("page_designer","Canvas"),("home_customization","Customize Home page"),
+        ("translations","Translations"),("template_library","Templates"),("teamspace_settings","Teamspace")
+    ],
+    "Automation": [
+        ("workflow_rules","Workflow Rules"),("automation_actions","Actions"),("schedules","Schedules"),
+        ("assignment_rules","Assignment"),("scoring_rules","Scoring Rules"),("cadences","Cadences")
+    ],
+    "Process Management": [
+        ("blueprints","Blueprint"),("approval_processes","Approval Processes"),
+        ("review_processes","Review Processes"),("connected_workflows","Connected Workflow")
+    ],
     "Experience Center": [("signals","Signals"),("command_center","CommandCenter"),("segmentation","Segmentation")],
-    "Data Administration": [("import","Import"),("export","Export"),("data_backup","Data Backup"),("storage","Storage"),("recycle_bin","Recycle Bin"),("sandboxes","Sandbox"),("copy_customization","Copy Customization"),("duplicates","Duplicate Management"),("data_quality","Data Quality"),("migration","Migration")],
-    "Marketplace": [("marketplace_integrations","All Integrations")],
-    "Developer Hub": [("mcp_servers","MCP for AI Agents"),("api_settings","APIs and SDKs"),("oauth_clients","OAuth Clients"),("api_usage","API Usage"),("connections","Connections"),("variables","Variables"),("circuits","Circuits"),("functions","Functions"),("widgets","Widgets"),("data_models","Data Model"),("style_ui","StyleUI"),("queries","Queries"),("client_scripts","Client Script"),("developer_solutions","Developer Solutions")],
-    "Apex": [("apex_agents","Agents"),("apex_data_enrichment","Data Enrichment"),("apex_prediction","Prediction"),("apex_recommendation","Recommendation"),("apex_communication","Communication"),("apex_vision","Vision"),("apex_notifications","Notifications"),("apex_voc","Voice of the Customer"),("apex_models","Models"),("apex_presentation","Presentation"),("apex_studio","Custom AI Studio"),("apex_competitors","Competitors")],
+    "Data Administration": [
+        ("import","Import"),("export","Export"),("data_backup","Data Backup"),("remove_sample_data","Remove sample data"),
+        ("storage","Storage"),("recycle_bin","Recycle Bin"),("sandboxes","Sandbox"),("copy_customization","Copy Customization"),
+        ("duplicates","Duplicate Management"),("data_quality","Data Quality"),("migration","Migration")
+    ],
+    "Marketplace": [
+        ("marketplace_integrations","All"),("marketplace_zoho","Zoho"),("marketplace_google","Google"),
+        ("marketplace_microsoft","Microsoft"),("marketplace_facebook","Facebook"),("marketplace_linkedin","LinkedIn"),
+        ("marketplace_quickbooks","QuickBooks")
+    ],
+    "Developer Hub": [
+        ("mcp_servers","MCP for AI Agents"),("api_settings","APIs and SDKs"),("connections","Connections"),
+        ("variables","Variables"),("circuits","Circuits"),("functions","Functions"),("widgets","Widgets"),
+        ("data_models","Data Model"),("style_ui","StyleUI"),("queries","Queries"),
+        ("client_scripts","Client Script"),("developer_solutions","Catalyst Solutions")
+    ],
+    "Apex": [
+        ("apex_agents","Agents"),("apex_data_enrichment","Data Enrichment"),("apex_prediction","Prediction"),
+        ("apex_recommendation","Recommendation"),("apex_communication","Communication"),("apex_vision","Vision"),
+        ("apex_notifications","Notifications"),("apex_voc","Voice of the Customer"),("apex_models","Models"),
+        ("apex_presentation","Presentation"),("apex_studio","Custom AI Studio"),
+        ("apex_competitors","Competitors"),("apex_usage_data","Usage Data")
+    ],
     "CPQ": [("product_configurators","Product Configurator"),("price_rules","Price Rules"),("guided_selling","Guided Selling")],
 }
 
