@@ -2916,3 +2916,34 @@ button, a, input, select, textarea { touch-action: manipulation; }
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Authenticated account controls */
+.user-mini-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-signout {
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 8px;
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.82);
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sidebar-signout:hover {
+  background: rgba(255,255,255,.12);
+  color: #fff;
+}
+
+.sidebar-signout:disabled {
+  opacity: .5;
+  cursor: wait;
+}
