@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f2180" />
+  <title>Yash CRM — Sign in</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root{--blue:#0f2180;--blue2:#1769e0;--ink:#14213d;--muted:#74809a;--line:#dfe5ef;--soft:#f5f8fc;--danger:#c73737}
+    *{box-sizing:border-box} body{margin:0;font-family:Manrope,Segoe UI,sans-serif;color:var(--ink);background:#eef4fb;min-height:100vh}
+    .auth-shell{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.05fr) minmax(440px,.95fr);background:white}
+    .hero{position:relative;overflow:hidden;padding:42px 56px 54px;background:linear-gradient(145deg,#0f2180 0%,#1769e0 58%,#1f8df4 100%);color:white;display:flex;flex-direction:column;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:800;font-size:20px;letter-spacing:-.03em}
+    .mark{position:relative;width:42px;height:42px;border-radius:12px;background:rgba(255,255,255,.13);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 12px 30px rgba(2,15,69,.18)}
+    .mark i,.mark b{position:absolute;top:12px;width:10px;height:20px;border-radius:2px;background:white;transform:skew(-14deg)}
+    .mark i{left:10px}.mark b{right:10px;opacity:.72}
+    .hero-copy{max-width:560px;margin:auto 0}
+    .kicker{display:inline-flex;padding:7px 11px;border:1px solid rgba(255,255,255,.2);border-radius:999px;background:rgba(255,255,255,.09);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+    .hero h1{font-size:clamp(40px,5vw,72px);line-height:.98;letter-spacing:-.055em;margin:22px 0 20px;max-width:640px}
+    .hero p{max-width:500px;font-size:17px;line-height:1.7;color:rgba(255,255,255,.79);margin:0}
+    .hero-art{position:absolute;right:-40px;bottom:72px;width:370px;height:370px;opacity:.86;pointer-events:none}
+    .orb{position:absolute;border-radius:999px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 80px rgba(0,19,91,.18)}
+    .orb.a{width:210px;height:210px;right:42px;top:42px}.orb.b{width:94px;height:94px;left:26px;bottom:64px}.orb.c{width:46px;height:46px;left:108px;top:22px}
+    .journey{position:absolute;inset:84px 40px auto auto;width:255px;height:190px}
+    .journey:before,.journey:after{content:"";position:absolute;background:rgba(255,255,255,.7);border-radius:999px}
+    .journey:before{width:210px;height:4px;left:8px;top:92px;transform:rotate(-18deg)}.journey:after{width:120px;height:4px;left:82px;top:115px;transform:rotate(31deg)}
+    .node{position:absolute;width:23px;height:23px;border-radius:50%;background:#fff;box-shadow:0 10px 28px rgba(0,0,0,.18)} .n1{left:5px;top:78px}.n2{left:102px;top:36px}.n3{right:30px;top:96px}.n4{left:120px;bottom:10px}
+    .hero-foot{display:flex;gap:24px;flex-wrap:wrap;font-size:12px;color:rgba(255,255,255,.65)}
+    .panel-wrap{display:grid;place-items:center;padding:48px 56px;background:linear-gradient(180deg,#f8fbff 0%,#fff 100%)}
+    .panel{width:min(100%,490px);background:white;border:1px solid rgba(213,220,232,.9);border-radius:28px;padding:38px 38px 32px;box-shadow:0 28px 70px rgba(25,50,92,.12)}
+    .eyebrow{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--blue2);text-transform:uppercase}
+    .panel h2{font-size:38px;line-height:1.05;letter-spacing:-.05em;margin:10px 0 8px}
+    .panel .sub{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:26px}
+    .field{display:grid;gap:8px;margin-bottom:17px}.field label{font-size:12px;font-weight:700;color:#35425c}
+    .field input{height:50px;border:1px solid var(--line);border-radius:11px;padding:0 14px;font:inherit;color:var(--ink);outline:0;background:#fff;transition:.16s}
+    .field input:focus{border-color:#5d85ff;box-shadow:0 0 0 4px rgba(57,113,232,.10)}
+    .row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:-2px 0 20px}
+    .row a,.switch a{color:var(--blue2);text-decoration:none;font-weight:700}.row a:hover,.switch a:hover{text-decoration:underline}
+    .submit{width:100%;height:52px;border:0;border-radius:11px;background:linear-gradient(135deg,var(--blue),var(--blue2));color:#fff;font:inherit;font-weight:800;cursor:pointer;box-shadow:0 12px 24px rgba(23,105,224,.22);transition:.16s}
+    .submit:hover{transform:translateY(-1px);box-shadow:0 16px 30px rgba(23,105,224,.26)}.submit:disabled{opacity:.55;cursor:wait;transform:none}
+    .switch{text-align:center;margin-top:22px;color:var(--muted);font-size:13px}
+    .error{display:none;margin:0 0 16px;padding:11px 12px;border-radius:10px;background:#fff2f2;color:var(--danger);font-size:12px;border:1px solid #ffd7d7}
+    .secure{display:flex;align-items:center;gap:7px;margin-top:18px;justify-content:center;color:#8a94a8;font-size:11px}.secure:before{content:"✓";display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#edf5ff;color:#1769e0;font-weight:800}
+    .signup-only{display:none}
+    body.signup .signup-only{display:grid} body.signup .signin-only{display:none}
+    @media(max-width:980px){.auth-shell{grid-template-columns:1fr}.hero{min-height:360px;padding:34px}.hero-art{right:-80px;bottom:-35px;transform:scale(.8)}.hero h1{font-size:48px}.panel-wrap{padding:34px 20px 48px}}
+    @media(max-width:560px){.hero{min-height:280px}.hero-copy{padding-top:34px}.hero h1{font-size:38px}.hero p{font-size:14px}.hero-art{display:none}.panel{padding:30px 22px;border-radius:20px}.panel h2{font-size:32px}.panel-wrap{padding:22px 14px 36px}}
+  </style>
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="hero" aria-label="Yash CRM introduction">
+      <div class="brand"><span class="mark" aria-hidden="true"><i></i><b></b></span><span>Yash CRM</span></div>
+      <div class="hero-copy">
+        <span class="kicker">Customer intelligence workspace</span>
+        <h1>Turn every relationship into momentum.</h1>
+        <p>Bring leads, conversations, opportunities, automation and customer context into one focused revenue workspace built for decisive teams.</p>
+      </div>
+      <div class="hero-art" aria-hidden="true"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div><div class="journey"><span class="node n1"></span><span class="node n2"></span><span class="node n3"></span><span class="node n4"></span></div></div>
+      <div class="hero-foot"><span>Secure database-backed accounts</span><span>Role-aware CRM access</span><span>Persistent cloud workspace</span></div>
+    </section>
+
+    <section class="panel-wrap">
+      <div class="panel">
+        <span class="eyebrow signin-only">Welcome back</span>
+        <span class="eyebrow signup-only">Create your workspace access</span>
+        <h2 class="signin-only">Sign in</h2>
+        <h2 class="signup-only">Create account</h2>
+        <p class="sub signin-only">Continue to your Yash CRM customer workspace.</p>
+        <p class="sub signup-only">Create your personal Yash CRM account with your email and password.</p>
+
+        <div class="error" id="auth-error" role="alert"></div>
+
+        <form id="auth-form">
+          <div class="field signup-only">
+            <label for="name">Full name</label>
+            <input id="name" name="name" autocomplete="name" placeholder="Your full name" />
+          </div>
+          <div class="field">
+            <label for="email">Email address</label>
+            <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@company.com" />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required minlength="10" placeholder="At least 10 characters" />
+          </div>
+          <div class="field signup-only">
+            <label for="confirm-password">Confirm password</label>
+            <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="10" placeholder="Repeat your password" />
+          </div>
+          <div class="row signin-only"><span></span><a href="/signup">Create an account</a></div>
+          <button class="submit" type="submit" id="submit-button"><span class="signin-only">Sign in to Yash CRM</span><span class="signup-only">Create my account</span></button>
+        </form>
+
+        <div class="switch signin-only">New to Yash CRM? <a href="/signup">Sign up</a></div>
+        <div class="switch signup-only">Already have an account? <a href="/login">Sign in</a></div>
+        <div class="secure">Passwords are salted and hashed before database storage.</div>
+      </div>
+    </section>
+  </main>
+
+<script>
+(() => {
+  const signup = location.pathname === "/signup";
+  document.body.classList.toggle("signup", signup);
+  document.title = signup ? "Yash CRM — Create account" : "Yash CRM — Sign in";
+  const form = document.getElementById("auth-form");
+  const errorBox = document.getElementById("auth-error");
+  const submit = document.getElementById("submit-button");
+  const password = document.getElementById("password");
+  password.autocomplete = signup ? "new-password" : "current-password";
+
+  const showError = (message) => {
+    errorBox.textContent = message || "Something went wrong. Try again.";
+    errorBox.style.display = "block";
+  };
+
+  fetch("/api/auth/session", {credentials:"same-origin"})
+    .then((r) => { if (r.ok) location.replace("/dashboard"); })
+    .catch(() => {});
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorBox.style.display = "none";
+    const data = new FormData(form);
+    const payload = {
+      email: String(data.get("email") || "").trim(),
+      password: String(data.get("password") || "")
+    };
+    if (signup) {
+      payload.name = String(data.get("name") || "").trim();
+      const confirm = String(data.get("confirm_password") || "");
+      if (payload.password !== confirm) return showError("Passwords do not match.");
+      if (payload.name.length < 2) return showError("Enter your full name.");
+    }
+    submit.disabled = true;
+    try {
+      const response = await fetch(signup ? "/api/auth/signup" : "/api/auth/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Could not continue.");
+      const requested = new URLSearchParams(location.search).get("next");
+      const safeNext = requested && requested.startsWith("/") && !requested.startsWith("//") ? requested : (result.redirect || "/dashboard");
+      location.replace(safeNext);
+    } catch (error) {
+      showError(error.message);
+      submit.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
