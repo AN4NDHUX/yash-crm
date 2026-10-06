@@ -1792,6 +1792,12 @@ def ensure_cloud_admin(db: Session) -> None:
     ))
     if duplicate_username is not None:
         raise RuntimeError("APP_USERNAME is already assigned to another Yash CRM account")
+    duplicate_email = db.scalar(select(User).where(
+        func.lower(User.email) == email,
+        User.id != (admin.id if admin else -1),
+    ))
+    if duplicate_email is not None:
+        raise RuntimeError("ADMIN_EMAIL is already assigned to another Yash CRM account")
     if admin is None:
         admin = User(
             name=name,
@@ -1803,8 +1809,11 @@ def ensure_cloud_admin(db: Session) -> None:
         )
         db.add(admin)
         db.flush()
-    elif not admin.username or admin.username.lower() != admin_username:
+    else:
+        admin.name = name
+        admin.email = email
         admin.username = admin_username
+        admin.status = "Active"
     fallback_password = os.getenv("APP_PASSWORD", "").strip("\r\n")
     if fallback_password:
         if len(fallback_password) < 8:
