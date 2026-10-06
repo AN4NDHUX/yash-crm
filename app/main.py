@@ -773,6 +773,10 @@ def ensure_additive_schema() -> None:
         "deals": {"archived": "BOOLEAN NOT NULL DEFAULT 0"},
         "activities": {"start_at": "DATETIME NULL", "archived": "BOOLEAN NOT NULL DEFAULT 0"},
         "blueprints": {"transition_requirements": "JSON"},
+        "users": {
+            "password_hash": "VARCHAR(255) NULL",
+            "password_changed_at": "DATETIME NULL",
+        },
     }
     inspector = inspect(engine)
     for table, columns in additions.items():
@@ -1055,6 +1059,11 @@ def serialize(obj: Any, db: Session | None = None, actor: User | None = None) ->
         if isinstance(value, (datetime, date)):
             value = value.isoformat()
         data[column.name] = value
+    if isinstance(obj, User):
+        data.pop("password_hash", None)
+        data.pop("password_changed_at", None)
+    if isinstance(obj, AuthSession):
+        data.pop("token_hash", None)
     if db is not None and hasattr(obj, "owner_id") and obj.owner_id:
         owner = db.get(User, obj.owner_id)
         data["owner_name"] = owner.name if owner else "Unassigned"
