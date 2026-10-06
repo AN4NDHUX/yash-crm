@@ -21,7 +21,7 @@ const PLATFORM_MODULE_ROUTES = [
   "price_books", "vendors", "quotes", "sales_orders", "purchase_orders", "invoices", "payments",
   "campaigns", "cases", "solutions", "documents", "site_visits", "forecasts", "reports", "dashboards", "sales_targets",
 ];
-const BRAND_ORBS_LOADER_URL = "/static/threeui/brand-orbs-loader.html?v=20261006-particles-v2";
+const BRAND_ORBS_LOADER_URL = "/static/threeui/brand-orbs-loader.html?v=20261006-neuform-v3";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -206,7 +206,7 @@ function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 
-function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="brand-orbs-shell"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading animation" aria-hidden="true" tabindex="-1" loading="eager"></iframe><span class="yash-loading-logo" aria-hidden="true"><img src="/static/yash-crm-logo.png" alt="" /></span></div><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
+function loading() { return `<div class="loading" role="status" aria-live="polite"><iframe class="brand-orbs-loader" src="${BRAND_ORBS_LOADER_URL}" title="Loading animation" aria-hidden="true" tabindex="-1" loading="eager"></iframe><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
 function emptyState(icon, title, copy, button = "") { return `<div class="empty-state"><span class="empty-icon">${icon}</span><h3>${esc(title)}</h3><p>${esc(copy)}</p>${button ? `<div style="margin-top:16px">${button}</div>` : ""}</div>`; }
 
 async function ensureLookups() {
