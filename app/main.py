@@ -40,6 +40,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     inspect,
     String,
     Text,
@@ -649,6 +650,18 @@ class PlatformRecord(TimestampMixin, Base):
     data: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, default=dict)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class DocumentBlob(Base):
+    __tablename__ = "document_blobs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    record_id: Mapped[int] = mapped_column(ForeignKey("platform_records.id", ondelete="CASCADE"), unique=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    file_name: Mapped[str] = mapped_column(String(220))
+    content_type: Mapped[str] = mapped_column(String(160), default="application/octet-stream")
+    file_size: Mapped[int] = mapped_column(Integer)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class AIExceptionOccurrence(TimestampMixin, Base):
@@ -6211,9 +6224,6 @@ async def upload_document(
     _enforce_storage_limit(db, actor, len(content))
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(original).stem).strip("-._")[:80] or "document"
     stored_name = f"{datetime.utcnow():%Y%m%d%H%M%S}-{secrets.token_hex(5)}-{safe_stem}{extension}"
-    DOCUMENT_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
-    target = DOCUMENT_UPLOAD_ROOT / stored_name
-    target.write_bytes(content)
     values: dict[str, Any] = {
         "name": name.strip(), "document_type": document_type or extension.lstrip(".").upper(),
         "url": "", "version": version, "related_type": related_type,
@@ -6230,16 +6240,24 @@ async def upload_document(
         merged["url"] = f"/api/documents/{record.id}/download"
         merged["storage_key"] = stored_name
         sync_platform_columns(record, merged)
+        db.add(DocumentBlob(
+            record_id=record.id,
+            owner_id=actor.id,
+            file_name=original,
+            content_type=str(file.content_type or "application/octet-stream")[:160],
+            file_size=len(content),
+            content=content,
+        ))
         db.commit()
         db.refresh(record)
         return serialize_platform(record, db, actor)
     except Exception:
-        target.unlink(missing_ok=True)
+        db.rollback()
         raise
 
 
 @app.get("/api/documents/{item_id}/download")
-def download_document(item_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> FileResponse:
+def download_document(item_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> Response:
     record = db.scalar(select(PlatformRecord).where(
         PlatformRecord.resource == "documents",
         PlatformRecord.id == item_id,
@@ -6247,15 +6265,23 @@ def download_document(item_id: int, db: Session = Depends(get_db), actor: User =
     ))
     if record is None or not can_access_record(db, "documents", record, actor):
         raise HTTPException(404, "Document not found")
+    blob = db.scalar(select(DocumentBlob).where(DocumentBlob.record_id == record.id, DocumentBlob.owner_id == actor.id))
+    if blob is not None:
+        download_name = Path(blob.file_name or record.title or f"document-{record.id}").name
+        safe_name = download_name.replace('"', "")
+        return Response(
+            content=bytes(blob.content),
+            media_type=blob.content_type or "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"', "Cache-Control": "private, no-store"},
+        )
+    # Backward-compatible fallback for documents uploaded before database blob storage.
     data = dict(record.data or {})
     storage_key = Path(str(data.get("storage_key") or Path(str(data.get("url") or "")).name)).name
-    if not storage_key:
-        raise HTTPException(404, "Document file is unavailable")
-    target = DOCUMENT_UPLOAD_ROOT / storage_key
-    if not target.is_file():
+    target = DOCUMENT_UPLOAD_ROOT / storage_key if storage_key else None
+    if target is None or not target.is_file():
         raise HTTPException(404, "Document file is unavailable")
     download_name = Path(str(data.get("file_name") or record.title or storage_key)).name
-    return FileResponse(target, filename=download_name, media_type=str(data.get("content_type") or "application/octet-stream"))
+    return FileResponse(target, filename=download_name, media_type=str(data.get("content_type") or "application/octet-stream"), headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/api/{resource}")
