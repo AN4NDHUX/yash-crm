@@ -2718,7 +2718,7 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     name = str(payload.get("name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     username = _clean_username(payload.get("username") or email.split("@", 1)[0])
-    phone = _normalize_phone(payload.get("phone"))
+    phone = _normalize_phone(payload.get("phone")) or None
     password = str(payload.get("password") or "")
     if len(name) < 2 or len(name) > 120:
         raise HTTPException(422, "Enter your full name")
