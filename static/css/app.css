@@ -2284,3 +2284,68 @@ button, a, input, select, textarea { touch-action: manipulation; }
     height: 112px;
   }
 }
+
+
+/* Uploaded loader assets — exact user-provided spinner + centered Yash mark. */
+.uploaded-loader-orb {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow: visible;
+}
+
+.uploaded-loader-spinner {
+  position: absolute;
+  inset: -14px;
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  opacity: .92;
+  filter: drop-shadow(0 0 9px rgba(95,159,255,.22));
+  animation: uploaded-loader-spin 2.15s linear infinite;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.uploaded-loader-logo {
+  position: relative;
+  z-index: 2;
+  width: 74px;
+  height: 74px;
+  object-fit: contain;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 7px 16px rgba(35,62,104,.13));
+  animation: uploaded-loader-logo-pulse 1.85s ease-in-out infinite;
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes uploaded-loader-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes uploaded-loader-logo-pulse {
+  0%,100% { transform: scale(.97); }
+  50% { transform: scale(1.035); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uploaded-loader-spinner,
+  .uploaded-loader-logo { animation: none !important; }
+}
+
+@media (max-width: 720px) {
+  .uploaded-loader-orb { width: 116px; height: 116px; }
+  .uploaded-loader-spinner { width: 142px; height: 142px; inset: -13px; }
+  .uploaded-loader-logo { width: 66px; height: 66px; }
+}
