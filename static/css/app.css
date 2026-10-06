@@ -2226,3 +2226,61 @@ button, a, input, select, textarea { touch-action: manipulation; }
     opacity: .55;
   }
 }
+
+
+/* Inline BrandOrbs loader — no iframe, no backing cards. */
+.brand-orbs-inline {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  display: grid;
+  place-items: center;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  isolation: isolate;
+}
+
+.brand-orbs-canvas {
+  position: absolute;
+  inset: 0;
+  width: 128px;
+  height: 128px;
+  display: block;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.brand-orbs-letter {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: #5b5df6;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-family: "Manrope", "Segoe UI", Arial, sans-serif;
+  font-size: 39px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -.10em;
+  transform: translateX(-1px);
+  text-shadow: 0 2px 8px rgba(33,95,224,.14), 0 0 18px rgba(91,93,246,.13);
+  user-select: none;
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .brand-orbs-inline,
+  .brand-orbs-canvas {
+    width: 112px;
+    height: 112px;
+  }
+}
