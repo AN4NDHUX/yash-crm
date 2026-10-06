@@ -3283,7 +3283,9 @@ def create_metadata_field(module_id: int, payload: dict[str, Any], db: Session =
         raise HTTPException(422, "Field API name, label, and a supported field type are required")
     if db.scalar(select(MetadataField).where(MetadataField.module_id == module_id, MetadataField.api_name == api_name)):
         raise HTTPException(409, "That field API name already exists in this module")
-    item = MetadataField(module_id=module_id, api_name=api_name, label=label, field_type=field_type, position=int(payload.get("position") or 0), required=bool(payload.get("required", False)), read_only=bool(payload.get("read_only", False)), unique_value=bool(payload.get("unique_value", False)), default_value=payload.get("default_value"), validation=payload.get("validation") or {}, permissions=payload.get("permissions") or {}, visibility=payload.get("visibility") or {})
+    visibility = dict(payload.get("visibility") or {})
+    visibility.setdefault("enabled", bool(payload.get("enabled", True)))
+    item = MetadataField(module_id=module_id, api_name=api_name, label=label, field_type=field_type, position=int(payload.get("position") or 0), required=bool(payload.get("required", False)), read_only=bool(payload.get("read_only", False)), unique_value=bool(payload.get("unique_value", False)), default_value=payload.get("default_value"), validation=payload.get("validation") or {}, permissions=payload.get("permissions") or {}, visibility=visibility)
     db.add(item)
     db.flush()
     add_audit(db, "create", "metadata_fields", item.id, f"Created field '{item.label}' for {module.label}", after=serialize(item))
@@ -3322,6 +3324,10 @@ def update_metadata_field(field_id: int, payload: dict[str, Any], db: Session = 
     for key in ("label", "field_type", "default_value", "validation", "permissions", "visibility"):
         if key in payload:
             setattr(item, key, payload[key])
+    if "enabled" in payload:
+        visibility = dict(item.visibility or {})
+        visibility["enabled"] = bool(payload["enabled"])
+        item.visibility = visibility
     for key in ("position", "required", "read_only", "unique_value"):
         if key in payload:
             setattr(item, key, int(payload[key]) if key == "position" else bool(payload[key]))
@@ -3329,6 +3335,42 @@ def update_metadata_field(field_id: int, payload: dict[str, Any], db: Session = 
     db.commit()
     db.refresh(item)
     return serialize(item)
+
+
+@app.delete("/api/admin/metadata/fields/{field_id}")
+def delete_metadata_field(field_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    item = db.get(MetadataField, field_id)
+    if item is None:
+        raise HTTPException(404, "Metadata field not found")
+    module = db.get(MetadataModule, item.module_id)
+    before = serialize(item)
+    label = item.label
+    db.delete(item)
+    add_audit(db, "delete", "metadata_fields", field_id, f"Deleted metadata field '{label}'", before=before, actor_id=actor.id if actor else None)
+    db.commit()
+    return {"ok": True, "id": field_id, "module_id": module.id if module else None}
+
+
+@app.delete("/api/admin/metadata/modules/{module_id}")
+def delete_metadata_module(module_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    item = db.get(MetadataModule, module_id)
+    if item is None:
+        raise HTTPException(404, "Metadata module not found")
+    before = _metadata_module_json(item, db)
+    resource = item.api_name
+    records = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)).all()
+    for record in records:
+        record.archived = True
+    for field in db.scalars(select(MetadataField).where(MetadataField.module_id == module_id)).all():
+        db.delete(field)
+    for layout in db.scalars(select(MetadataLayout).where(MetadataLayout.module_id == module_id)).all():
+        db.delete(layout)
+    for view in db.scalars(select(MetadataView).where(MetadataView.module_id == module_id)).all():
+        db.delete(view)
+    db.delete(item)
+    add_audit(db, "delete", "metadata_modules", module_id, f"Deleted metadata module '{before['label']}' and archived {len(records)} custom record(s)", before=before, actor_id=actor.id if actor else None)
+    db.commit()
+    return {"ok": True, "id": module_id, "resource": resource, "archived_records": len(records)}
 
 
 @app.post("/api/admin/metadata/modules/{module_id}/layouts", status_code=201)
@@ -3378,7 +3420,8 @@ def _custom_module(db: Session, resource: str, *, enabled_only: bool = True) -> 
 
 
 def _custom_fields(db: Session, module_id: int) -> list[MetadataField]:
-    return db.scalars(select(MetadataField).where(MetadataField.module_id == module_id).order_by(MetadataField.position, MetadataField.id)).all()
+    rows = db.scalars(select(MetadataField).where(MetadataField.module_id == module_id).order_by(MetadataField.position, MetadataField.id)).all()
+    return [field for field in rows if (field.visibility or {}).get("enabled", True) is not False]
 
 
 def _custom_record_values(record: PlatformRecord, db: Session | None = None, actor: User | None = None) -> dict[str, Any]:
