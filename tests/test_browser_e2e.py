@@ -91,7 +91,10 @@ def test_browser_signup_login_and_module_navigation():
                 page.fill("#password", "browser-password-123")
                 page.click("#submit-button")
                 page.locator("#otp-field").wait_for(state="visible", timeout=10000)
-                page.wait_for_function("document.querySelector('#otp') && document.querySelector('#otp').value.length === 6", timeout=10000)
+                deadline = time.time() + 10
+                while time.time() < deadline and len(page.input_value("#otp")) != 6:
+                    time.sleep(0.1)
+                assert len(page.input_value("#otp")) == 6
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard", timeout=10000)
 
