@@ -33,6 +33,7 @@
       <nav class="primary-nav expanded-nav" aria-label="Primary navigation">
         <span class="nav-label nav-label-settings">Workspace</span>
         <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
+        <a href="/teamspaces" data-route="teamspaces">Teamspaces</a>
         <a href="/leads" data-route="leads">Leads <span class="nav-count" id="nav-leads-count">1</span></a>
         <a href="/contacts" data-route="contacts">Contacts</a>
         <a href="/accounts" data-route="accounts">Accounts</a>
@@ -65,8 +66,14 @@
         <span class="nav-label nav-label-settings">Intelligence</span>
         <a href="/ai" data-route="ai"><span aria-hidden="true">✦</span> Apex AI Copilot</a>
 
+        <span class="nav-label nav-label-settings">Developer</span>
+        <a href="/developer" data-route="developer"><span aria-hidden="true">⌘</span> Developer Hub</a>
+        <a href="/cpq" data-route="cpq"><span aria-hidden="true">▦</span> CPQ Workspace</a>
+
         <span class="nav-label nav-label-settings">Administration</span>
+        <a href="/security" data-route="security"><span aria-hidden="true">◈</span> Security Administration</a>
         <a href="/settings/general" data-route="settings">Settings &amp; General Setup</a>
+        <a href="/setup-console/modules" data-route="setup-console">Setup Console</a>
       </nav>
 
       <div class="sidebar-footer">
@@ -98,7 +105,8 @@
             <kbd></kbd>
             <div class="search-results" id="search-results" role="listbox" aria-label="Search results"></div>
           </div>
-          <button class="icon-button top-icon" aria-label="Notifications"><span class="notification-dot"></span></button>
+          <button class="icon-button top-icon" id="notifications-button" aria-label="Notifications" aria-expanded="false"><span class="notification-dot"></span></button>
+          <div class="notifications-panel" id="notifications-panel" hidden></div>
           <button class="top-profile" id="top-profile" aria-label="Open profile">
             <span class="avatar avatar-indigo"></span>
             <span class="top-profile-copy"><strong>Administrator</strong><small>Administrator</small></span>

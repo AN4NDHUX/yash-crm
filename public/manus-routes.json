@@ -9,6 +9,10 @@
       "title": "Home"
     },
     {
+      "path": "/teamspaces",
+      "title": "Teamspaces"
+    },
+    {
       "path": "/leads",
       "title": "Leads"
     },

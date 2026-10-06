@@ -34,6 +34,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     inspect,
     String,
@@ -88,6 +89,234 @@ class User(TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(80), default="Sales rep")
     status: Mapped[str] = mapped_column(String(30), default="Active")
     last_active: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    profile_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    manager_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    team: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    territory_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consent_status: Mapped[str] = mapped_column(String(30), default="Unknown")
+    personal_data_classification: Mapped[str] = mapped_column(String(30), default="Normal")
+    sensitive_data: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Territory(TimestampMixin, Base):
+    __tablename__ = "territories"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), unique=True)
+    parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    manager_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    criteria: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    visibility: Mapped[str] = mapped_column(String(40), default="Private")
+    forecasting: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class SecurityGroup(TimestampMixin, Base):
+    __tablename__ = "security_groups"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), unique=True)
+    group_type: Mapped[str] = mapped_column(String(40), default="Users")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    criteria: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class SecurityGroupMember(Base):
+    __tablename__ = "security_group_members"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("security_groups.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    membership_role: Mapped[str] = mapped_column(String(30), default="Member")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_security_group_member"),)
+
+
+class LoginHistory(Base):
+    __tablename__ = "login_history"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    event: Mapped[str] = mapped_column(String(30))
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    ip_address: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", SAJSON, default=dict)
+
+
+class PrivacyRecord(TimestampMixin, Base):
+    __tablename__ = "privacy_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    subject_type: Mapped[str] = mapped_column(String(40))
+    subject_id: Mapped[int] = mapped_column(Integer)
+    consent_type: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(30))
+    classification: Mapped[str] = mapped_column(String(30))
+    retention_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    anonymized_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    source: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", SAJSON, default=dict)
+    __table_args__ = (Index("ix_privacy_records_subject", "subject_type", "subject_id"),)
+
+
+class OwnershipTransfer(TimestampMixin, Base):
+    __tablename__ = "ownership_transfers"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    from_user_id: Mapped[int] = mapped_column(Integer)
+    to_user_id: Mapped[int] = mapped_column(Integer)
+    resources: Mapped[list[str]] = mapped_column(SAJSON, default=list)
+    record_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(30), default="Completed")
+    requested_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class Teamspace(TimestampMixin, Base):
+    __tablename__ = "teamspaces"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    icon: Mapped[str] = mapped_column(String(40), default="◈")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    modules: Mapped[list[str]] = mapped_column(SAJSON, default=list)
+    folders: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+
+class TeamspaceMember(Base):
+    __tablename__ = "teamspace_members"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    teamspace_id: Mapped[int] = mapped_column(ForeignKey("teamspaces.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    membership_role: Mapped[str] = mapped_column(String(30), default="Member")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("teamspace_id", "user_id", name="uq_teamspace_member"),)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(40), default="info")
+    title: Mapped[str] = mapped_column(String(220))
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resource: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    record_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ApiRequestLog(Base):
+    __tablename__ = "api_request_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    method: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(300))
+    resource: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    status_code: Mapped[int] = mapped_column(Integer)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class MetadataModule(TimestampMixin, Base):
+    __tablename__ = "metadata_modules"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    api_name: Mapped[str] = mapped_column(String(100), unique=True)
+    label: Mapped[str] = mapped_column(String(160))
+    plural_label: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    config: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+
+
+class MetadataField(TimestampMixin, Base):
+    __tablename__ = "metadata_fields"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("metadata_modules.id", ondelete="CASCADE"), index=True)
+    api_name: Mapped[str] = mapped_column(String(100))
+    label: Mapped[str] = mapped_column(String(160))
+    field_type: Mapped[str] = mapped_column(String(40))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    required: Mapped[bool] = mapped_column(Boolean, default=False)
+    read_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    unique_value: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_value: Mapped[Any | None] = mapped_column(SAJSON, nullable=True)
+    validation: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
+    permissions: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
+    visibility: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
+    __table_args__ = (UniqueConstraint("module_id", "api_name", name="uq_metadata_field_api_name"),)
+
+
+class MetadataLayout(TimestampMixin, Base):
+    __tablename__ = "metadata_layouts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("metadata_modules.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    assignment: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    sections: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+    rules: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+
+
+class MetadataView(TimestampMixin, Base):
+    __tablename__ = "metadata_views"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    module_id: Mapped[int] = mapped_column(ForeignKey("metadata_modules.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    criteria: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+    columns: Mapped[list[str]] = mapped_column(SAJSON, default=list)
+    sorting: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+    visibility: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+
+
+class PermissionProfile(TimestampMixin, Base):
+    __tablename__ = "permission_profiles"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    grants: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+
+
+class SharingPolicy(TimestampMixin, Base):
+    __tablename__ = "sharing_policies"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    module: Mapped[str] = mapped_column(String(100), index=True)
+    scope: Mapped[str] = mapped_column(String(40), default="Private")
+    criteria: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+    access: Mapped[str] = mapped_column(String(30), default="Read Only")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class WorkflowExecution(Base):
+    __tablename__ = "workflow_executions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("platform_records.id"), index=True)
+    resource: Mapped[str] = mapped_column(String(80))
+    record_id: Mapped[int] = mapped_column(Integer, index=True)
+    event: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    actions: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(180), unique=True)
+
+
+class BlueprintTransitionLog(Base):
+    __tablename__ = "blueprint_transition_logs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    blueprint_id: Mapped[int] = mapped_column(ForeignKey("blueprints.id"), index=True)
+    module: Mapped[str] = mapped_column(String(80))
+    record_id: Mapped[int] = mapped_column(Integer, index=True)
+    from_stage: Mapped[str] = mapped_column(String(100))
+    to_stage: Mapped[str] = mapped_column(String(100))
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    requirements: Mapped[list[str]] = mapped_column(SAJSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class Lead(TimestampMixin, Base):
@@ -257,6 +486,63 @@ class ApprovalProcess(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(30), default="Active")
     conditions: Mapped[list[dict[str, Any]] | None] = mapped_column(SAJSON, default=list)
     steps: Mapped[list[dict[str, Any]] | None] = mapped_column(SAJSON, default=list)
+
+
+class ApprovalRequest(TimestampMixin, Base):
+    __tablename__ = "approval_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    process_id: Mapped[int] = mapped_column(ForeignKey("approval_processes.id"), index=True)
+    resource: Mapped[str] = mapped_column(String(80))
+    record_id: Mapped[int] = mapped_column(Integer, index=True)
+    requester_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="Pending", index=True)
+    current_step: Mapped[int] = mapped_column(Integer, default=1)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    operation_key: Mapped[str] = mapped_column(String(180), unique=True)
+
+
+class ApprovalStepDecision(Base):
+    __tablename__ = "approval_step_decisions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    request_id: Mapped[int] = mapped_column(ForeignKey("approval_requests.id", ondelete="CASCADE"), index=True)
+    step_order: Mapped[int] = mapped_column(Integer)
+    approver_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    approver_label: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(30), default="Waiting", index=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delegated_to: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    acted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("request_id", "step_order", name="uq_approval_request_step"),)
+
+
+class ReportRun(Base):
+    __tablename__ = "report_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("platform_records.id"), index=True)
+    requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="running", index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    definition: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    result: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ApexAssistantRun(Base):
+    __tablename__ = "apex_assistant_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    question: Mapped[str] = mapped_column(String(1500))
+    intent: Mapped[str] = mapped_column(String(40), index=True)
+    scope: Mapped[str] = mapped_column(String(80))
+    confidence: Mapped[str] = mapped_column(String(20))
+    result: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class Blueprint(Base):
@@ -624,6 +910,25 @@ class AIRankResponse(BaseModel):
     ranked: list[AIRankItem] = Field(min_length=1, max_length=50)
 
 
+class ApexAssistantPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=3, max_length=1500)
+    resource: str | None = Field(default=None, max_length=50)
+    record_id: int | None = Field(default=None, ge=1)
+
+
+class ApexSummaryPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    resource: str = Field(min_length=2, max_length=50)
+    record_id: int = Field(ge=1)
+
+
+class ApexScoringPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lead_ids: list[int] | None = Field(default=None, max_length=100)
+    persist: bool = False
+
+
 class BulkArchivePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     related_id: list[int]
@@ -726,10 +1031,11 @@ def coerce_value(model: type[Base], key: str, value: Any) -> Any:
     return value
 
 
-def serialize(obj: Any, db: Session | None = None) -> dict[str, Any]:
+def serialize(obj: Any, db: Session | None = None, actor: User | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {}
     for column in obj.__table__.columns:
-        value = getattr(obj, column.name)
+        attribute = "metadata_json" if column.name == "metadata" and hasattr(obj, "metadata_json") else (column.key if hasattr(obj, column.key) else column.name)
+        value = getattr(obj, attribute)
         if isinstance(value, (datetime, date)):
             value = value.isoformat()
         data[column.name] = value
@@ -740,7 +1046,7 @@ def serialize(obj: Any, db: Session | None = None) -> dict[str, Any]:
         data["full_name"] = f"{obj.first_name} {obj.last_name}".strip()
     if isinstance(obj, Activity) and obj.related_type and obj.related_id:
         data["related_label"] = related_label(db, obj.related_type, obj.related_id) if db else None
-    return data
+    return redact_record_fields(db, getattr(obj, "__tablename__", ""), data, actor) if db else data
 
 
 def related_label(db: Session, related_type: str, related_id: int) -> str | None:
@@ -774,7 +1080,7 @@ def validate_platform_values(resource: str, values: dict[str, Any], *, partial: 
             if item.get("required") and values.get(item["key"]) in (None, "", []):
                 raise HTTPException(422, f"{item['label']} is required")
     for key in values:
-        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "paid_amount", "balance_due"}:
+        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "paid_amount", "balance_due", "criteria", "actions", "scheduled_for"}:
             raise HTTPException(422, f"Unknown field '{key}' for {config['label']}")
     for item in config.get("fields", []):
         if item.get("type") == "json" and item["key"] in values and values[item["key"]] is not None and not isinstance(values[item["key"]], (dict, list)):
@@ -903,7 +1209,7 @@ def refresh_invoice_balance(db: Session, invoice_id: int) -> None:
     sync_platform_columns(invoice, values)
 
 
-def serialize_platform(record: PlatformRecord, db: Session | None = None) -> dict[str, Any]:
+def serialize_platform(record: PlatformRecord, db: Session | None = None, actor: User | None = None) -> dict[str, Any]:
     data = dict(record.data or {})
     data.update({
         "id": record.id,
@@ -927,7 +1233,7 @@ def serialize_platform(record: PlatformRecord, db: Session | None = None) -> dic
     if db and record.owner_id:
         owner = db.get(User, record.owner_id)
         data["owner_name"] = owner.name if owner else None
-    return data
+    return redact_record_fields(db, record.resource, data, actor) if db else data
 
 
 def add_audit(db: Session, action: str, resource: str, record_id: int | None,
@@ -937,40 +1243,184 @@ def add_audit(db: Session, action: str, resource: str, record_id: int | None,
                       summary=summary[:300], before=before, after=after))
 
 
-def run_platform_automation(db: Session, resource: str, event: str,
-                            record: PlatformRecord, values: dict[str, Any]) -> None:
-    """Execute deterministic local automation and queue external work via audit events.
+def _workflow_value(values: dict[str, Any], field: str) -> Any:
+    return values.get(field)
 
-    No outbound network call is made in the web request. Webhook and schedule
-    delivery is deliberately represented as queued work for a production worker.
+
+def _workflow_condition(values: dict[str, Any], condition: dict[str, Any]) -> bool:
+    field = str(condition.get("field") or "")
+    operator = str(condition.get("operator") or "equals").lower()
+    actual = _workflow_value(values, field)
+    expected = condition.get("value")
+    if operator in {"is_empty", "empty"}:
+        return actual in (None, "", [])
+    if operator in {"is_not_empty", "not_empty"}:
+        return actual not in (None, "", [])
+    if operator in {"contains", "includes"}:
+        return str(expected).lower() in str(actual or "").lower()
+    if operator in {"in", "one_of"}:
+        return str(actual) in {str(item) for item in (expected if isinstance(expected, list) else str(expected).split(","))}
+    if operator in {"greater_than", ">"}:
+        try:
+            return float(actual) > float(expected)
+        except (TypeError, ValueError):
+            return False
+    if operator in {"less_than", "<"}:
+        try:
+            return float(actual) < float(expected)
+        except (TypeError, ValueError):
+            return False
+    if operator in {"not_equals", "does_not_equal"}:
+        return str(actual) != str(expected)
+    return str(actual) == str(expected)
+
+
+def workflow_criteria_match(values: dict[str, Any], criteria: Any) -> bool:
+    """Evaluate nested AND/OR criteria while retaining legacy single-field rules."""
+    if not criteria:
+        return True
+    if isinstance(criteria, dict):
+        if "conditions" in criteria:
+            conditions = criteria.get("conditions") or []
+            results = [workflow_criteria_match(values, item) for item in conditions]
+            return all(results) if str(criteria.get("logic", "AND")).upper() != "OR" else any(results)
+        return _workflow_condition(values, criteria)
+    if isinstance(criteria, list):
+        criteria = {"logic": "AND", "conditions": criteria}
+    if not isinstance(criteria, dict):
+        return False
+    conditions = criteria.get("conditions") or []
+    results = [workflow_criteria_match(values, item) for item in conditions]
+    return all(results) if str(criteria.get("logic", "AND")).upper() != "OR" else any(results)
+
+
+def _workflow_actions(config: dict[str, Any]) -> list[dict[str, Any]]:
+    actions = config.get("actions")
+    if isinstance(actions, list) and actions:
+        return [item if isinstance(item, dict) else {"type": str(item)} for item in actions]
+    action_type = config.get("action_type") or "audit"
+    return [{"type": action_type, "value": config.get("action_value")}]
+
+
+def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str, record: PlatformRecord, values: dict[str, Any]) -> None:
+    action_type = str(action.get("type") or action.get("action_type") or "audit").lower()
+    value = action.get("value", action.get("action_value"))
+    if action_type in {"field_update", "update_field"}:
+        field_name = str(action.get("field") or "").strip()
+        field_value = action.get("value")
+        if not field_name and value and "=" in str(value):
+            field_name, field_value = str(value).split("=", 1)
+        if not field_name:
+            raise ValueError("field_update requires a field")
+        changed = dict(record.data or {})
+        changed[field_name.strip()] = field_value
+        sync_platform_columns(record, changed)
+    elif action_type in {"create_task", "task"}:
+        owner_id = record.owner_id or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+        db.add(Activity(activity_type="Task", subject=str(value or action.get("subject") or f"Follow up: {record.title}"), owner_id=owner_id, status="Open", priority=str(action.get("priority") or "Normal"), related_type=resource, related_id=record.id))
+    elif action_type in {"notification", "notify"}:
+        user_id = int(action.get("user_id") or record.owner_id or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)))
+        db.add(Notification(user_id=user_id, kind=str(action.get("kind") or "workflow"), title=str(action.get("title") or f"Workflow update: {record.title}"), body=str(value or action.get("body") or "A workflow action was triggered."), resource=resource, record_id=record.id))
+    elif action_type in {"owner_change", "assign_owner"}:
+        record.owner_id = int(action.get("user_id") or value)
+    elif action_type in {"start_approval", "approval"}:
+        process_id = int(action.get("process_id") or value or 0)
+        process = db.get(ApprovalProcess, process_id)
+        if process is None:
+            raise ValueError("start_approval requires a valid process_id")
+        request, duplicate = _create_approval_request(process, resource, record.id, record.owner_id, action.get("comment"), db)
+        if duplicate:
+            add_audit(db, "approval_duplicate", resource, record.id, f"Approval request already exists for process '{process.name}'")
+    elif action_type == "tag":
+        changed = dict(record.data or {})
+        tags = list(changed.get("tags") or [])
+        if value and str(value) not in tags:
+            tags.append(str(value))
+        changed["tags"] = tags
+        sync_platform_columns(record, changed)
+    elif action_type in {"webhook", "webhook_queue", "function", "email", "call", "meeting"}:
+        add_audit(db, "automation_queued", resource, record.id, f"Queued workflow action '{action_type}' for external worker")
+    elif action_type != "audit":
+        raise ValueError(f"Unsupported workflow action '{action_type}'")
+
+
+def run_platform_automation(db: Session, resource: str, event: str,
+                            record: PlatformRecord, values: dict[str, Any],
+                            before_values: dict[str, Any] | None = None) -> None:
+    """Execute local workflow actions and persist queued/scheduled outcomes.
+
+    External actions are never sent from the request. They are recorded as queued
+    execution history for a deployment worker to deliver safely.
     """
-    rules = db.scalars(select(PlatformRecord).where(
-        PlatformRecord.resource == "workflow_rules", PlatformRecord.archived == False,
-        PlatformRecord.status == "Active"
-    )).all()
+    rules = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "workflow_rules", PlatformRecord.archived == False, PlatformRecord.status == "Active").order_by(PlatformRecord.id)).all()
     for rule in rules:
         config = rule.data or {}
         if str(config.get("module", "")).lower().replace(" ", "_") not in {resource, "all", "*"}:
             continue
         if config.get("event") not in (None, "", event):
             continue
-        criterion = config.get("criteria_field")
-        if criterion and str(values.get(criterion, "")) != str(config.get("criteria_value", "")):
+        criteria = config.get("criteria") or ({"field": config.get("criteria_field"), "operator": "equals", "value": config.get("criteria_value")} if config.get("criteria_field") else None)
+        if not workflow_criteria_match({**(before_values or {}), **values}, criteria):
             continue
-        action = config.get("action_type") or "audit"
-        if action == "field_update" and config.get("action_value"):
+        actions = _workflow_actions(config)
+        key = f"{rule.id}|{resource}|{record.id}|{event}|{record.version or 1}|{json.dumps(actions, sort_keys=True, default=str)}"
+        existing = db.scalar(select(WorkflowExecution).where(WorkflowExecution.idempotency_key == key))
+        if existing:
+            continue
+        scheduled_for = None
+        if config.get("scheduled_for"):
             try:
-                field_name, field_value = str(config["action_value"]).split("=", 1)
-                changed = dict(record.data or {})
-                changed[field_name.strip()] = field_value.strip()
-                sync_platform_columns(record, changed)
+                scheduled_for = datetime.fromisoformat(str(config["scheduled_for"]).replace("Z", "+00:00")).replace(tzinfo=None)
             except ValueError:
-                add_audit(db, "automation_error", resource, record.id, f"Workflow {rule.title} has an invalid field update")
-                continue
-        elif action == "create_task":
-            owner_id = record.owner_id or db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
-            db.add(Activity(activity_type="Task", subject=str(config.get("action_value") or f"Follow up: {record.title}"), owner_id=owner_id, status="Open", priority="Normal", related_type=resource, related_id=record.id))
-        add_audit(db, "automation", resource, record.id, f"Workflow '{rule.title}' executed action '{action}'")
+                scheduled_for = None
+        execution = WorkflowExecution(rule_id=rule.id, resource=resource, record_id=record.id, event=event, status="queued" if scheduled_for else "running", actions=actions, scheduled_for=scheduled_for, idempotency_key=key)
+        db.add(execution)
+        db.flush()
+        if scheduled_for:
+            add_audit(db, "automation_scheduled", resource, record.id, f"Workflow '{rule.title}' scheduled {len(actions)} action(s)")
+            continue
+        try:
+            for action in actions:
+                _execute_workflow_action(db, action, resource, record, values)
+            execution.status = "completed"
+            execution.completed_at = datetime.utcnow()
+            add_audit(db, "automation", resource, record.id, f"Workflow '{rule.title}' executed {len(actions)} action(s)")
+        except (ValueError, TypeError) as error:
+            execution.status = "failed"
+            execution.error = str(error)
+            add_audit(db, "automation_error", resource, record.id, f"Workflow '{rule.title}' failed: {error}")
+
+
+def _active_blueprint(db: Session, resource: str) -> Blueprint | None:
+    aliases = {resource.lower(), resource.rstrip("s").lower(), resource.replace("_", " ").lower(), resource.rstrip("s").replace("_", " ").lower()}
+    blueprints = db.scalars(select(Blueprint).where(Blueprint.active == True).order_by(Blueprint.id)).all()
+    return next((item for item in blueprints if str(item.module or "").lower() in aliases or str(item.module or "").lower().replace(" ", "_") in aliases), None)
+
+
+def enforce_blueprint_transition(db: Session, resource: str, record: Any, from_stage: str | None, to_stage: str | None, values: dict[str, Any]) -> Blueprint | None:
+    if not from_stage or not to_stage or from_stage == to_stage:
+        return None
+    blueprint = _active_blueprint(db, resource)
+    if blueprint is None:
+        return None
+    transitions = blueprint.transitions or []
+    matching = next((item for item in transitions if str(item.get("from")) == str(from_stage) and str(item.get("to")) == str(to_stage)), None)
+    if transitions and matching is None:
+        raise HTTPException(422, detail={"code": "BLUEPRINT_TRANSITION_NOT_ALLOWED", "message": f"Blueprint '{blueprint.name}' does not allow {from_stage} → {to_stage}.", "from": from_stage, "to": to_stage})
+    requirements = (matching or {}).get("required") or next((item.get("required", []) for item in (blueprint.transition_requirements or []) if str(item.get("transition") or "") in {f"{from_stage} -> {to_stage}", str(to_stage)}), [])
+    missing = [str(field) for field in requirements if values.get(str(field)) in (None, "", [])]
+    if missing:
+        raise HTTPException(422, detail={"code": "BLUEPRINT_REQUIREMENTS_MISSING", "message": "Complete the required fields before this transition.", "missing": missing, "from": from_stage, "to": to_stage})
+    return blueprint
+
+
+def record_blueprint_transition(db: Session, blueprint: Blueprint | None, resource: str, record_id: int, from_stage: str, to_stage: str, values: dict[str, Any], actor_id: int | None = None) -> None:
+    if blueprint is None or from_stage == to_stage:
+        return
+    matching = next((item for item in (blueprint.transitions or []) if str(item.get("from")) == str(from_stage) and str(item.get("to")) == str(to_stage)), {})
+    requirements = matching.get("required") or []
+    db.add(BlueprintTransitionLog(blueprint_id=blueprint.id, module=resource, record_id=record_id, from_stage=from_stage, to_stage=to_stage, actor_id=actor_id, requirements=requirements))
+    add_audit(db, "blueprint_transition", resource, record_id, f"Blueprint '{blueprint.name}' moved {from_stage} → {to_stage}", before={"stage": from_stage}, after={"stage": to_stage}, actor_id=actor_id)
 
 
 def apply_assignment_rule(db: Session, resource: str, values: dict[str, Any]) -> None:
@@ -1054,6 +1504,13 @@ def ensure_workspace_defaults(db: Session) -> None:
         db.add(ApprovalProcess(name="Discount approval", module="Deals", trigger="Discount is greater than 15%", approver="Sales manager", status="Active", conditions=[{"field": "discount", "operator": ">", "value": "15"}], steps=[{"order": 1, "approver": "Sales manager"}]))
     if db.scalar(select(Blueprint.id).limit(1)) is None:
         db.add(Blueprint(name="Deal progression", module="Deals", entry_criteria="Amount is greater than 0", stages=[{"id": "qualification", "label": "Qualification"}], transitions=[], transition_requirements=[], active=True))
+    default_sharing = [
+        ("Core role hierarchy", "*", "role_hierarchy", "Read Only"),
+        ("Products are publicly readable", "products", "Public Read Only", "Read Only"),
+    ]
+    for name, module, scope, access in default_sharing:
+        if db.scalar(select(SharingPolicy.id).where(SharingPolicy.name == name)) is None:
+            db.add(SharingPolicy(name=name, module=module, scope=scope, criteria={}, access=access, enabled=True))
     maya = db.scalar(select(User).order_by(User.id).limit(1))
     account = db.scalar(select(Account).order_by(Account.id).limit(1))
     contact = db.scalar(select(Contact).order_by(Contact.id).limit(1))
@@ -1128,7 +1585,7 @@ def order_clauses(model: type[Base], sort: str) -> list[Any]:
     return [created.desc(), model.id.desc()]
 
 
-def list_resource(db: Session, resource: str, search: str | None, status: str | None, owner_id: int | None, sort: str, min_amount: float | None, max_amount: float | None, close_from: date | None, close_to: date | None, limit: int, offset: int, activity_type: str | None = None) -> dict[str, Any]:
+def list_resource(db: Session, resource: str, search: str | None, status: str | None, owner_id: int | None, sort: str, min_amount: float | None, max_amount: float | None, close_from: date | None, close_to: date | None, limit: int, offset: int, activity_type: str | None = None, actor: User | None = None) -> dict[str, Any]:
     model = RESOURCE_MAP[resource]
     query = select(model)
     if hasattr(model, "archived"):
@@ -1159,9 +1616,10 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
             query = query.where(Deal.expected_close_date >= close_from)
         if close_to:
             query = query.where(Deal.expected_close_date <= close_to)
-    count = db.scalar(select(func.count()).select_from(query.subquery())) or 0
-    rows = db.scalars(query.order_by(*order_clauses(model, sort)).offset(offset).limit(limit)).all()
-    return {"items": [serialize(row, db) for row in rows], "total": count, "limit": limit, "offset": offset}
+    all_rows = [row for row in db.scalars(query.order_by(*order_clauses(model, sort))).all() if can_access_record(db, resource, row, actor)]
+    count = len(all_rows)
+    rows = all_rows[offset:offset + limit]
+    return {"items": [serialize(row, db, actor) for row in rows], "total": count, "limit": limit, "offset": offset}
 
 
 def get_or_create_settings(db: Session) -> OrganizationSetting:
@@ -1223,6 +1681,160 @@ def _basic_auth_valid(header: str) -> bool:
     user_ok = secrets.compare_digest(supplied_user.encode(), expected_user.encode())
     password_ok = secrets.compare_digest(supplied_password.encode(), expected_password.encode())
     return user_ok and password_ok
+
+
+def _basic_username(header: str) -> str:
+    scheme, _, token = header.strip().partition(" ")
+    if scheme.lower() != "basic" or not token:
+        return ""
+    try:
+        token += "=" * (-len(token) % 4)
+        decoded = base64.b64decode(token).decode("utf-8")
+        return decoded.split(":", 1)[0].strip()
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        return ""
+
+
+def record_login_event(request: Request, username: str, event: str, success: bool) -> None:
+    """Persist authentication events without exposing credential material."""
+    try:
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(func.lower(User.email) == username.lower())) if username else None
+            if user is None and username:
+                user = db.scalar(select(User).where(func.lower(User.name) == username.lower()))
+            if user is not None and success and event == "login":
+                user.last_login_at = datetime.utcnow()
+                user.last_active = datetime.utcnow()
+            db.add(LoginHistory(user_id=user.id if user else None, event=event, success=success, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent", "")[:500], metadata_json={"path": request.url.path}))
+            db.commit()
+    except Exception:
+        # Authentication must not fail because audit persistence is temporarily unavailable.
+        return
+
+
+def current_actor(request: Request, db: Session = Depends(get_db)) -> User | None:
+    """Resolve the authenticated CRM user used by server-side authorization.
+
+    Production maps the Basic username to a CRM email/name. Development can use
+    X-Yash-Actor-Id for deterministic local tests while authentication is disabled.
+    """
+    if not env_bool("ENABLE_AUTH", IS_PRODUCTION):
+        raw_id = request.headers.get("X-Yash-Actor-Id")
+        if raw_id and raw_id.isdigit():
+            actor = db.get(User, int(raw_id))
+            if actor and actor.status == "Active":
+                return actor
+        return db.scalar(select(User).where(User.status == "Active", func.lower(User.role) == "administrator").order_by(User.id)) or db.scalar(select(User).where(User.status == "Active").order_by(User.id))
+    username = _basic_username(request.headers.get("Authorization", ""))
+    actor = db.scalar(select(User).where(func.lower(User.email) == username.lower(), User.status == "Active"))
+    if actor is None:
+        actor = db.scalar(select(User).where(func.lower(User.name) == username.lower(), User.status == "Active"))
+    if actor is None and username.lower() in {"admin", "administrator"}:
+        actor = db.scalar(select(User).where(func.lower(User.role) == "administrator", User.status == "Active").order_by(User.id))
+    if actor is None:
+        raise HTTPException(403, "Authenticated account is not linked to an active CRM user")
+    return actor
+
+
+def _role_record(db: Session, role: str | None) -> PlatformRecord | None:
+    if not role:
+        return None
+    normalized = role.lower().replace("representative", "rep").replace("sales ", "").strip()
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "roles", PlatformRecord.archived == False)).all()
+    return next((row for row in rows if str((row.data or {}).get("name") or row.title).lower().replace("representative", "rep").replace("sales ", "").strip() == normalized), None)
+
+
+def _role_names_visible_to_actor(db: Session, actor: User) -> set[str]:
+    role = _role_record(db, actor.role)
+    if role is None:
+        return {str(actor.role or "").lower()}
+    scope = str((role.data or {}).get("data_scope") or "Own").lower()
+    if scope == "all" or str(actor.role or "").lower() == "administrator":
+        return {"*"}
+    visible = {str((role.data or {}).get("name") or role.title).lower().replace("representative", "rep")}
+    if "subordinate" not in scope:
+        return visible
+    changed = True
+    while changed:
+        changed = False
+        for candidate in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "roles", PlatformRecord.archived == False)).all():
+            parent = str((candidate.data or {}).get("parent_role") or "").lower().replace("representative", "rep")
+            name = str((candidate.data or {}).get("name") or candidate.title).lower().replace("representative", "rep")
+            if parent in visible and name not in visible:
+                visible.add(name)
+                changed = True
+    return visible
+
+
+def _sharing_allows(db: Session, resource: str, actor: User, record_owner_id: int | None, access: str = "read") -> bool:
+    if record_owner_id == actor.id or "*" in _role_names_visible_to_actor(db, actor):
+        return True
+    actor_roles = _role_names_visible_to_actor(db, actor)
+    policies = db.scalars(select(SharingPolicy).where(SharingPolicy.enabled == True, or_(SharingPolicy.module == resource, SharingPolicy.module == "*"))).all()
+    for policy in policies:
+        if str(policy.access or "Read Only").lower() not in {"read", "read only", "read/write", "read_write"}:
+            continue
+        scope = str(policy.scope or "").lower()
+        if scope in {"public", "public read only", "public read/write"} and access == "read":
+            return True
+        if scope in {"role hierarchy", "role_hierarchy", "own and subordinates"} and actor_roles:
+            owner = db.get(User, record_owner_id) if record_owner_id else None
+            if owner and str(owner.role or "").lower() in actor_roles:
+                return True
+        criteria = policy.criteria or {}
+        allowed_roles = criteria.get("roles") if isinstance(criteria, dict) else None
+        if isinstance(allowed_roles, list) and any(str(role).lower() in actor_roles for role in allowed_roles):
+            return True
+    return False
+
+
+def can_access_record(db: Session, resource: str, record: Any, actor: User | None, access: str = "read") -> bool:
+    if not isinstance(actor, User):
+        return True
+    return _sharing_allows(db, resource, actor, getattr(record, "owner_id", None), access)
+
+
+def _metadata_fields(db: Session, resource: str) -> list[MetadataField]:
+    names = {resource.lower(), resource.rstrip("s").lower(), resource.replace("_", "").lower()}
+    modules = db.scalars(select(MetadataModule)).all()
+    module_ids = [item.id for item in modules if item.api_name.lower() in names or item.label.lower().replace(" ", "_") in names]
+    if not module_ids:
+        return []
+    return db.scalars(select(MetadataField).where(MetadataField.module_id.in_(module_ids))).all()
+
+
+def field_allowed(db: Session, resource: str, field_name: str, actor: User | None, action: str = "read") -> bool:
+    if not isinstance(actor, User):
+        return True
+    role = str(actor.role or "").lower().replace("representative", "rep")
+    for field in _metadata_fields(db, resource):
+        if field.api_name.lower() != field_name.lower():
+            continue
+        visibility = field.visibility or {}
+        permissions = field.permissions or {}
+        selected_visibility = next((value for key, value in visibility.items() if str(key).lower().replace("representative", "rep") == role), None)
+        if action == "read" and str(selected_visibility or "").lower() == "hidden":
+            return False
+        grants = next((value for key, value in permissions.items() if str(key).lower().replace("representative", "rep") == role), None)
+        if isinstance(grants, dict) and grants.get(action) is False:
+            return False
+        if action == "write" and field.read_only:
+            return False
+    return True
+
+
+def authorize_field_values(db: Session, resource: str, values: dict[str, Any], actor: User | None, action: str = "write") -> None:
+    if not isinstance(actor, User):
+        return
+    for key in values:
+        if not field_allowed(db, resource, key, actor, action):
+            raise HTTPException(403, detail={"code": "FIELD_PERMISSION_DENIED", "message": f"You do not have {action} access to field '{key}'."})
+
+
+def redact_record_fields(db: Session, resource: str, data: dict[str, Any], actor: User | None) -> dict[str, Any]:
+    if not isinstance(actor, User):
+        return data
+    return {key: value for key, value in data.items() if field_allowed(db, resource, key, actor, "read")}
 
 
 def validate_production_settings() -> None:
@@ -1298,6 +1910,7 @@ async def cloud_security(request: Request, call_next):
         if not expected_user or len(expected_password) < 12:
             return JSONResponse(status_code=503, content={"detail": "Cloud authentication is not configured safely."})
         if not _basic_auth_valid(request.headers.get("Authorization", "")):
+            record_login_event(request, _basic_username(request.headers.get("Authorization", "")), "login", False)
             challenge = {"WWW-Authenticate": 'Basic realm="Yash CRM", charset="UTF-8"'}
             if path.startswith("/api/"):
                 # A body lets the SPA show "Authentication required" instead of a bare HTTP 401.
@@ -1305,6 +1918,8 @@ async def cloud_security(request: Request, call_next):
             else:
                 response = Response(status_code=401, headers=challenge)
             return add_security_headers(response, request)
+        if request.method == "GET" and path in {"/", "/dashboard"}:
+            record_login_event(request, _basic_username(request.headers.get("Authorization", "")), "login", True)
     response = await call_next(request)
     return add_security_headers(response, request)
 
@@ -1470,6 +2085,158 @@ def ai_dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
         "model": AI_MODEL,
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+REPORT_SOURCE_BLOCKLIST = {"reports", "dashboards", "workflow_rules", "approval_processes"}
+REPORT_OPERATORS = {"equals", "not_equals", "contains", "starts_with", "gt", "gte", "lt", "lte", "is_empty", "is_not_empty"}
+
+
+def _report_value(row: dict[str, Any], field: str) -> Any:
+    value: Any = row
+    for part in str(field or "").split("."):
+        if isinstance(value, dict):
+            value = value.get(part)
+        else:
+            return None
+    return value
+
+
+def _report_filter_match(row: dict[str, Any], item: dict[str, Any]) -> bool:
+    field = str(item.get("field") or "").strip()
+    operator = str(item.get("operator") or "equals").lower().strip()
+    if not field or operator not in REPORT_OPERATORS:
+        raise HTTPException(422, detail={"code": "REPORT_FILTER_INVALID", "message": "Each report filter requires a supported field and operator."})
+    actual = _report_value(row, field)
+    expected = item.get("value")
+    if operator == "is_empty": return actual is None or actual == ""
+    if operator == "is_not_empty": return actual is not None and actual != ""
+    if operator == "contains": return str(expected or "").lower() in str(actual or "").lower()
+    if operator == "starts_with": return str(actual or "").lower().startswith(str(expected or "").lower())
+    if operator == "equals": return str(actual).lower() == str(expected).lower()
+    if operator == "not_equals": return str(actual).lower() != str(expected).lower()
+    try:
+        left, right = float(actual), float(expected)
+    except (TypeError, ValueError):
+        left, right = str(actual or ""), str(expected or "")
+    return {"gt": left > right, "gte": left >= right, "lt": left < right, "lte": left <= right}[operator]
+
+
+def _report_rows(db: Session, module: str) -> list[dict[str, Any]]:
+    resource = str(module or "").strip().lower().replace(" ", "_")
+    if resource in REPORT_SOURCE_BLOCKLIST or resource not in RESOURCE_MAP and resource not in PLATFORM_RESOURCES:
+        raise HTTPException(422, detail={"code": "REPORT_SOURCE_INVALID", "message": "Reports can only query approved CRM modules, not report or configuration definitions."})
+    if resource in RESOURCE_MAP:
+        model = RESOURCE_MAP[resource]
+        rows = db.scalars(select(model).where(getattr(model, "archived", False) == False)).all()
+        return [serialize(row, db) for row in rows]
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)).all()
+    return [serialize_platform(row, db) for row in rows]
+
+
+def _report_definition(record: PlatformRecord, override: dict[str, Any] | None = None) -> dict[str, Any]:
+    definition = dict(record.data or {})
+    definition.setdefault("name", record.title)
+    definition.setdefault("module", definition.get("source") or "deals")
+    definition.setdefault("report_type", "Tabular")
+    definition.setdefault("filters", [])
+    definition.setdefault("columns", [])
+    definition.setdefault("group_by", None)
+    definition.setdefault("aggregate", None)
+    if override:
+        allowed = {"module", "report_type", "filters", "columns", "group_by", "aggregate", "sort", "limit"}
+        definition.update({key: value for key, value in override.items() if key in allowed})
+    return definition
+
+
+def _run_report_definition(db: Session, definition: dict[str, Any]) -> dict[str, Any]:
+    rows = _report_rows(db, str(definition.get("module")))
+    filters = definition.get("filters") or []
+    if not isinstance(filters, list) or len(filters) > 20:
+        raise HTTPException(422, "Report filters must be a list of at most 20 conditions")
+    rows = [row for row in rows if all(_report_filter_match(row, item) for item in filters)]
+    columns = definition.get("columns") or []
+    if not columns:
+        columns = ["id", "name", "status", "owner_name", "created_at"]
+    normalized_columns = [item.get("field") if isinstance(item, dict) else str(item) for item in columns]
+    normalized_columns = [item for item in normalized_columns if item and len(item) <= 80][:30]
+    group_by = str(definition.get("group_by") or "").strip() or None
+    aggregate = definition.get("aggregate") if isinstance(definition.get("aggregate"), dict) else None
+    groups: list[dict[str, Any]] = []
+    if group_by:
+        buckets: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            buckets.setdefault(str(_report_value(row, group_by) or "Unspecified"), []).append(row)
+        for label, bucket in buckets.items():
+            item: dict[str, Any] = {group_by: label, "count": len(bucket)}
+            if aggregate:
+                field, operation = str(aggregate.get("field") or "amount"), str(aggregate.get("operation") or "sum").lower()
+                values = [float(_report_value(row, field) or 0) for row in bucket]
+                item[operation] = round({"sum": sum(values), "avg": (sum(values) / len(values) if values else 0), "min": (min(values) if values else 0), "max": (max(values) if values else 0), "count": len(bucket)}.get(operation, sum(values)), 2)
+            groups.append(item)
+        result_rows = groups
+    else:
+        result_rows = [{field: _report_value(row, field) for field in normalized_columns} for row in rows]
+    sort = definition.get("sort") if isinstance(definition.get("sort"), dict) else None
+    if sort and sort.get("field"):
+        result_rows.sort(key=lambda row: str(row.get(sort["field"]) or ""), reverse=str(sort.get("direction", "asc")).lower() == "desc")
+    limit = min(max(int(definition.get("limit") or 500), 1), 500)
+    return {"module": definition.get("module"), "report_type": definition.get("report_type"), "columns": normalized_columns, "group_by": group_by, "aggregate": aggregate, "total": len(result_rows), "rows": result_rows[:limit], "truncated": len(result_rows) > limit}
+
+
+def _report_json(run: ReportRun) -> dict[str, Any]:
+    return {"id": run.id, "report_id": run.report_id, "requested_by": run.requested_by, "status": run.status, "row_count": run.row_count, "definition": run.definition or {}, "result": run.result or {}, "error": run.error, "created_at": run.created_at.isoformat(), "completed_at": run.completed_at.isoformat() if run.completed_at else None}
+
+
+@app.post("/api/reports/{report_id}/run")
+def run_saved_report(report_id: int, payload: dict[str, Any] | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.id == report_id, PlatformRecord.resource == "reports", PlatformRecord.archived == False))
+    if record is None:
+        raise HTTPException(404, "Report not found")
+    run = ReportRun(report_id=record.id, requested_by=db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)), status="running", definition=_report_definition(record, payload or {}), result={})
+    db.add(run)
+    db.flush()
+    try:
+        result = _run_report_definition(db, run.definition)
+        run.status, run.row_count, run.result, run.completed_at = "completed", result["total"], result, datetime.utcnow()
+        add_audit(db, "report_run", "reports", record.id, f"Ran report '{record.title}'", after={"run_id": run.id, "row_count": result["total"]}, actor_id=run.requested_by)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as error:
+        run.status, run.error, run.completed_at = "failed", str(error)[:1000], datetime.utcnow()
+        db.commit()
+        raise HTTPException(422, detail={"code": "REPORT_EXECUTION_FAILED", "message": str(error)}) from error
+    return {"run": _report_json(run), **result}
+
+
+@app.get("/api/reports/{report_id}/runs")
+def list_report_runs(report_id: int, limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)) -> dict[str, Any]:
+    rows = db.scalars(select(ReportRun).where(ReportRun.report_id == report_id).order_by(ReportRun.created_at.desc()).limit(limit)).all()
+    return {"items": [_report_json(row) for row in rows], "total": len(rows)}
+
+
+@app.post("/api/dashboards/{dashboard_id}/view")
+def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.id == dashboard_id, PlatformRecord.resource == "dashboards", PlatformRecord.archived == False))
+    if record is None:
+        raise HTTPException(404, "Dashboard not found")
+    definition = dict(record.data or {})
+    widgets = definition.get("components") or definition.get("widgets") or []
+    if not isinstance(widgets, list) or len(widgets) > 30:
+        raise HTTPException(422, "Dashboard widgets must be a list of at most 30 items")
+    rendered = []
+    for index, widget in enumerate(widgets):
+        if not isinstance(widget, dict):
+            continue
+        report_id = int(widget.get("report_id") or 0)
+        report = db.scalar(select(PlatformRecord).where(PlatformRecord.id == report_id, PlatformRecord.resource == "reports", PlatformRecord.archived == False))
+        if report is None:
+            rendered.append({"id": widget.get("id") or index, "title": widget.get("title") or "Widget", "type": widget.get("type") or "table", "error": "Report source not found"})
+            continue
+        result = _run_report_definition(db, _report_definition(report, widget.get("definition") if isinstance(widget.get("definition"), dict) else {}))
+        rendered.append({"id": widget.get("id") or index, "title": widget.get("title") or report.title, "type": widget.get("type") or "table", "width": widget.get("width") or 6, "result": result})
+    return {"id": record.id, "name": record.title, "audience": definition.get("audience"), "layout": definition.get("layout") or "grid", "widgets": rendered}
 
 
 @app.get("/api/dashboard")
@@ -1896,6 +2663,174 @@ def _ai_related_record(db: Session, related_type: str, related_id: int) -> Base:
     return record
 
 
+APEX_SEARCH_RESOURCES = {"leads": Lead, "contacts": Contact, "accounts": Account, "deals": Deal}
+
+
+def _apex_amount(text_value: str) -> float | None:
+    match = re.search(r"(?:above|over|greater than|more than|at least)\s*(?:₹|rs\.?\s*)?([\d,.]+)\s*(lakh|lakhs|crore|crores|k|m)?", text_value.lower())
+    if not match:
+        return None
+    amount = float(match.group(1).replace(",", ""))
+    return amount * {"k": 1_000, "m": 1_000_000, "lakh": 100_000, "lakhs": 100_000, "crore": 10_000_000, "crores": 10_000_000}.get(match.group(2) or "", 1)
+
+
+def _apex_resource(question: str, requested: str | None = None) -> str:
+    resource = str(requested or "").strip().lower()
+    if resource in APEX_SEARCH_RESOURCES:
+        return resource
+    lower = question.lower()
+    for key in APEX_SEARCH_RESOURCES:
+        if key in lower or key[:-1] in lower:
+            return key
+    return "leads" if any(word in lower for word in ("prospect", "qualified", "contacted")) else "deals"
+
+
+def _apex_label(resource: str, row: dict[str, Any]) -> str:
+    if resource == "contacts":
+        return str(row.get("full_name") or f"{row.get('first_name', '')} {row.get('last_name', '')}".strip() or f"Contact #{row.get('id')}")
+    return str(row.get("name") or row.get("title") or f"{resource.title()} #{row.get('id')}")
+
+
+def _apex_search(db: Session, question: str, requested_resource: str | None = None) -> dict[str, Any]:
+    resource = _apex_resource(question, requested_resource)
+    lower = question.lower()
+    rows = db.scalars(select(APEX_SEARCH_RESOURCES[resource]).where(APEX_SEARCH_RESOURCES[resource].archived == False).order_by(APEX_SEARCH_RESOURCES[resource].updated_at.desc()).limit(500)).all()
+    serialized = [serialize(row, db) for row in rows]
+    amount = _apex_amount(question)
+    statuses = [term for term in ("open", "qualified", "new", "contacted", "converted", "closed won", "closed lost", "proposal", "negotiation") if term in lower]
+    days_match = re.search(r"(?:last|past|more than|over)\s+(\d+)\s+days", lower)
+    cutoff = datetime.utcnow() - timedelta(days=int(days_match.group(1))) if days_match else None
+    generic_terms = [token for token in re.findall(r"[a-z0-9@.-]{3,}", lower) if token not in {"show", "find", "list", "which", "leads", "deals", "accounts", "contacts", "above", "this", "month", "closing", "stale", "have", "not", "been", "contacted", "for", "days"}]
+    results = []
+    for item in serialized:
+        if amount is not None and resource == "deals" and float(item.get("amount") or 0) < amount:
+            continue
+        if statuses and not any(term in str(item.get("status") or "").lower() or term in str(item.get("stage") or "").lower() for term in statuses):
+            continue
+        if "closing this month" in lower and resource == "deals":
+            close_date, today = _date_value(item.get("expected_close_date")), date.today()
+            if close_date is None or (close_date.year, close_date.month) != (today.year, today.month):
+                continue
+        if cutoff and ("stale" in lower or "not contacted" in lower):
+            updated = _date_value(item.get("updated_at"))
+            if updated is None or updated >= cutoff.date():
+                continue
+        if "not contacted" in lower and resource == "leads":
+            activity_count = db.scalar(select(func.count()).select_from(Activity).where(Activity.archived == False, Activity.related_type == "leads", Activity.related_id == item["id"], Activity.created_at >= cutoff if cutoff else True)) or 0
+            if activity_count:
+                continue
+        if generic_terms and not any(any(term in str(value or "").lower() for value in item.values()) for term in generic_terms):
+            continue
+        results.append(item)
+    results = results[:50]
+    return {"resource": resource, "filters": {"amount_gte": amount, "statuses": statuses, "cutoff": cutoff.isoformat() if cutoff else None}, "total": len(results), "results": [{"id": row["id"], "label": _apex_label(resource, row), "status": row.get("status"), "stage": row.get("stage"), "amount": row.get("amount"), "owner_id": row.get("owner_id"), "updated_at": row.get("updated_at"), "email": row.get("email")} for row in results], "confidence": "high" if results or amount is not None or statuses else "medium"}
+
+
+def _apex_score_lead(lead: Lead) -> dict[str, Any]:
+    factors: list[dict[str, Any]] = []
+    score = 0
+    def add(name: str, points: int, present: bool, detail: str) -> None:
+        nonlocal score
+        awarded = points if present else 0
+        score += awarded
+        factors.append({"name": name, "points": awarded, "max_points": points, "detail": detail if present else f"Missing or incomplete: {detail}"})
+    add("Email", 15, bool(lead.email), "A reachable email is present")
+    add("Phone", 10, bool(lead.phone), "A phone number is present")
+    add("Company", 15, bool(lead.company), "A company is identified")
+    add("Website", 10, bool(getattr(lead, "website", None)), "A company website is present")
+    add("Role", 10, bool(getattr(lead, "job_title", None)), "A contact role/title is known")
+    add("Firmographic data", 15, bool(getattr(lead, "employees", None) or getattr(lead, "annual_revenue", None)), "Employees or annual revenue is known")
+    add("Source", 10, bool(lead.source), "Lead source is recorded")
+    add("Engagement", 10, lead.status in {"Contacted", "Qualified"}, "Status indicates engagement")
+    add("Follow-up", 5, bool(lead.next_follow_up), "A follow-up date is scheduled")
+    missing = sum(item["points"] == 0 for item in factors)
+    return {"id": lead.id, "name": lead.name, "company": lead.company, "status": lead.status, "score": min(score, 100), "confidence": "high" if missing <= 2 else "medium" if missing <= 5 else "low", "factors": factors, "uncertainty": f"{missing} of {len(factors)} scoring signals are missing." if missing else "All configured scoring signals are present."}
+
+
+def _apex_score_all_leads(db: Session, lead_ids: list[int] | None = None) -> list[dict[str, Any]]:
+    query = select(Lead).where(Lead.archived == False)
+    if lead_ids:
+        query = query.where(Lead.id.in_(lead_ids))
+    leads = db.scalars(query.order_by(Lead.updated_at.desc()).limit(100)).all()
+    return sorted([_apex_score_lead(row) for row in leads], key=lambda item: (-item["score"], item["id"]))
+
+
+def _apex_summary(db: Session, resource: str, record_id: int) -> dict[str, Any]:
+    model = APEX_SEARCH_RESOURCES.get(resource)
+    row = db.get(model, record_id) if model else None
+    if row is None or row.archived:
+        raise HTTPException(404, "CRM record not found")
+    record = serialize(row, db)
+    activities = db.scalar(select(func.count()).select_from(Activity).where(Activity.archived == False, Activity.related_type == resource, Activity.related_id == record_id)) or 0
+    emails = db.scalar(select(func.count()).select_from(Email).where(Email.archived == False, Email.related_type == resource, Email.related_id == record_id)) or 0
+    return {"resource": resource, "record": record, "highlights": [f"Status: {record.get('status') or record.get('stage') or 'not set'}", f"Owner: {record.get('owner_name') or 'unassigned'}", f"{activities} linked activities", f"{emails} recorded emails"], "related": {"activities": int(activities), "emails": int(emails)}, "confidence": "high"}
+
+
+def _apex_save_run(db: Session, question: str, intent: str, scope: str, confidence: str, result: dict[str, Any]) -> None:
+    actor = db.scalar(select(User.id).where(User.status == "Active").order_by(User.id))
+    db.add(ApexAssistantRun(question=question[:1500], intent=intent, scope=scope, confidence=confidence, result=result, requested_by=actor))
+    db.commit()
+
+
+def _apex_answer(intent: str, result: dict[str, Any]) -> str:
+    if intent == "search":
+        return f"APEX found {result.get('total', 0)} {result.get('resource', 'CRM')} record(s) using grounded filters."
+    if intent == "summary":
+        return f"APEX summarized {result.get('resource', 'CRM')} record #{result.get('record', {}).get('id')}."
+    return f"APEX scored {result.get('total', 0)} lead(s) using explainable fit and engagement signals."
+
+
+@app.post("/api/ai/assistant")
+def apex_assistant(payload: ApexAssistantPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    question, lower = payload.question.strip(), payload.question.lower()
+    if any(term in lower for term in ("summarize", "summary", "tell me about")) and payload.record_id:
+        intent, result = "summary", _apex_summary(db, _apex_resource(question, payload.resource), payload.record_id)
+    elif any(term in lower for term in ("score", "scoring", "rank leads", "prioritize leads")):
+        scored = _apex_score_all_leads(db)
+        intent, result = "lead_scoring", {"total": len(scored), "leads": scored, "method": "APEX deterministic fit-and-engagement v1", "confidence": "high"}
+    else:
+        intent, result = "search", _apex_search(db, question, payload.resource)
+    _apex_save_run(db, question, intent, result.get("resource", "workspace"), result.get("confidence", "medium"), result)
+    return {"assistant": "APEX", "intent": intent, "answer": _apex_answer(intent, result), "result": result, "provider": "APEX deterministic CRM engine", "uncertainty": result.get("uncertainty") or "Results are grounded in current CRM records."}
+
+
+@app.post("/api/ai/search")
+def apex_search_api(payload: ApexAssistantPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    result = _apex_search(db, payload.question, payload.resource)
+    _apex_save_run(db, payload.question, "search", result["resource"], result["confidence"], result)
+    return {"assistant": "APEX", **result}
+
+
+@app.post("/api/ai/summary")
+def apex_summary_api(payload: ApexSummaryPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+    resource = _apex_resource("", payload.resource)
+    result = _apex_summary(db, resource, payload.record_id)
+    _apex_save_run(db, f"Summarize {resource} #{payload.record_id}", "summary", resource, result["confidence"], result)
+    return {"assistant": "APEX", **result}
+
+
+@app.post("/api/ai/lead-scoring")
+def apex_lead_scoring_api(payload: ApexScoringPayload, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    if payload.persist:
+        _require_ai_csrf(request)
+    scored = _apex_score_all_leads(db, payload.lead_ids)
+    if payload.persist:
+        for item in scored:
+            lead = db.get(Lead, item["id"])
+            lead.lead_score = item["score"]
+            add_audit(db, "apex_lead_score", "leads", lead.id, f"APEX updated lead score to {item['score']}", after={"score": item["score"], "confidence": item["confidence"]})
+        db.commit()
+    result = {"method": "APEX deterministic fit-and-engagement v1", "persisted": payload.persist, "total": len(scored), "leads": scored, "confidence": "high"}
+    _apex_save_run(db, "Score selected leads" if payload.lead_ids else "Score all leads", "lead_scoring", "leads", "high", result)
+    return {"assistant": "APEX", **result}
+
+
+@app.get("/api/ai/assistant/runs")
+def apex_assistant_runs(limit: int = Query(default=30, ge=1, le=100), db: Session = Depends(get_db)) -> dict[str, Any]:
+    rows = db.scalars(select(ApexAssistantRun).order_by(ApexAssistantRun.created_at.desc()).limit(limit)).all()
+    return {"items": [{"id": row.id, "question": row.question, "intent": row.intent, "scope": row.scope, "confidence": row.confidence, "created_at": row.created_at.isoformat()} for row in rows], "total": len(rows)}
+
+
 @app.api_route("/api/ai/status", methods=["GET", "HEAD"])
 def ai_status_api() -> dict[str, Any]:
     return ai_status()
@@ -2240,16 +3175,14 @@ def update_general_settings(payload: SettingsPayload, db: Session = Depends(get_
 
 
 @app.get("/api/settings/profile")
-def get_profile(db: Session = Depends(get_db)) -> dict[str, Any]:
-    user = db.scalar(select(User).order_by(User.id).limit(1))
+def get_profile(db: Session = Depends(get_db), user: User = Depends(current_actor)) -> dict[str, Any]:
     if user is None:
         raise HTTPException(404, "Profile not found")
     return serialize(user, db)
 
 
 @app.put("/api/settings/profile")
-def update_profile(payload: SettingsPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
-    user = db.scalar(select(User).order_by(User.id).limit(1))
+def update_profile(payload: SettingsPayload, db: Session = Depends(get_db), user: User = Depends(current_actor)) -> dict[str, Any]:
     if user is None:
         raise HTTPException(404, "Profile not found")
     before = serialize(user, db)
@@ -2278,6 +3211,1021 @@ def get_platform_catalog() -> dict[str, Any]:
     return {"resources": public_catalog(), "setup_navigation": SETUP_NAVIGATION}
 
 
+def _metadata_module_json(item: MetadataModule, db: Session) -> dict[str, Any]:
+    fields = db.scalars(select(MetadataField).where(MetadataField.module_id == item.id).order_by(MetadataField.position, MetadataField.id)).all()
+    layouts = db.scalars(select(MetadataLayout).where(MetadataLayout.module_id == item.id).order_by(MetadataLayout.id)).all()
+    views = db.scalars(select(MetadataView).where(MetadataView.module_id == item.id).order_by(MetadataView.id)).all()
+    return {"id": item.id, "api_name": item.api_name, "label": item.label, "plural_label": item.plural_label, "description": item.description, "enabled": item.enabled, "config": item.config or {}, "fields": [serialize(field) for field in fields], "layouts": [serialize(layout) for layout in layouts], "views": [serialize(view) for view in views], "created_at": item.created_at.isoformat(), "updated_at": item.updated_at.isoformat()}
+
+
+@app.get("/api/admin/metadata/modules")
+def list_metadata_modules(db: Session = Depends(get_db)) -> dict[str, Any]:
+    items = db.scalars(select(MetadataModule).order_by(MetadataModule.label)).all()
+    return {"items": [_metadata_module_json(item, db) for item in items], "total": len(items)}
+
+
+@app.post("/api/admin/metadata/modules", status_code=201)
+def create_metadata_module(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    api_name = str(payload.get("api_name") or "").strip().lower().replace(" ", "_")
+    label = str(payload.get("label") or "").strip()
+    if not api_name or not label:
+        raise HTTPException(422, "Module label and API name are required")
+    if db.scalar(select(MetadataModule).where(MetadataModule.api_name == api_name)):
+        raise HTTPException(409, "That module API name already exists")
+    item = MetadataModule(api_name=api_name, label=label, plural_label=str(payload.get("plural_label") or label), description=payload.get("description"), enabled=bool(payload.get("enabled", True)), config=payload.get("config") or {})
+    db.add(item)
+    db.flush()
+    add_audit(db, "create", "metadata_modules", item.id, f"Created metadata module '{item.label}'", after=_metadata_module_json(item, db))
+    db.commit()
+    db.refresh(item)
+    return _metadata_module_json(item, db)
+
+
+@app.post("/api/admin/metadata/modules/{module_id}/fields", status_code=201)
+def create_metadata_field(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    module = db.get(MetadataModule, module_id)
+    api_name = str(payload.get("api_name") or "").strip().lower().replace(" ", "_")
+    label = str(payload.get("label") or "").strip()
+    field_type = str(payload.get("field_type") or "text").strip().lower()
+    allowed_types = {"text", "multiline", "rich_text", "number", "decimal", "currency", "percentage", "email", "phone", "url", "date", "datetime", "checkbox", "picklist", "multi_select", "lookup", "user_lookup", "auto_number", "formula", "file", "image", "subform"}
+    if module is None:
+        raise HTTPException(404, "Metadata module not found")
+    if not api_name or not label or field_type not in allowed_types:
+        raise HTTPException(422, "Field API name, label, and a supported field type are required")
+    if db.scalar(select(MetadataField).where(MetadataField.module_id == module_id, MetadataField.api_name == api_name)):
+        raise HTTPException(409, "That field API name already exists in this module")
+    item = MetadataField(module_id=module_id, api_name=api_name, label=label, field_type=field_type, position=int(payload.get("position") or 0), required=bool(payload.get("required", False)), read_only=bool(payload.get("read_only", False)), unique_value=bool(payload.get("unique_value", False)), default_value=payload.get("default_value"), validation=payload.get("validation") or {}, permissions=payload.get("permissions") or {}, visibility=payload.get("visibility") or {})
+    db.add(item)
+    db.flush()
+    add_audit(db, "create", "metadata_fields", item.id, f"Created field '{item.label}' for {module.label}", after=serialize(item))
+    db.commit()
+    db.refresh(item)
+    return serialize(item)
+
+
+@app.patch("/api/admin/metadata/modules/{module_id}")
+def update_metadata_module(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    item = db.get(MetadataModule, module_id)
+    if item is None:
+        raise HTTPException(404, "Metadata module not found")
+    if "api_name" in payload:
+        api_name = str(payload["api_name"]).strip().lower().replace(" ", "_")
+        if not api_name or db.scalar(select(MetadataModule).where(MetadataModule.api_name == api_name, MetadataModule.id != module_id)):
+            raise HTTPException(409, "That module API name already exists or is invalid")
+        item.api_name = api_name
+    for key in ("label", "plural_label", "description"):
+        if key in payload and payload[key] is not None:
+            setattr(item, key, str(payload[key]).strip())
+    for key in ("enabled", "config"):
+        if key in payload:
+            setattr(item, key, bool(payload[key]) if key == "enabled" else payload[key] or {})
+    add_audit(db, "update", "metadata_modules", item.id, f"Updated metadata module '{item.label}'", after=_metadata_module_json(item, db))
+    db.commit()
+    db.refresh(item)
+    return _metadata_module_json(item, db)
+
+
+@app.patch("/api/admin/metadata/fields/{field_id}")
+def update_metadata_field(field_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    item = db.get(MetadataField, field_id)
+    if item is None:
+        raise HTTPException(404, "Metadata field not found")
+    for key in ("label", "field_type", "default_value", "validation", "permissions", "visibility"):
+        if key in payload:
+            setattr(item, key, payload[key])
+    for key in ("position", "required", "read_only", "unique_value"):
+        if key in payload:
+            setattr(item, key, int(payload[key]) if key == "position" else bool(payload[key]))
+    add_audit(db, "update", "metadata_fields", item.id, f"Updated metadata field '{item.label}'", after=serialize(item))
+    db.commit()
+    db.refresh(item)
+    return serialize(item)
+
+
+@app.post("/api/admin/metadata/modules/{module_id}/layouts", status_code=201)
+def create_metadata_layout(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    module = db.get(MetadataModule, module_id)
+    name = str(payload.get("name") or "").strip()
+    if module is None:
+        raise HTTPException(404, "Metadata module not found")
+    if not name:
+        raise HTTPException(422, "Layout name is required")
+    item = MetadataLayout(module_id=module_id, name=name, assignment=payload.get("assignment") or {}, sections=payload.get("sections") or [], rules=payload.get("rules") or [])
+    db.add(item)
+    db.flush()
+    add_audit(db, "create", "metadata_layouts", item.id, f"Created layout '{item.name}' for {module.label}", after=serialize(item))
+    db.commit()
+    db.refresh(item)
+    return serialize(item)
+
+
+@app.post("/api/admin/metadata/modules/{module_id}/views", status_code=201)
+def create_metadata_view(module_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    module = db.get(MetadataModule, module_id)
+    name = str(payload.get("name") or "").strip()
+    if module is None:
+        raise HTTPException(404, "Metadata module not found")
+    if not name:
+        raise HTTPException(422, "View name is required")
+    item = MetadataView(module_id=module_id, name=name, criteria=payload.get("criteria") or [], columns=payload.get("columns") or [], sorting=payload.get("sorting") or [], visibility=payload.get("visibility") or {})
+    db.add(item)
+    db.flush()
+    add_audit(db, "create", "metadata_views", item.id, f"Created view '{item.name}' for {module.label}", after=serialize(item))
+    db.commit()
+    db.refresh(item)
+    return serialize(item)
+
+
+def _developer_records(db: Session, resource: str) -> list[dict[str, Any]]:
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False).order_by(PlatformRecord.updated_at.desc()).limit(100)).all()
+    return [serialize_platform(row, db) for row in rows]
+
+
+@app.get("/api/developer/manifest")
+def developer_manifest(db: Session = Depends(get_db)) -> dict[str, Any]:
+    versions = _developer_records(db, "api_versions")
+    active_version = next((row for row in versions if row.get("status") == "Active"), None)
+    return {"assistant": "APEX", "api": {"version": active_version.get("version") if active_version else "v1", "base_path": active_version.get("base_path") if active_version else "/api/v1", "authentication": ["Session", "Bearer OAuth client"], "scopes": ["crm.read", "crm.write", "metadata.manage", "automation.execute"], "rate_limits": {"standard": "60 requests/minute", "bulk": "10 requests/minute"}}, "endpoints": [{"method": "GET", "path": "/api/v1/{resource}", "description": "List approved CRM records with pagination, search, filters, and sorting."}, {"method": "POST", "path": "/api/v1/{resource}", "description": "Create a validated CRM or platform record."}, {"method": "PATCH", "path": "/api/v1/{resource}/{id}", "description": "Update a record with server-side validation and audit history."}, {"method": "GET", "path": "/api/admin/metadata/modules", "description": "Read metadata modules, fields, layouts, and views."}, {"method": "POST", "path": "/api/ai/assistant", "description": "Ask grounded APEX CRM questions."}], "mcp": {"servers": _developer_records(db, "mcp_servers"), "tools": _developer_records(db, "mcp_tools")}}
+
+
+@app.get("/api/developer/sdk/{language}")
+def developer_sdk(language: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+    language = language.lower().strip()
+    if language not in {"python", "javascript", "curl"}:
+        raise HTTPException(422, "Supported SDK examples are python, javascript, and curl")
+    manifest = developer_manifest(db)
+    base = manifest["api"]["base_path"]
+    examples = {
+        "python": f"import requests\n\nbase_url = CRM_URL + {base!r}\nresponse = requests.get(f\"{{base_url}}/leads\", headers={{'Authorization': f'Bearer {{TOKEN}}'}})\nresponse.raise_for_status()\nprint(response.json())",
+        "javascript": f"const baseUrl = `${{CRM_URL}}{base}`;\nconst response = await fetch(`${{baseUrl}}/leads`, {{ headers: {{ Authorization: `Bearer ${{TOKEN}}` }} }});\nconst data = await response.json();",
+        "curl": f"curl -H 'Authorization: Bearer $TOKEN' \"$CRM_URL{base}/leads?limit=25\"",
+    }
+    return {"language": language, "base_path": base, "generated_at": datetime.utcnow().isoformat(), "code": examples[language], "security": "Keep CRM_URL, TOKEN, OAuth secrets, and connection credentials outside source control."}
+
+
+@app.get("/api/security/overview")
+def security_overview(db: Session = Depends(get_db)) -> dict[str, Any]:
+    def records(resource: str) -> list[dict[str, Any]]:
+        return _developer_records(db, resource)
+    return {"roles": records("roles"), "profiles": records("profiles"), "permissions": records("permissions"), "sharing_rules": records("sharing_rules"), "field_security": [{"module": item.api_name, "label": item.label, "fields": [{"api_name": field.api_name, "label": field.label, "permissions": field.permissions or {}, "visibility": field.visibility or {}} for field in db.scalars(select(MetadataField).where(MetadataField.module_id == item.id).order_by(MetadataField.position, MetadataField.id)).all()]} for item in db.scalars(select(MetadataModule).order_by(MetadataModule.label)).all()], "audit": audit_history(limit=25, offset=0, db=db)["items"]}
+
+
+def require_admin_actor(actor: User = Depends(current_actor)) -> User:
+    if str(actor.role or "").lower() != "administrator":
+        raise HTTPException(403, detail={"code": "ADMIN_REQUIRED", "message": "Administrator access is required."})
+    return actor
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, actor: User = Depends(current_actor), db: Session = Depends(get_db)) -> dict[str, Any]:
+    db.add(LoginHistory(user_id=actor.id, event="logout", success=True, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent", "")[:500], metadata_json={"path": request.url.path}))
+    add_audit(db, "logout", "users", actor.id, f"User '{actor.email}' logged out", actor_id=actor.id)
+    db.commit()
+    return {"ok": True}
+
+
+def _admin_user_payload(user: User, db: Session) -> dict[str, Any]:
+    value = serialize(user, db)
+    value["manager_name"] = db.get(User, user.manager_id).name if user.manager_id and db.get(User, user.manager_id) else None
+    value["territory_name"] = db.get(Territory, user.territory_id).name if user.territory_id and db.get(Territory, user.territory_id) else None
+    value["groups"] = [group.name for group in db.scalars(select(SecurityGroup).join(SecurityGroupMember, SecurityGroupMember.group_id == SecurityGroup.id).where(SecurityGroupMember.user_id == user.id)).all()]
+    return value
+
+
+@app.get("/api/admin/users")
+def admin_users(status: str | None = None, role: str | None = None, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0), db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    query = select(User).order_by(User.name)
+    if status:
+        query = query.where(User.status == status)
+    if role:
+        query = query.where(User.role == role)
+    rows = db.scalars(query.offset(offset).limit(limit)).all()
+    return {"items": [_admin_user_payload(row, db) for row in rows], "total": db.scalar(select(func.count()).select_from(query.subquery())) or 0, "limit": limit, "offset": offset}
+
+
+@app.post("/api/admin/users/invite", status_code=201)
+def invite_user(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    if not name or parseaddr(email)[1] != email or "@" not in email:
+        raise HTTPException(422, "A valid name and email are required")
+    if db.scalar(select(User).where(func.lower(User.email) == email)):
+        raise HTTPException(409, "That email address is already assigned")
+    user = User(name=name, email=email, role=str(payload.get("role") or "Sales rep"), status="Invited", profile_name=payload.get("profile_name"), manager_id=payload.get("manager_id"), team=payload.get("team"), territory_id=payload.get("territory_id"), timezone=payload.get("timezone") or "Asia/Kolkata", language=payload.get("language") or "English", invited_at=datetime.utcnow(), consent_status="Unknown", personal_data_classification="Normal")
+    db.add(user)
+    db.flush()
+    add_audit(db, "user_invited", "users", user.id, f"Invited user '{user.email}'", after=_admin_user_payload(user, db), actor_id=actor.id)
+    db.commit()
+    db.refresh(user)
+    return _admin_user_payload(user, db)
+
+
+@app.patch("/api/admin/users/{user_id}")
+def update_admin_user(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    before = _admin_user_payload(user, db)
+    allowed = {"name", "email", "role", "profile_name", "manager_id", "team", "territory_id", "timezone", "language", "consent_status", "personal_data_classification", "retention_until", "sensitive_data"}
+    for key, value in payload.items():
+        if key not in allowed:
+            continue
+        if key == "email":
+            value = str(value or "").strip().lower()
+            if parseaddr(value)[1] != value or "@" not in value:
+                raise HTTPException(422, "Enter a valid email address")
+            duplicate = db.scalar(select(User).where(func.lower(User.email) == value, User.id != user.id))
+            if duplicate:
+                raise HTTPException(409, "That email address is already assigned")
+        if key in {"manager_id", "territory_id"} and value is not None and not db.get(User if key == "manager_id" else Territory, int(value)):
+            raise HTTPException(422, f"Invalid {key.replace('_', ' ')}")
+        setattr(user, key, value)
+    if "status" in payload:
+        user.status = str(payload["status"])
+    after = _admin_user_payload(user, db)
+    add_audit(db, "user_updated", "users", user.id, f"Updated user '{user.email}'", before=before, after=after, actor_id=actor.id)
+    db.commit()
+    db.refresh(user)
+    return _admin_user_payload(user, db)
+
+
+@app.post("/api/admin/users/{user_id}/status/{action}")
+def user_status_action(user_id: int, action: str, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    if action not in {"activate", "deactivate"}:
+        raise HTTPException(422, "Action must be activate or deactivate")
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    if user.id == actor.id and action == "deactivate":
+        raise HTTPException(409, "An administrator cannot deactivate the current account")
+    before = user.status
+    user.status = "Active" if action == "activate" else "Inactive"
+    add_audit(db, f"user_{action}d", "users", user.id, f"{action.title()}d user '{user.email}'", before={"status": before}, after={"status": user.status}, actor_id=actor.id)
+    db.commit()
+    return _admin_user_payload(user, db)
+
+
+@app.get("/api/admin/users/{user_id}/login-history")
+def user_login_history(user_id: int, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    if db.get(User, user_id) is None:
+        raise HTTPException(404, "User not found")
+    rows = db.scalars(select(LoginHistory).where(LoginHistory.user_id == user_id).order_by(LoginHistory.occurred_at.desc()).limit(limit)).all()
+    return {"items": [serialize(row) for row in rows], "total": len(rows)}
+
+
+@app.post("/api/admin/users/{user_id}/transfer-ownership")
+def transfer_ownership(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    source = db.get(User, user_id)
+    target = db.get(User, int(payload.get("to_user_id") or 0))
+    if source is None or target is None or target.status != "Active" or source.id == target.id:
+        raise HTTPException(422, "Select an active, different target user")
+    requested = payload.get("resources")
+    resources = [str(item) for item in requested] if isinstance(requested, list) and requested else list(RESOURCE_MAP) + ["platform_records"]
+    count = 0
+    for resource in resources:
+        if resource == "platform_records":
+            rows = db.scalars(select(PlatformRecord).where(PlatformRecord.owner_id == source.id, PlatformRecord.archived == False)).all()
+            for row in rows:
+                row.owner_id = target.id
+            count += len(rows)
+            continue
+        model = RESOURCE_MAP.get(resource)
+        if model is None or not hasattr(model, "owner_id"):
+            continue
+        rows = db.scalars(select(model).where(model.owner_id == source.id, getattr(model, "archived", True) == False)).all()
+        for row in rows:
+            row.owner_id = target.id
+        count += len(rows)
+    transfer = OwnershipTransfer(from_user_id=source.id, to_user_id=target.id, resources=resources, record_count=count, status="Completed", requested_by=actor.id)
+    db.add(transfer)
+    add_audit(db, "ownership_transfer", "users", source.id, f"Transferred {count} records from {source.email} to {target.email}", after={"to_user_id": target.id, "record_count": count, "resources": resources}, actor_id=actor.id)
+    db.commit()
+    return serialize(transfer)
+
+
+@app.get("/api/admin/security/roles")
+def admin_roles(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    return {"items": _developer_records(db, "roles"), "total": db.scalar(select(func.count()).select_from(PlatformRecord).where(PlatformRecord.resource == "roles", PlatformRecord.archived == False)) or 0}
+
+
+@app.get("/api/admin/security/groups")
+def list_security_groups(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    groups = db.scalars(select(SecurityGroup).order_by(SecurityGroup.name)).all()
+    return {"items": [{**serialize(group), "members": [serialize(db.get(User, member.user_id)) for member in db.scalars(select(SecurityGroupMember).where(SecurityGroupMember.group_id == group.id)).all() if db.get(User, member.user_id)]} for group in groups], "total": len(groups)}
+
+
+@app.post("/api/admin/security/groups", status_code=201)
+def create_security_group(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(422, "Group name is required")
+    if db.scalar(select(SecurityGroup).where(SecurityGroup.name == name)):
+        raise HTTPException(409, "That group already exists")
+    group = SecurityGroup(name=name, group_type=str(payload.get("group_type") or "Users"), description=payload.get("description"), criteria=payload.get("criteria") or {}, active=bool(payload.get("active", True)))
+    db.add(group)
+    db.flush()
+    for user_id in payload.get("user_ids") or []:
+        if db.get(User, int(user_id)):
+            db.add(SecurityGroupMember(group_id=group.id, user_id=int(user_id), membership_role="Member"))
+    add_audit(db, "group_created", "security_groups", group.id, f"Created security group '{name}'", actor_id=actor.id)
+    db.commit()
+    return serialize(group)
+
+
+@app.get("/api/admin/security/territories")
+def list_territories(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    rows = db.scalars(select(Territory).order_by(Territory.name)).all()
+    return {"items": [serialize(row) for row in rows], "total": len(rows)}
+
+
+@app.post("/api/admin/security/territories", status_code=201)
+def create_territory(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(422, "Territory name is required")
+    if db.scalar(select(Territory).where(Territory.name == name)):
+        raise HTTPException(409, "That territory already exists")
+    row = Territory(name=name, parent_id=payload.get("parent_id"), manager_id=payload.get("manager_id"), criteria=payload.get("criteria") or {}, visibility=str(payload.get("visibility") or "Private"), forecasting=bool(payload.get("forecasting", True)), active=bool(payload.get("active", True)))
+    db.add(row)
+    db.flush()
+    add_audit(db, "territory_created", "territories", row.id, f"Created territory '{row.name}'", actor_id=actor.id)
+    db.commit()
+    return serialize(row)
+
+
+@app.post("/api/admin/security/sharing", status_code=201)
+def create_sharing_policy(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    module = str(payload.get("module") or "").strip()
+    if not name or not module:
+        raise HTTPException(422, "Sharing rule name and module are required")
+    row = SharingPolicy(name=name, module=module, scope=str(payload.get("scope") or "Private"), criteria=payload.get("criteria") or {}, access=str(payload.get("access") or "Read Only"), enabled=bool(payload.get("enabled", True)))
+    db.add(row)
+    db.flush()
+    add_audit(db, "sharing_policy_created", "sharing_policies", row.id, f"Created sharing policy '{name}'", actor_id=actor.id)
+    db.commit()
+    return serialize(row)
+
+
+@app.get("/api/admin/privacy")
+def list_privacy_records(subject_type: str | None = None, subject_id: int | None = None, db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    query = select(PrivacyRecord).order_by(PrivacyRecord.updated_at.desc())
+    if subject_type:
+        query = query.where(PrivacyRecord.subject_type == subject_type)
+    if subject_id:
+        query = query.where(PrivacyRecord.subject_id == subject_id)
+    rows = db.scalars(query.limit(500)).all()
+    return {"items": [serialize(row) for row in rows], "total": len(rows)}
+
+
+@app.post("/api/admin/privacy", status_code=201)
+def create_privacy_record(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    required = [payload.get("user_id"), payload.get("subject_type"), payload.get("subject_id"), payload.get("consent_type")]
+    if any(value in (None, "") for value in required):
+        raise HTTPException(422, "user_id, subject_type, subject_id, and consent_type are required")
+    retention_until = parse_datetime_value(payload.get("retention_until")) if payload.get("retention_until") else None
+    row = PrivacyRecord(user_id=int(payload["user_id"]), subject_type=str(payload["subject_type"]), subject_id=int(payload["subject_id"]), consent_type=str(payload["consent_type"]), status=str(payload.get("status") or "Pending"), classification=str(payload.get("classification") or "Normal"), retention_until=retention_until, source=str(payload.get("source") or "admin"), metadata_json=payload.get("metadata") or {})
+    db.add(row)
+    db.flush()
+    add_audit(db, "privacy_consent_created", "privacy_records", row.id, f"Recorded {row.consent_type} consent", actor_id=actor.id)
+    db.commit()
+    return serialize(row)
+
+
+@app.post("/api/admin/privacy/{subject_type}/{subject_id}/anonymize")
+def anonymize_subject(subject_type: str, subject_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    model = RESOURCE_MAP.get(subject_type)
+    row = db.get(model, subject_id) if model else (db.get(User, subject_id) if subject_type == "users" else None)
+    if row is None:
+        raise HTTPException(404, "Privacy subject not found")
+    if hasattr(row, "name"):
+        row.name = f"Anonymized {subject_id}"
+    if hasattr(row, "email"):
+        row.email = f"anonymized-{subject_id}@privacy.invalid"
+    for key in ("phone", "notes", "description", "content", "body", "company"):
+        if hasattr(row, key):
+            setattr(row, key, None)
+    if hasattr(row, "anonymized_at"):
+        row.anonymized_at = datetime.utcnow()
+    add_audit(db, "privacy_anonymized", subject_type, subject_id, "Anonymized personal data", actor_id=actor.id)
+    db.commit()
+    return {"ok": True, "resource": subject_type, "id": subject_id, "anonymized_at": datetime.utcnow().isoformat()}
+
+
+def _cpq_rule_matches(rule: PlatformRecord, product: Product, quantity: float, context: dict[str, Any]) -> bool:
+    values = dict(rule.data or {})
+    scope = str(values.get("scope") or "All")
+    if scope == "Product" and str(values.get("scope_value")) != str(product.id):
+        return False
+    if scope == "Category" and str(values.get("scope_value") or "").lower() != str(product.category or "").lower():
+        return False
+    condition = values.get("condition") or {}
+    if isinstance(condition, list):
+        condition = {str(item.get("field")): item.get("value") for item in condition if isinstance(item, dict)}
+    if condition.get("min_quantity") is not None and quantity < float(condition["min_quantity"]):
+        return False
+    if condition.get("max_quantity") is not None and quantity > float(condition["max_quantity"]):
+        return False
+    if condition.get("customer_type") and str(context.get("customer_type") or "") != str(condition["customer_type"]):
+        return False
+    return True
+
+
+@app.get("/api/cpq/catalog")
+def cpq_catalog(db: Session = Depends(get_db)) -> dict[str, Any]:
+    products = db.scalars(select(Product).where(Product.archived == False, Product.status == "Active").order_by(Product.name)).all()
+    return {"products": [serialize(item, db) for item in products], "configurators": _developer_records(db, "product_configurators"), "price_rules": _developer_records(db, "price_rules"), "guided_selling": _developer_records(db, "guided_selling")}
+
+
+@app.post("/api/cpq/price")
+def cpq_price(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    raw_lines = payload.get("lines") or []
+    context = payload.get("context") or {}
+    if not isinstance(raw_lines, list) or not raw_lines:
+        raise HTTPException(422, "At least one product line is required")
+    rules = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "price_rules", PlatformRecord.archived == False, PlatformRecord.status == "Active")).all()
+    lines: list[dict[str, Any]] = []
+    for raw in raw_lines:
+        product = db.get(Product, int(raw.get("product_id") or 0))
+        quantity = float(raw.get("quantity") or 0)
+        if product is None or product.archived or product.status != "Active":
+            raise HTTPException(422, "One or more selected products are unavailable")
+        if quantity <= 0:
+            raise HTTPException(422, "Product quantities must be greater than zero")
+        base = float(product.unit_price or 0) * quantity
+        adjustments: list[dict[str, Any]] = []
+        net = base
+        applied_non_stackable = False
+        for rule in sorted(rules, key=lambda item: int((item.data or {}).get("priority") or 100)):
+            values = dict(rule.data or {})
+            if not _cpq_rule_matches(rule, product, quantity, context):
+                continue
+            if applied_non_stackable and str(values.get("stackable") or "No") != "Yes":
+                continue
+            action = str(values.get("action_type") or "Discount %")
+            amount = float(values.get("action_value") or 0)
+            delta = -net * amount / 100 if action == "Discount %" else net * amount / 100 if action == "Markup %" else amount
+            net += delta
+            adjustments.append({"rule_id": rule.id, "rule": rule.title, "action": action, "value": amount, "delta": round(delta, 2)})
+            applied_non_stackable = applied_non_stackable or str(values.get("stackable") or "No") != "Yes"
+        lines.append({"product_id": product.id, "name": product.name, "sku": product.sku, "quantity": quantity, "unit_price": float(product.unit_price or 0), "base_total": round(base, 2), "adjustments": adjustments, "total": round(max(net, 0), 2)})
+    subtotal = round(sum(item["total"] for item in lines), 2)
+    tax_rate = float(payload.get("tax_rate") or 0)
+    tax = round(subtotal * tax_rate / 100, 2)
+    return {"currency": payload.get("currency") or "INR", "lines": lines, "subtotal": subtotal, "tax_rate": tax_rate, "tax": tax, "total": round(subtotal + tax, 2), "applied_rule_count": sum(len(item["adjustments"]) for item in lines)}
+
+
+@app.post("/api/cpq/quotes", status_code=201)
+def create_cpq_quote(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    priced = cpq_price(payload, db)
+    values = {"name": str(payload.get("name") or "CPQ quote").strip(), "amount": priced["total"], "status": "Draft", "terms": payload.get("terms") or "Prices valid for 30 days.", "line_items": priced["lines"], "tax_rate": priced["tax_rate"], "subtotal": priced["subtotal"], "currency": priced["currency"]}
+    record = PlatformRecord(resource="quotes", title=values["name"], status="Draft", amount=priced["total"], data=values)
+    db.add(record)
+    db.flush()
+    ensure_transaction_number(record)
+    add_audit(db, "cpq_quote_created", "quotes", record.id, f"Created CPQ quote '{record.title}'", after=serialize_platform(record, db))
+    db.commit()
+    db.refresh(record)
+    return {"quote": serialize_platform(record, db), "pricing": priced}
+
+
+@app.get("/api/admin/security/profiles")
+def list_permission_profiles(db: Session = Depends(get_db)) -> dict[str, Any]:
+    items = db.scalars(select(PermissionProfile).order_by(PermissionProfile.name)).all()
+    return {"items": [serialize(item) for item in items], "total": len(items)}
+
+
+@app.post("/api/admin/security/profiles", status_code=201)
+def create_permission_profile(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(422, "Profile name is required")
+    if db.scalar(select(PermissionProfile).where(PermissionProfile.name == name)):
+        raise HTTPException(409, "That profile already exists")
+    item = PermissionProfile(name=name, description=payload.get("description"), grants=payload.get("grants") or {})
+    db.add(item)
+    db.flush()
+    add_audit(db, "create", "permission_profiles", item.id, f"Created permission profile '{item.name}'", after=serialize(item))
+    db.commit()
+    db.refresh(item)
+    return serialize(item)
+
+
+@app.get("/api/admin/security/sharing")
+def list_sharing_policies(db: Session = Depends(get_db)) -> dict[str, Any]:
+    items = db.scalars(select(SharingPolicy).order_by(SharingPolicy.module, SharingPolicy.name)).all()
+    return {"items": [serialize(item) for item in items], "total": len(items)}
+
+
+def serialize_teamspace(teamspace: Teamspace, db: Session) -> dict[str, Any]:
+    members = db.scalars(select(TeamspaceMember).where(TeamspaceMember.teamspace_id == teamspace.id)).all()
+    return {
+        "id": teamspace.id,
+        "name": teamspace.name,
+        "icon": teamspace.icon,
+        "description": teamspace.description,
+        "owner_id": teamspace.owner_id,
+        "owner_name": db.get(User, teamspace.owner_id).name if db.get(User, teamspace.owner_id) else None,
+        "modules": teamspace.modules or [],
+        "folders": teamspace.folders or [],
+        "members": [{"id": item.user_id, "role": item.membership_role, "name": db.get(User, item.user_id).name if db.get(User, item.user_id) else None} for item in members],
+        "created_at": teamspace.created_at.isoformat() if teamspace.created_at else None,
+        "updated_at": teamspace.updated_at.isoformat() if teamspace.updated_at else None,
+    }
+
+
+@app.get("/api/teamspaces")
+def list_teamspaces(db: Session = Depends(get_db)) -> dict[str, Any]:
+    rows = db.scalars(select(Teamspace).where(Teamspace.archived == False).order_by(Teamspace.name)).all()
+    return {"items": [serialize_teamspace(row, db) for row in rows]}
+
+
+@app.post("/api/teamspaces", status_code=201)
+def create_teamspace(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(422, "Teamspace name is required")
+    owner_id = int(payload.get("owner_id") or (db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)) or 0))
+    if not db.get(User, owner_id):
+        raise HTTPException(422, "Select a valid owner")
+    teamspace = Teamspace(name=name, icon=str(payload.get("icon") or "◈")[:40], description=payload.get("description"), owner_id=owner_id, modules=list(payload.get("modules") or []), folders=list(payload.get("folders") or []))
+    db.add(teamspace)
+    db.flush()
+    db.add(TeamspaceMember(teamspace_id=teamspace.id, user_id=owner_id, membership_role="Admin"))
+    add_audit(db, "create", "teamspaces", teamspace.id, f"Created teamspace '{teamspace.name}'", after=serialize_teamspace(teamspace, db), actor_id=owner_id)
+    db.commit()
+    db.refresh(teamspace)
+    return serialize_teamspace(teamspace, db)
+
+
+@app.get("/api/teamspaces/{teamspace_id}")
+def get_teamspace(teamspace_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    teamspace = db.scalar(select(Teamspace).where(Teamspace.id == teamspace_id, Teamspace.archived == False))
+    if teamspace is None:
+        raise HTTPException(404, "Teamspace not found")
+    return serialize_teamspace(teamspace, db)
+
+
+@app.patch("/api/teamspaces/{teamspace_id}")
+def update_teamspace(teamspace_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    teamspace = db.get(Teamspace, teamspace_id)
+    if teamspace is None or teamspace.archived:
+        raise HTTPException(404, "Teamspace not found")
+    before = serialize_teamspace(teamspace, db)
+    for key in ("name", "icon", "description", "modules", "folders"):
+        if key in payload:
+            if key == "name" and not str(payload[key] or "").strip():
+                raise HTTPException(422, "Teamspace name cannot be empty")
+            setattr(teamspace, key, payload[key])
+    add_audit(db, "update", "teamspaces", teamspace.id, f"Updated teamspace '{teamspace.name}'", before=before, after=serialize_teamspace(teamspace, db), actor_id=teamspace.owner_id)
+    db.commit()
+    db.refresh(teamspace)
+    return serialize_teamspace(teamspace, db)
+
+
+@app.post("/api/teamspaces/{teamspace_id}/members")
+def add_teamspace_member(teamspace_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    teamspace = db.get(Teamspace, teamspace_id)
+    user_id = int(payload.get("user_id") or 0)
+    if teamspace is None or teamspace.archived or not db.get(User, user_id):
+        raise HTTPException(404, "Teamspace or user not found")
+    member = db.scalar(select(TeamspaceMember).where(TeamspaceMember.teamspace_id == teamspace_id, TeamspaceMember.user_id == user_id))
+    if member is None:
+        member = TeamspaceMember(teamspace_id=teamspace_id, user_id=user_id, membership_role=str(payload.get("role") or "Member"))
+        db.add(member)
+    else:
+        member.membership_role = str(payload.get("role") or member.membership_role)
+    db.commit()
+    return serialize_teamspace(teamspace, db)
+
+
+@app.delete("/api/teamspaces/{teamspace_id}/members/{user_id}")
+def remove_teamspace_member(teamspace_id: int, user_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    member = db.scalar(select(TeamspaceMember).where(TeamspaceMember.teamspace_id == teamspace_id, TeamspaceMember.user_id == user_id))
+    if member is None:
+        raise HTTPException(404, "Teamspace member not found")
+    db.delete(member)
+    db.commit()
+    return {"ok": True, "teamspace_id": teamspace_id, "user_id": user_id}
+
+
+@app.get("/api/notifications")
+def list_notifications(unread_only: bool = False, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+    query = select(Notification).order_by(Notification.created_at.desc()).limit(limit)
+    if unread_only:
+        query = query.where(Notification.read_at.is_(None))
+    rows = db.scalars(query).all()
+    return {"items": [{"id": row.id, "user_id": row.user_id, "kind": row.kind, "title": row.title, "body": row.body, "resource": row.resource, "record_id": row.record_id, "read_at": row.read_at.isoformat() if row.read_at else None, "created_at": row.created_at.isoformat()} for row in rows], "unread": db.scalar(select(func.count()).select_from(Notification).where(Notification.read_at.is_(None))) or 0}
+
+
+@app.post("/api/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    row = db.get(Notification, notification_id)
+    if row is None:
+        raise HTTPException(404, "Notification not found")
+    row.read_at = row.read_at or datetime.utcnow()
+    db.commit()
+    return {"ok": True, "id": row.id, "read_at": row.read_at.isoformat()}
+
+
+def _approval_source(db: Session, resource: str, record_id: int) -> tuple[Any, dict[str, Any]]:
+    if resource in RESOURCE_MAP:
+        source = db.get(RESOURCE_MAP[resource], record_id)
+        if source is None or getattr(source, "archived", False):
+            raise HTTPException(404, "Approval source record not found")
+        return source, serialize(source, db)
+    if resource in PLATFORM_RESOURCES:
+        source = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == record_id, PlatformRecord.archived == False))
+        if source is None:
+            raise HTTPException(404, "Approval source record not found")
+        return source, serialize_platform(source, db)
+    raise HTTPException(422, "Approval requests support CRM and platform modules")
+
+
+def _approval_module_matches(process_module: str, resource: str) -> bool:
+    left = str(process_module or "").lower().replace(" ", "_")
+    right = str(resource or "").lower().replace(" ", "_")
+    return left in {right, right.rstrip("s"), "all", "*"}
+
+
+def _approval_steps(process: ApprovalProcess, db: Session) -> list[dict[str, Any]]:
+    raw_steps = process.steps or [{"order": 1, "approver": process.approver}]
+    steps: list[dict[str, Any]] = []
+    active_users = db.scalars(select(User).where(User.status == "Active").order_by(User.id)).all()
+    for index, raw in enumerate(sorted(raw_steps, key=lambda item: int(item.get("order") or 999999))):
+        label = str(raw.get("approver") or raw.get("approver_label") or process.approver or "Approver").strip()
+        approver_id = int(raw["approver_id"]) if raw.get("approver_id") else None
+        if approver_id is None:
+            exact = next((user for user in active_users if user.name.lower() == label.lower() or user.email.lower() == label.lower()), None)
+            role_match = next((user for user in active_users if str(user.role or "").lower() == label.lower()), None)
+            approver_id = (exact or role_match).id if (exact or role_match) else None
+        if approver_id is None:
+            raise HTTPException(422, detail={"code": "APPROVER_NOT_RESOLVED", "message": f"No active user matches approval step '{label}'."})
+        if db.get(User, approver_id) is None or db.get(User, approver_id).status != "Active":
+            raise HTTPException(422, detail={"code": "APPROVER_INACTIVE", "message": f"Approval step '{label}' points to an inactive user."})
+        steps.append({"order": int(raw.get("order") or index + 1), "approver_id": approver_id, "approver_label": label})
+    if not steps:
+        raise HTTPException(422, "Approval process must contain at least one approval step")
+    return steps
+
+
+def _approval_json(request: ApprovalRequest, db: Session) -> dict[str, Any]:
+    process = db.get(ApprovalProcess, request.process_id)
+    decisions = db.scalars(select(ApprovalStepDecision).where(ApprovalStepDecision.request_id == request.id).order_by(ApprovalStepDecision.step_order)).all()
+    return {"id": request.id, "process_id": request.process_id, "process_name": process.name if process else None, "resource": request.resource, "record_id": request.record_id, "requester_id": request.requester_id, "status": request.status, "current_step": request.current_step, "comment": request.comment, "snapshot": request.snapshot or {}, "submitted_at": request.submitted_at.isoformat(), "completed_at": request.completed_at.isoformat() if request.completed_at else None, "steps": [{"id": row.id, "order": row.step_order, "approver_id": row.approver_id, "approver_name": db.get(User, row.approver_id).name if row.approver_id and db.get(User, row.approver_id) else None, "approver_label": row.approver_label, "status": row.status, "comment": row.comment, "delegated_to": row.delegated_to, "acted_at": row.acted_at.isoformat() if row.acted_at else None} for row in decisions]}
+
+
+def _approval_set_source_status(source: Any, status: str) -> None:
+    if hasattr(source, "status"):
+        source.status = status
+
+
+def _create_approval_request(process: ApprovalProcess, resource: str, record_id: int, requester_id: int | None, comment: str | None, db: Session) -> tuple[ApprovalRequest, bool]:
+    source, snapshot = _approval_source(db, resource, record_id)
+    if not _approval_module_matches(process.module, resource):
+        raise HTTPException(422, "The approval process does not apply to this module")
+    if process.status != "Active":
+        raise HTTPException(409, "The approval process is inactive")
+    if not workflow_criteria_match(snapshot, process.conditions or []):
+        raise HTTPException(422, detail={"code": "APPROVAL_CRITERIA_NOT_MET", "message": "The record does not meet this approval process criteria."})
+    key = f"{process.id}:{resource}:{record_id}:{snapshot.get('version') or snapshot.get('updated_at') or snapshot.get('id')}"
+    existing = db.scalar(select(ApprovalRequest).where(ApprovalRequest.operation_key == key))
+    if existing:
+        return existing, True
+    steps = _approval_steps(process, db)
+    request = ApprovalRequest(process_id=process.id, resource=resource, record_id=record_id, requester_id=requester_id, status="Pending", current_step=steps[0]["order"], comment=comment, snapshot=snapshot, operation_key=key)
+    db.add(request)
+    db.flush()
+    for index, step in enumerate(steps):
+        db.add(ApprovalStepDecision(request_id=request.id, step_order=step["order"], approver_id=step["approver_id"], approver_label=step["approver_label"], status="Pending" if index == 0 else "Waiting"))
+    _approval_set_source_status(source, "Pending Approval")
+    add_audit(db, "approval_submitted", resource, record_id, f"Submitted '{process.name}' for {len(steps)}-level approval", after={"approval_request_id": request.id, "process_id": process.id}, actor_id=requester_id)
+    return request, False
+
+
+def _approval_actor(payload: dict[str, Any], db: Session) -> User:
+    actor_id = int(payload.get("actor_id") or (db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)) or 0))
+    actor = db.get(User, actor_id)
+    if actor is None or actor.status != "Active":
+        raise HTTPException(403, "An active approval actor is required")
+    return actor
+
+
+@app.post("/api/approvals/requests", status_code=201)
+def submit_approval_request(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    process_id = int(payload.get("process_id") or 0)
+    process = db.get(ApprovalProcess, process_id)
+    if process is None:
+        raise HTTPException(404, "Approval process not found")
+    requester = _approval_actor(payload, db)
+    request, duplicate = _create_approval_request(process, str(payload.get("resource") or "").strip(), int(payload.get("record_id") or 0), requester.id, payload.get("comment"), db)
+    db.commit()
+    db.refresh(request)
+    return {**_approval_json(request, db), "duplicate": duplicate}
+
+
+@app.get("/api/approvals/requests")
+def list_approval_requests(status: str | None = None, approver_id: int | None = None, resource: str | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+    query = select(ApprovalRequest).order_by(ApprovalRequest.submitted_at.desc()).limit(limit)
+    if status:
+        query = query.where(ApprovalRequest.status == status)
+    if resource:
+        query = query.where(ApprovalRequest.resource == resource)
+    if approver_id:
+        query = query.join(ApprovalStepDecision, ApprovalStepDecision.request_id == ApprovalRequest.id).where(ApprovalStepDecision.approver_id == approver_id, ApprovalStepDecision.status == "Pending")
+    rows = db.scalars(query).unique().all()
+    return {"items": [_approval_json(row, db) for row in rows], "total": len(rows)}
+
+
+@app.get("/api/approvals/requests/{request_id}")
+def get_approval_request(request_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    request = db.get(ApprovalRequest, request_id)
+    if request is None:
+        raise HTTPException(404, "Approval request not found")
+    return _approval_json(request, db)
+
+
+def _current_approval_step(request: ApprovalRequest, db: Session) -> ApprovalStepDecision:
+    step = db.scalar(select(ApprovalStepDecision).where(ApprovalStepDecision.request_id == request.id, ApprovalStepDecision.step_order == request.current_step))
+    if step is None or step.status != "Pending":
+        raise HTTPException(409, "This approval request has no actionable current step")
+    return step
+
+
+def _ensure_approval_actor(step: ApprovalStepDecision, actor: User) -> None:
+    if step.approver_id != actor.id:
+        raise HTTPException(403, detail={"code": "APPROVER_NOT_AUTHORIZED", "message": "You are not the approver assigned to the current step."})
+
+
+@app.post("/api/approvals/requests/{request_id}/approve")
+def approve_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    request = db.get(ApprovalRequest, request_id)
+    if request is None:
+        raise HTTPException(404, "Approval request not found")
+    if request.status != "Pending":
+        return {**_approval_json(request, db), "duplicate": True}
+    actor = _approval_actor(payload, db)
+    step = _current_approval_step(request, db)
+    _ensure_approval_actor(step, actor)
+    step.status = "Approved"
+    step.comment = payload.get("comment")
+    step.acted_at = datetime.utcnow()
+    process = db.get(ApprovalProcess, request.process_id)
+    next_step = db.scalar(select(ApprovalStepDecision).where(ApprovalStepDecision.request_id == request.id, ApprovalStepDecision.step_order > request.current_step).order_by(ApprovalStepDecision.step_order))
+    if next_step:
+        next_step.status = "Pending"
+        request.current_step = next_step.step_order
+        message = f"Approved approval step {step.step_order}; step {next_step.step_order} is now pending"
+    else:
+        request.status = "Approved"
+        request.completed_at = datetime.utcnow()
+        source, _snapshot = _approval_source(db, request.resource, request.record_id)
+        _approval_set_source_status(source, "Approved")
+        message = "Completed all approval levels"
+    add_audit(db, "approval_approved", request.resource, request.record_id, message, after={"approval_request_id": request.id, "step": step.step_order, "actor_id": actor.id}, actor_id=actor.id)
+    db.commit()
+    db.refresh(request)
+    return {**_approval_json(request, db), "duplicate": False}
+
+
+@app.post("/api/approvals/requests/{request_id}/reject")
+def reject_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    request = db.get(ApprovalRequest, request_id)
+    if request is None:
+        raise HTTPException(404, "Approval request not found")
+    if request.status != "Pending":
+        return {**_approval_json(request, db), "duplicate": True}
+    actor = _approval_actor(payload, db)
+    step = _current_approval_step(request, db)
+    _ensure_approval_actor(step, actor)
+    step.status = "Rejected"
+    step.comment = payload.get("comment") or "Rejected"
+    step.acted_at = datetime.utcnow()
+    request.status = "Rejected"
+    request.completed_at = datetime.utcnow()
+    source, _snapshot = _approval_source(db, request.resource, request.record_id)
+    _approval_set_source_status(source, "Rejected")
+    add_audit(db, "approval_rejected", request.resource, request.record_id, f"Rejected approval at step {step.step_order}: {step.comment}", after={"approval_request_id": request.id, "step": step.step_order, "actor_id": actor.id}, actor_id=actor.id)
+    db.commit()
+    db.refresh(request)
+    return {**_approval_json(request, db), "duplicate": False}
+
+
+@app.post("/api/approvals/requests/{request_id}/delegate")
+def delegate_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    request = db.get(ApprovalRequest, request_id)
+    if request is None:
+        raise HTTPException(404, "Approval request not found")
+    if request.status != "Pending":
+        raise HTTPException(409, "Only pending approval requests can be delegated")
+    actor = _approval_actor(payload, db)
+    step = _current_approval_step(request, db)
+    _ensure_approval_actor(step, actor)
+    delegate_id = int(payload.get("delegate_to") or 0)
+    delegate = db.get(User, delegate_id)
+    if delegate is None or delegate.status != "Active":
+        raise HTTPException(422, "Delegate must be an active user")
+    step.delegated_to = delegate.id
+    step.approver_id = delegate.id
+    step.comment = payload.get("comment") or f"Delegated by {actor.name}"
+    add_audit(db, "approval_delegated", request.resource, request.record_id, f"Delegated approval step {step.step_order} to {delegate.name}", after={"approval_request_id": request.id, "step": step.step_order, "delegate_id": delegate.id}, actor_id=actor.id)
+    db.commit()
+    db.refresh(request)
+    return _approval_json(request, db)
+
+
+@app.get("/api/automation/executions")
+def list_workflow_executions(status: str | None = None, resource: str | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+    query = select(WorkflowExecution).order_by(WorkflowExecution.created_at.desc()).limit(limit)
+    if status:
+        query = query.where(WorkflowExecution.status == status)
+    if resource:
+        query = query.where(WorkflowExecution.resource == resource)
+    rows = db.scalars(query).all()
+    return {"items": [{"id": row.id, "rule_id": row.rule_id, "resource": row.resource, "record_id": row.record_id, "event": row.event, "status": row.status, "actions": row.actions or [], "error": row.error, "scheduled_for": row.scheduled_for.isoformat() if row.scheduled_for else None, "created_at": row.created_at.isoformat(), "completed_at": row.completed_at.isoformat() if row.completed_at else None} for row in rows], "total": len(rows)}
+
+
+@app.post("/api/automation/executions/{execution_id}/run")
+def run_queued_workflow(execution_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+    execution = db.get(WorkflowExecution, execution_id)
+    if execution is None:
+        raise HTTPException(404, "Workflow execution not found")
+    if execution.status == "completed":
+        return {"id": execution.id, "status": execution.status, "duplicate": True}
+    if execution.status not in {"queued", "failed"}:
+        raise HTTPException(409, "Workflow execution is already running")
+    record = db.get(PlatformRecord, execution.record_id)
+    if record is None or record.archived:
+        execution.status = "failed"
+        execution.error = "Source record no longer exists"
+        db.commit()
+        raise HTTPException(409, "The workflow source record no longer exists")
+    try:
+        for action in execution.actions or []:
+            _execute_workflow_action(db, action, execution.resource, record, {**(record.data or {}), "id": record.id, "name": record.title})
+        execution.status = "completed"
+        execution.error = None
+        execution.completed_at = datetime.utcnow()
+        add_audit(db, "automation", execution.resource, execution.record_id, f"Ran queued workflow execution #{execution.id}")
+        db.commit()
+        return {"id": execution.id, "status": execution.status, "duplicate": False}
+    except (ValueError, TypeError) as error:
+        execution.status = "failed"
+        execution.error = str(error)
+        db.commit()
+        raise HTTPException(422, f"Workflow action failed: {error}") from error
+
+
+@app.get("/api/blueprints/{blueprint_id}/transitions")
+def blueprint_transition_history(blueprint_id: int, record_id: int | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+    if db.get(Blueprint, blueprint_id) is None:
+        raise HTTPException(404, "Blueprint not found")
+    query = select(BlueprintTransitionLog).where(BlueprintTransitionLog.blueprint_id == blueprint_id).order_by(BlueprintTransitionLog.created_at.desc()).limit(limit)
+    if record_id:
+        query = query.where(BlueprintTransitionLog.record_id == record_id)
+    rows = db.scalars(query).all()
+    return {"items": [{"id": row.id, "module": row.module, "record_id": row.record_id, "from_stage": row.from_stage, "to_stage": row.to_stage, "actor_id": row.actor_id, "requirements": row.requirements or [], "created_at": row.created_at.isoformat()} for row in rows], "total": len(rows)}
+
+
+@app.get("/api/v1/modules")
+def versioned_modules() -> dict[str, Any]:
+    core = [{"api_name": key, "label": key.replace("_", " ").title(), "type": "standard"} for key in RESOURCE_MAP if key not in {"notes", "attachments", "emails"}]
+    custom = [{"api_name": key, "label": value.get("label"), "type": "platform", "fields": value.get("fields", [])} for key, value in PLATFORM_RESOURCES.items()]
+    return {"version": "v1", "modules": core + custom}
+
+
+@app.get("/api/v1/{resource}")
+def versioned_list(resource: str, search: str | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    if resource in PLATFORM_RESOURCES:
+        return list_platform_records(resource, search=search, limit=limit, offset=offset, db=db, actor=actor)
+    if resource in RESOURCE_MAP:
+        return get_collection(resource, search=search, limit=limit, offset=offset, db=db, actor=actor)
+    raise HTTPException(404, "Module not found")
+
+
+@app.get("/api/v1/{resource}/{item_id}")
+def versioned_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    if resource in PLATFORM_RESOURCES:
+        return get_platform_record(resource, item_id, db, actor)
+    return get_record(resource, item_id, db, actor)
+
+
+
+@app.get("/api/setup/search")
+def setup_search(q: str = "") -> dict[str, Any]:
+    needle = q.strip().lower()
+    items: list[dict[str, str]] = []
+    for group, links in SETUP_NAVIGATION.items():
+        for resource, label in links:
+            haystack = f"{group} {label} {resource}".lower()
+            if not needle or needle in haystack:
+                items.append({"group": group, "resource": resource, "label": label, "path": f"/setup/{resource}"})
+    return {"items": items, "total": len(items), "query": q}
+
+
+@app.get("/api/administration/storage")
+def storage_usage(db: Session = Depends(get_db)) -> dict[str, Any]:
+    platform_records = db.scalar(select(func.count()).select_from(PlatformRecord)) or 0
+    core_counts = {name: int(db.scalar(select(func.count()).select_from(model)) or 0) for name, model in RESOURCE_MAP.items() if name in {"leads", "contacts", "accounts", "deals", "products", "activities", "notes", "attachments", "emails"}}
+    attachment_bytes = 0
+    document_bytes = 0
+    if UPLOAD_ROOT.exists():
+        for file_path in UPLOAD_ROOT.rglob("*"):
+            if file_path.is_file():
+                size = file_path.stat().st_size
+                attachment_bytes += size
+                if DOCUMENT_UPLOAD_ROOT in file_path.parents:
+                    document_bytes += size
+    db_bytes = 0
+    url = os.getenv("DATABASE_URL", "")
+    if url.startswith("sqlite:///"):
+        candidate = Path(url.removeprefix("sqlite:///"))
+        if candidate.exists():
+            db_bytes = candidate.stat().st_size
+    return {
+        "database_bytes": db_bytes,
+        "attachment_bytes": attachment_bytes,
+        "document_bytes": document_bytes,
+        "platform_records": int(platform_records),
+        "core_records": core_counts,
+        "captured_at": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/api/administration/configuration-backup")
+def configuration_backup(db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> Response:
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == False).order_by(PlatformRecord.resource, PlatformRecord.id)).all()
+    payload = {
+        "product": "Yash CRM",
+        "generated_at": datetime.utcnow().isoformat(),
+        "catalog": public_catalog(),
+        "setup_navigation": SETUP_NAVIGATION,
+        "platform_records": [serialize_platform(row, db, actor) for row in rows],
+    }
+    add_audit(db, "export", "configuration_backup", None, "Exported configuration backup")
+    db.commit()
+    filename = f"yash-crm-configuration-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.json"
+    return Response(content=json.dumps(payload, ensure_ascii=False, indent=2, default=str), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.post("/api/webforms/{form_id}/submit", status_code=201)
+def submit_webform(form_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+    form = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == "webforms", PlatformRecord.id == form_id, PlatformRecord.archived == False))
+    if form is None or str(form.status).lower() not in {"active", "enabled"}:
+        raise HTTPException(404, "Webform not found or not active")
+    config = form.data or {}
+    target = str(config.get("target_module") or "Leads")
+    allowed_fields = {str(item.get("api_name") or item.get("key") or "").strip() for item in (config.get("fields") or []) if isinstance(item, dict)}
+    incoming = dict(payload or {})
+    if allowed_fields:
+        incoming = {k: v for k, v in incoming.items() if k in allowed_fields}
+    defaults = config.get("defaults") or {}
+    if isinstance(defaults, dict):
+        for key, value in defaults.items():
+            incoming.setdefault(key, value)
+    owner = db.scalar(select(User).where(User.status == "Active").order_by(User.id))
+    if target == "Leads":
+        name = str(incoming.get("name") or incoming.get("full_name") or incoming.get("last_name") or "Webform Lead").strip()
+        record = Lead(name=name, company=incoming.get("company"), email=incoming.get("email"), phone=incoming.get("phone"), source=incoming.get("source") or f"Webform: {form.title}", status="New", owner_id=owner.id if owner else None, notes=incoming.get("notes"))
+        db.add(record); db.flush(); resource = "leads"
+    elif target == "Contacts":
+        first = str(incoming.get("first_name") or "").strip()
+        last = str(incoming.get("last_name") or incoming.get("name") or "Webform Contact").strip()
+        record = Contact(first_name=first, last_name=last, email=incoming.get("email"), phone=incoming.get("phone"), job_title=incoming.get("job_title"), owner_id=owner.id if owner else None)
+        db.add(record); db.flush(); resource = "contacts"
+    else:
+        platform_resource = "cases" if target == "Cases" else str(config.get("custom_resource") or "").strip()
+        if platform_resource not in PLATFORM_RESOURCES:
+            raise HTTPException(422, "Webform target module is not supported")
+        values = incoming
+        values.setdefault("name", str(incoming.get("subject") or incoming.get("name") or f"Webform {target}"))
+        validate_platform_values(platform_resource, values)
+        record = PlatformRecord(resource=platform_resource, title=str(values["name"]), data={})
+        sync_platform_columns(record, values)
+        db.add(record); db.flush(); resource = platform_resource
+    add_audit(db, "create", resource, record.id, f"Created {resource} record from webform '{form.title}'")
+    db.commit()
+    return {"ok": True, "resource": resource, "record_id": record.id, "message": "Submission accepted"}
+
+
+@app.post("/api/marketplace/{item_id}/{action}")
+def marketplace_action(item_id: int, action: str, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+    record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == "marketplace_integrations", PlatformRecord.id == item_id, PlatformRecord.archived == False))
+    if record is None:
+        raise HTTPException(404, "Integration not found")
+    transitions = {"install": "Installed", "enable": "Enabled", "disable": "Disabled", "uninstall": "Available"}
+    if action not in transitions:
+        raise HTTPException(422, "Unsupported marketplace action")
+    before = serialize_platform(record)
+    values = dict(record.data or {})
+    values["status"] = transitions[action]
+    if action in {"uninstall", "disable"}:
+        values["connection_status"] = "Not Connected" if action == "uninstall" else values.get("connection_status", "Not Connected")
+    sync_platform_columns(record, values)
+    add_audit(db, action, "marketplace_integrations", record.id, f"{action.title()} integration '{record.title}'", before=before, after=serialize_platform(record))
+    db.commit(); db.refresh(record)
+    return serialize_platform(record, db, actor)
+
 @app.get("/api/platform/{resource}")
 def list_platform_records(
     resource: str,
@@ -2289,6 +4237,7 @@ def list_platform_records(
     offset: int = Query(default=0, ge=0),
     include_archived: bool = False,
     db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
 ) -> dict[str, Any]:
     platform_config(resource)
     query = select(PlatformRecord).where(PlatformRecord.resource == resource)
@@ -2301,7 +4250,6 @@ def list_platform_records(
         query = query.where(PlatformRecord.status == status)
     if owner_id:
         query = query.where(PlatformRecord.owner_id == owner_id)
-    total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     ordering = {
         "created_asc": PlatformRecord.created_at.asc(),
         "created_desc": PlatformRecord.created_at.desc(),
@@ -2311,14 +4259,19 @@ def list_platform_records(
         "name_desc": PlatformRecord.title.desc(),
         "amount_desc": PlatformRecord.amount.desc(),
     }.get(sort, PlatformRecord.updated_at.desc())
-    rows = db.scalars(query.order_by(ordering).limit(limit).offset(offset)).all()
-    return {"items": [serialize_platform(row, db) for row in rows], "total": int(total), "limit": limit, "offset": offset}
+    visible_rows = [row for row in db.scalars(query.order_by(ordering)).all() if can_access_record(db, resource, row, actor)]
+    return {"items": [serialize_platform(row, db, actor) for row in visible_rows[offset:offset + limit]], "total": len(visible_rows), "limit": limit, "offset": offset}
 
 
 @app.post("/api/platform/{resource}", status_code=201)
-def create_platform_record(resource: str, payload: PlatformPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_platform_record(resource: str, payload: PlatformPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     config = platform_config(resource)
     values = platform_values(payload)
+    authorize_field_values(db, resource, values, actor, "write")
+    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator":
+        values.setdefault("owner_id", actor.id)
+        if values.get("owner_id") != actor.id:
+            raise HTTPException(403, "You may only create records owned by yourself")
     normalize_platform_links(db, resource, values)
     validate_platform_values(resource, values)
     if config.get("singleton") and db.scalar(select(PlatformRecord.id).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)):
@@ -2340,12 +4293,14 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
 
 
 @app.get("/api/platform/{resource}/{item_id}")
-def get_platform_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_platform_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     platform_config(resource)
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
     if record is None or record.archived:
         raise HTTPException(404, "Record not found")
-    return serialize_platform(record, db)
+    if not can_access_record(db, resource, record, actor):
+        raise HTTPException(404, "Record not found")
+    return serialize_platform(record, db, actor)
 
 
 @app.get("/api/platform/{resource}/{item_id}/related")
@@ -2366,13 +4321,16 @@ def get_platform_related(resource: str, item_id: int, db: Session = Depends(get_
 
 
 @app.patch("/api/platform/{resource}/{item_id}")
-def update_platform_record(resource: str, item_id: int, payload: PlatformPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_platform_record(resource: str, item_id: int, payload: PlatformPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     config = platform_config(resource)
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
     if record is None or record.archived:
         raise HTTPException(404, "Record not found")
+    if not can_access_record(db, resource, record, actor, "write"):
+        raise HTTPException(403, "You do not have access to update this record")
     before = serialize_platform(record)
     changes = platform_values(payload)
+    authorize_field_values(db, resource, changes, actor, "write")
     validate_platform_values(resource, changes, partial=True)
     values = dict(record.data or {})
     values.update(changes)
@@ -2383,7 +4341,7 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
     ensure_transaction_number(record)
     if resource == "payments":
         refresh_invoice_balance(db, int(values["invoice_id"]))
-    run_platform_automation(db, resource, "update", record, values)
+    run_platform_automation(db, resource, "update", record, values, before_values=before)
     add_audit(db, "update", resource, item_id, f"Updated {config['singular']} '{record.title}'", before=before, after=serialize_platform(record))
     db.commit()
     db.refresh(record)
@@ -2391,11 +4349,13 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
 
 
 @app.delete("/api/platform/{resource}/{item_id}")
-def archive_platform_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def archive_platform_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     config = platform_config(resource)
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
     if record is None or record.archived:
         raise HTTPException(404, "Record not found")
+    if not can_access_record(db, resource, record, actor, "write"):
+        raise HTTPException(403, "You do not have access to archive this record")
     before = serialize_platform(record)
     record.archived = True
     record.version = int(record.version or 1) + 1
@@ -2492,15 +4452,15 @@ def duplicate_candidates(resource: str, db: Session = Depends(get_db)) -> dict[s
 
 
 @app.get("/api/export/{resource}.csv")
-def export_csv(resource: str, db: Session = Depends(get_db)) -> StreamingResponse:
+def export_csv(resource: str, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> StreamingResponse:
     if resource in PLATFORM_RESOURCES:
-        rows = [serialize_platform(row, db) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)).all()]
+        rows = [serialize_platform(row, db, actor) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)).all() if can_access_record(db, resource, row, actor)]
     elif resource in RESOURCE_MAP:
         model = RESOURCE_MAP[resource]
         query = select(model)
         if hasattr(model, "archived"):
             query = query.where(getattr(model, "archived") == False)
-        rows = [serialize(row, db) for row in db.scalars(query).all()]
+        rows = [serialize(row, db, actor) for row in db.scalars(query).all() if can_access_record(db, resource, row, actor)]
     else:
         raise HTTPException(404, "Unknown export resource")
     keys = sorted({key for row in rows for key in row.keys() if key not in {"data"}}) or ["id", "name"]
@@ -2595,10 +4555,10 @@ async def upload_document(
 
 
 @app.get("/api/{resource}")
-def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, activity_type: str | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, activity_type: str | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
-    return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset, activity_type)
+    return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset, activity_type, actor)
 
 
 @app.post("/api/leads/bulk-archive")
@@ -2617,7 +4577,7 @@ def bulk_archive_leads(payload: BulkArchivePayload, db: Session = Depends(get_db
 
 
 @app.post("/api/{resource}")
-def create_record(resource: str, payload: RecordPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def create_record(resource: str, payload: RecordPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     model = RESOURCE_MAP[resource]
@@ -2626,6 +4586,11 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
         if key in {"id", "created_at", "updated_at"} or model.__table__.columns.get(key) is None or value is None:
             continue
         values[key] = coerce_value(model, key, value)
+    authorize_field_values(db, resource, values, actor, "write")
+    if isinstance(actor, User) and str(actor.role or "").lower() != "administrator" and hasattr(model, "owner_id"):
+        values.setdefault("owner_id", actor.id)
+        if values.get("owner_id") != actor.id:
+            raise HTTPException(403, "You may only create records owned by yourself")
     if resource == "users" and not (values.get("name") and values.get("email")):
         raise HTTPException(422, "Name and email are required")
     if resource == "approval_processes" and not values.get("name"):
@@ -2659,26 +4624,33 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
 
 
 @app.get("/api/{resource}/{item_id}")
-def get_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     item = db.get(RESOURCE_MAP[resource], item_id)
     if item is None or getattr(item, "archived", False):
         raise HTTPException(404, "Record not found")
-    return serialize(item, db)
+    if not can_access_record(db, resource, item, actor):
+        raise HTTPException(404, "Record not found")
+    return serialize(item, db, actor)
 
 
 @app.patch("/api/{resource}/{item_id}")
-def update_record(resource: str, item_id: int, payload: RecordPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_record(resource: str, item_id: int, payload: RecordPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     item = db.get(RESOURCE_MAP[resource], item_id)
     if item is None:
         raise HTTPException(404, "Record not found")
+    if not can_access_record(db, resource, item, actor, "write"):
+        raise HTTPException(403, "You do not have access to update this record")
     model = RESOURCE_MAP[resource]
     before_full = serialize(item, db)
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    incoming = payload.model_dump(exclude_unset=True)
+    authorize_field_values(db, resource, incoming, actor, "write")
+    blueprint = enforce_blueprint_transition(db, resource, item, getattr(item, "stage", None), incoming.get("stage"), {**before_full, **incoming}) if resource == "deals" else None
+    for key, value in incoming.items():
         column = model.__table__.columns.get(key)
         if key in {"id", "created_at", "updated_at"} or column is None:
             continue
@@ -2694,6 +4666,8 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         item.completed_at = datetime.utcnow()
     if resource == "activities" and getattr(item, "status", None) != "Completed":
         item.completed_at = None
+    if resource == "deals" and item.stage != before[0]:
+        record_blueprint_transition(db, blueprint, resource, item_id, str(before[0] or ""), str(item.stage), serialize(item, db), actor_id=item.owner_id)
     add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db))
     db.commit()
     db.refresh(item)
@@ -2701,12 +4675,14 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
 
 
 @app.delete("/api/{resource}/{item_id}")
-def delete_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def delete_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
     item = db.get(RESOURCE_MAP[resource], item_id)
     if item is None:
         raise HTTPException(404, "Record not found")
+    if not can_access_record(db, resource, item, actor, "write"):
+        raise HTTPException(403, "You do not have access to delete this record")
     if resource == "users":
         item.status = "Inactive"
         add_audit(db, "deactivate", resource, item_id, "Deactivated user", before=serialize(item, db))
