@@ -826,6 +826,7 @@ function bindMetadataModuleActions() {
 }
 
 function bindSetupConsole() {
+  bindMetadataModuleActions();
   $(`[data-focus-module-form]`)?.addEventListener("click", () => $(`[data-module-form-card]`)?.scrollIntoView({behavior:"smooth"}));
   $(`[data-metadata-module-form]`)?.addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/api/admin/metadata/modules", {method:"POST", body:JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries()))}); toast("Module created", "The metadata module is ready for fields and layouts."); await navigate("/setup-console/modules", true); } catch (error) { toast("Could not create module", error.message, "error"); } });
   $$(`[data-add-metadata-field]`).forEach((button) => button.addEventListener("click", async () => { const label = window.prompt("Field label:"); if (!label) return; const apiName = window.prompt("Field API name:", label.toLowerCase().replace(/[^a-z0-9]+/g, "_")); if (!apiName) return; const type = window.prompt("Field type (text, number, currency, date, picklist, lookup):", "text"); try { await api(`/api/admin/metadata/modules/${button.dataset.addMetadataField}/fields`, {method:"POST", body:JSON.stringify({label, api_name:apiName, field_type:type || "text", position:0})}); toast("Field created", `${label} is available in the metadata model.`); await renderRoute(); } catch (error) { toast("Could not create field", error.message, "error"); } }));
