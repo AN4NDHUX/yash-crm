@@ -51,6 +51,7 @@ def test_browser_signup_login_and_module_navigation():
             "ADMIN_EMAIL": "admin@example.com",
             "ADMIN_NAME": "Administrator",
             "SEED_DEMO_DATA": "false",
+            "YASHCRM_LOGIN_OTP_REQUIRED": "true",
             "PYTHONPATH": str(ROOT),
         })
         server = subprocess.Popen(
