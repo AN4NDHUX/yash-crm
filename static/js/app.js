@@ -1413,7 +1413,7 @@ async function settingsView(tab) {
   if (tab === 'approval-process') content = await approvalSettingsView();
   if (tab === 'blueprint') content = await blueprintSettingsView();
   const labels = { general: 'General settings', 'profile-users': 'Profile & users', 'approval-process': 'Approval process', blueprint: 'Blueprint' };
-  return `<section class="setup-page-shell"><div class="setup-toolbar"><button class="button button-ghost button-small" data-go="/setup">← Back to Setup</button><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input value="${esc(labels[tab] || 'Settings')}" disabled /></label><button class="button button-ghost" data-go="/setup/customize_setup">Customize Setup</button></div><div class="setup-workspace">${setupDirectory(tab === 'general' ? 'company_details' : tab === 'profile-users' ? 'users' : tab === 'approval-process' ? 'approval_processes' : 'blueprints')}<div class="settings-content">${content}</div></div></section>`;
+  return `<section class="setup-page-shell"><div class="setup-toolbar setup-toolbar-search-only"><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" /></label></div><div class="setup-workspace">${setupDirectory(tab === 'general' ? 'company_details' : tab === 'profile-users' ? 'users' : tab === 'approval-process' ? 'approval_processes' : 'blueprints')}<div class="settings-content">${content}</div></div></section>`;
 }
 
 async function settingsPlatformSummary(resource, title) {
