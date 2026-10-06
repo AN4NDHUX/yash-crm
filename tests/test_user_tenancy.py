@@ -247,3 +247,26 @@ def test_cloud_administrator_can_sign_in_with_app_username_or_admin_email():
     assert out['username_login'] == 200
     assert out['email_login'] == 200
     assert out['owner'] == 200
+
+
+def test_environment_owner_credentials_repair_stale_admin_password():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        with main.SessionLocal() as db:
+            admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
+            admin.password_hash = main._password_hash('old-password-123')
+            db.commit()
+
+        response = c.post('/api/auth/login', json={
+            'identifier':'admin',
+            'password':'supersecretpass123'
+        })
+        out['login'] = response.status_code
+        out['owner'] = c.get('/owner').status_code
+        with main.SessionLocal() as db:
+            admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
+            out['synced'] = main._password_valid('supersecretpass123', admin.password_hash)
+    """)
+    assert out['login'] == 200
+    assert out['owner'] == 200
+    assert out['synced'] is True
