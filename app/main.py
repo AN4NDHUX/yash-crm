@@ -1900,13 +1900,25 @@ def global_search(q: str = Query(default="", min_length=0), db: Session = Depend
         clauses = [getattr(model, column).ilike(pattern) for column in columns]
         if resource == "contacts":
             clauses.append((Contact.first_name + " " + Contact.last_name).ilike(pattern))
-        for row in db.scalars(select(model).where(or_(*clauses), model.archived == False).limit(5)).all():
+        for row in db.scalars(select(model).where(or_(*clauses), model.archived == False).limit(20)).all():
+            if not can_access_record(db, resource, row, actor):
+                continue
             item = serialize(row, db, actor)
             label = item.get("full_name") or item.get("name")
+            if not label:
+                continue
             results.append({"resource": resource, "id": item["id"], "label": label, "meta": item.get("company") or item.get("stage") or item.get("industry")})
+            if len([entry for entry in results if entry.get("resource") == resource]) >= 5:
+                break
     if len(results) < 12:
-        platform_rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == False, PlatformRecord.title.ilike(pattern)).order_by(PlatformRecord.updated_at.desc()).limit(12 - len(results))).all()
-        results.extend({"resource": row.resource, "id": row.id, "label": row.title, "meta": PLATFORM_RESOURCES.get(row.resource, {}).get("label", row.resource), "platform": True} for row in platform_rows)
+        platform_rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == False, PlatformRecord.title.ilike(pattern)).order_by(PlatformRecord.updated_at.desc()).limit(40)).all()
+        for row in platform_rows:
+            if not can_access_record(db, row.resource, row, actor):
+                continue
+            item = serialize_platform(row, db, actor)
+            results.append({"resource": row.resource, "id": row.id, "label": item.get("name") or item.get("title") or row.title, "meta": PLATFORM_RESOURCES.get(row.resource, {}).get("label", row.resource), "platform": True})
+            if len(results) >= 12:
+                break
     return {"results": results[:12]}
 
 
@@ -3755,7 +3767,8 @@ def _cpq_rule_matches(rule: PlatformRecord, product: Product, quantity: float, c
 @app.get("/api/cpq/catalog")
 def cpq_catalog(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     products = db.scalars(select(Product).where(Product.archived == False, Product.status == "Active").order_by(Product.name)).all()
-    return {"products": [serialize(item, db) for item in products], "configurators": _developer_records(db, "product_configurators"), "price_rules": _developer_records(db, "price_rules"), "guided_selling": _developer_records(db, "guided_selling")}
+    visible_products = [serialize(item, db, actor) for item in products if can_access_record(db, "products", item, actor)]
+    return {"products": visible_products, "configurators": _developer_records(db, "product_configurators"), "price_rules": _developer_records(db, "price_rules"), "guided_selling": _developer_records(db, "guided_selling")}
 
 
 @app.post("/api/cpq/price")
@@ -3769,7 +3782,7 @@ def cpq_price(payload: dict[str, Any], db: Session = Depends(get_db), actor: Use
     for raw in raw_lines:
         product = db.get(Product, int(raw.get("product_id") or 0))
         quantity = float(raw.get("quantity") or 0)
-        if product is None or product.archived or product.status != "Active":
+        if product is None or product.archived or product.status != "Active" or not can_access_record(db, "products", product, actor):
             raise HTTPException(422, "One or more selected products are unavailable")
         if quantity <= 0:
             raise HTTPException(422, "Product quantities must be greater than zero")
@@ -4037,11 +4050,37 @@ def _approval_steps(process: ApprovalProcess, db: Session) -> list[dict[str, Any
         raise HTTPException(422, "Approval process must contain at least one approval step")
     return steps
 
-def _approval_json(request: ApprovalRequest, db: Session) -> dict[str, Any]:
+def _approval_json(request: ApprovalRequest, db: Session, actor: User | None = None) -> dict[str, Any]:
     process = db.get(ApprovalProcess, request.process_id)
     decisions = db.scalars(select(ApprovalStepDecision).where(ApprovalStepDecision.request_id == request.id).order_by(ApprovalStepDecision.step_order)).all()
-    return {"id": request.id, "process_id": request.process_id, "process_name": process.name if process else None, "resource": request.resource, "record_id": request.record_id, "requester_id": request.requester_id, "status": request.status, "current_step": request.current_step, "comment": request.comment, "snapshot": request.snapshot or {}, "submitted_at": request.submitted_at.isoformat(), "completed_at": request.completed_at.isoformat() if request.completed_at else None, "steps": [{"id": row.id, "order": row.step_order, "approver_id": row.approver_id, "approver_name": db.get(User, row.approver_id).name if row.approver_id and db.get(User, row.approver_id) else None, "approver_label": row.approver_label, "status": row.status, "comment": row.comment, "delegated_to": row.delegated_to, "acted_at": row.acted_at.isoformat() if row.acted_at else None} for row in decisions]}
-
+    snapshot = dict(request.snapshot or {})
+    if isinstance(actor, User):
+        snapshot = redact_record_fields(db, request.resource, snapshot, actor)
+    return {
+        "id": request.id,
+        "process_id": request.process_id,
+        "process_name": process.name if process else None,
+        "resource": request.resource,
+        "record_id": request.record_id,
+        "requester_id": request.requester_id,
+        "status": request.status,
+        "current_step": request.current_step,
+        "comment": request.comment,
+        "snapshot": snapshot,
+        "submitted_at": request.submitted_at.isoformat(),
+        "completed_at": request.completed_at.isoformat() if request.completed_at else None,
+        "steps": [{
+            "id": row.id,
+            "order": row.step_order,
+            "approver_id": row.approver_id,
+            "approver_name": db.get(User, row.approver_id).name if row.approver_id and db.get(User, row.approver_id) else None,
+            "approver_label": row.approver_label,
+            "status": row.status,
+            "comment": row.comment,
+            "delegated_to": row.delegated_to,
+            "acted_at": row.acted_at.isoformat() if row.acted_at else None,
+        } for row in decisions],
+    }
 
 def _approval_set_source_status(source: Any, status: str) -> None:
     if hasattr(source, "status"):
@@ -4085,7 +4124,7 @@ def submit_approval_request(payload: dict[str, Any], db: Session = Depends(get_d
     request, duplicate = _create_approval_request(process, str(payload.get("resource") or "").strip(), int(payload.get("record_id") or 0), actor.id, payload.get("comment"), db)
     db.commit()
     db.refresh(request)
-    return {**_approval_json(request, db), "duplicate": duplicate}
+    return {**_approval_json(request, db, actor), "duplicate": duplicate}
 
 
 @app.get("/api/approvals/requests")
@@ -4100,7 +4139,7 @@ def list_approval_requests(status: str | None = None, approver_id: int | None = 
             raise HTTPException(404, "Approver not found")
         query = query.join(ApprovalStepDecision, ApprovalStepDecision.request_id == ApprovalRequest.id).where(ApprovalStepDecision.approver_id == approver_id, ApprovalStepDecision.status == "Pending")
     rows = db.scalars(query).unique().all()
-    return {"items": [_approval_json(row, db) for row in rows], "total": len(rows)}
+    return {"items": [_approval_json(row, db, actor) for row in rows], "total": len(rows)}
 
 
 @app.get("/api/approvals/requests/{request_id}")
@@ -4108,7 +4147,7 @@ def get_approval_request(request_id: int, db: Session = Depends(get_db), actor: 
     request = db.get(ApprovalRequest, request_id)
     if request is None:
         raise HTTPException(404, "Approval request not found")
-    return _approval_json(request, db)
+    return _approval_json(request, db, actor)
 
 
 def _current_approval_step(request: ApprovalRequest, db: Session) -> ApprovalStepDecision:
@@ -4129,7 +4168,7 @@ def approve_request(request_id: int, payload: dict[str, Any], db: Session = Depe
     if request is None:
         raise HTTPException(404, "Approval request not found")
     if request.status != "Pending":
-        return {**_approval_json(request, db), "duplicate": True}
+        return {**_approval_json(request, db, actor), "duplicate": True}
     step = _current_approval_step(request, db)
     _ensure_approval_actor(step, actor)
     step.status = "Approved"
@@ -4150,7 +4189,7 @@ def approve_request(request_id: int, payload: dict[str, Any], db: Session = Depe
     add_audit(db, "approval_approved", request.resource, request.record_id, message, after={"approval_request_id": request.id, "step": step.step_order, "actor_id": actor.id}, actor_id=actor.id)
     db.commit()
     db.refresh(request)
-    return {**_approval_json(request, db), "duplicate": False}
+    return {**_approval_json(request, db, actor), "duplicate": False}
 
 
 @app.post("/api/approvals/requests/{request_id}/reject")
@@ -4159,7 +4198,7 @@ def reject_request(request_id: int, payload: dict[str, Any], db: Session = Depen
     if request is None:
         raise HTTPException(404, "Approval request not found")
     if request.status != "Pending":
-        return {**_approval_json(request, db), "duplicate": True}
+        return {**_approval_json(request, db, actor), "duplicate": True}
     step = _current_approval_step(request, db)
     _ensure_approval_actor(step, actor)
     step.status = "Rejected"
@@ -4172,7 +4211,7 @@ def reject_request(request_id: int, payload: dict[str, Any], db: Session = Depen
     add_audit(db, "approval_rejected", request.resource, request.record_id, f"Rejected approval at step {step.step_order}: {step.comment}", after={"approval_request_id": request.id, "step": step.step_order, "actor_id": actor.id}, actor_id=actor.id)
     db.commit()
     db.refresh(request)
-    return {**_approval_json(request, db), "duplicate": False}
+    return {**_approval_json(request, db, actor), "duplicate": False}
 
 
 @app.post("/api/approvals/requests/{request_id}/delegate")
@@ -4194,7 +4233,7 @@ def delegate_request(request_id: int, payload: dict[str, Any], db: Session = Dep
     add_audit(db, "approval_delegated", request.resource, request.record_id, f"Delegated approval step {step.step_order} to {delegate.name}", after={"approval_request_id": request.id, "step": step.step_order, "delegate_id": delegate.id}, actor_id=actor.id)
     db.commit()
     db.refresh(request)
-    return _approval_json(request, db)
+    return _approval_json(request, db, actor)
 
 
 @app.get("/api/automation/executions")
