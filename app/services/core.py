@@ -20,6 +20,11 @@ from app.schemas import *
 _redact_hook = lambda db, resource, data, actor: data
 _access_hook = lambda db, resource, record, actor, access="read": True
 _org_resolver_hook = lambda db, user_id: None
+_approval_create_hook = None
+
+def configure_approval_hook(callback) -> None:
+    global _approval_create_hook
+    _approval_create_hook = callback
 
 def configure_security_hooks(redact, access, organization_resolver) -> None:
     global _redact_hook, _access_hook, _org_resolver_hook
@@ -427,7 +432,9 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
         process = db.get(ApprovalProcess, process_id)
         if process is None:
             raise ValueError("start_approval requires a valid process_id")
-        request, duplicate = _create_approval_request(process, resource, record.id, getattr(record, "owner_id", None), action.get("comment"), db)
+        if _approval_create_hook is None:
+            raise RuntimeError("Approval service is not registered")
+        request, duplicate = _approval_create_hook(process, resource, record.id, getattr(record, "owner_id", None), action.get("comment"), db)
         if duplicate:
             add_audit(db, "approval_duplicate", resource, record.id, f"Approval request already exists for process '{process.name}'")
     elif action_type == "tag":
@@ -731,6 +738,7 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
 
 
 
+
 __all__ = [
     "STAGE_PROBABILITY",
     "STAGE_STATUS",
@@ -744,6 +752,7 @@ __all__ = [
     "add_audit",
     "apply_assignment_rule",
     "coerce_value",
+    "configure_approval_hook",
     "configure_security_hooks",
     "enforce_blueprint_transition",
     "ensure_platform_defaults",
