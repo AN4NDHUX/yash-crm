@@ -298,8 +298,31 @@ def startup() -> None:
         if not IS_PRODUCTION or env_bool("SEED_DEMO_DATA"):
             seed_defaults(db)
         ensure_cloud_admin(db)
-        ensure_workspace_defaults(db)
-        ensure_platform_defaults(db, include_demo=(not IS_PRODUCTION or env_bool("SEED_DEMO_DATA")))
+        configured_username = os.getenv("APP_USERNAME", "").strip().lower()
+        bootstrap_admin = db.scalar(
+            select(User)
+            .where(
+                func.lower(User.username) == configured_username,
+                User.status == "Active",
+            )
+            .order_by(User.id)
+        ) if configured_username else None
+        if bootstrap_admin is None:
+            bootstrap_admin = db.scalar(
+                select(User)
+                .where(func.lower(User.role) == "administrator", User.status == "Active")
+                .order_by(User.id)
+            )
+        bootstrap_org_id = _organization_id_for_user(db, bootstrap_admin.id) if bootstrap_admin else None
+        if bootstrap_admin is not None and bootstrap_org_id is not None:
+            actor_token = TENANT_ACTOR_ID.set(bootstrap_admin.id)
+            organization_token = TENANT_ORGANIZATION_ID.set(bootstrap_org_id)
+            try:
+                ensure_workspace_defaults(db)
+                ensure_platform_defaults(db, include_demo=(not IS_PRODUCTION or env_bool("SEED_DEMO_DATA")))
+            finally:
+                TENANT_ORGANIZATION_ID.reset(organization_token)
+                TENANT_ACTOR_ID.reset(actor_token)
 
 
 @asynccontextmanager
