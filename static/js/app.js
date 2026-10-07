@@ -263,6 +263,10 @@ function bindPricing() {
         body: JSON.stringify({ plan_code: planCode }),
       });
       toast("Plan updated", `Your subscription is now ${result.subscription?.plan_name || titleCase(planCode)}.`);
+      try {
+        state.profile = await api("/api/settings/profile");
+        applyProfile();
+      } catch {}
       await renderRoute();
     } catch (error) {
       if (button) {
@@ -370,12 +374,14 @@ function applyProfile() {
 
   const username = String(profile.username || profile.name || "Account").trim() || "Account";
   const role = String(profile.role || "CRM user").trim() || "CRM user";
+  const planName = String(profile.plan_name || profile.subscription?.plan_name || "Free").trim() || "Free";
   const isOwnerAdmin = profile.owner_console_access === true;
 
   // Bottom-left identity always represents the current authenticated account.
   $(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
   $(".user-mini strong").forEach((node) => { node.textContent = username; });
-  $(".user-mini small").forEach((node) => { node.textContent = role; });
+  $(".user-mini-role").forEach((node) => { node.textContent = role; });
+  $(".user-mini-plan").forEach((node) => { node.textContent = planName; });
 
   // These controls belong exclusively to the APP_USERNAME platform owner.
   const topProfile = $("#top-profile");
