@@ -203,17 +203,8 @@ class ConfigRobustnessTests(unittest.TestCase):
             with TestClient(main.app) as c:
                 with main.SessionLocal() as db:
                     admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
-                    setting = main.OrganizationSetting(
-                        owner_id=admin.id,
-                        org_name='Yash CRM',
-                        timezone='',
-                        currency='INR',
-                        date_format='DD MMM YYYY',
-                        fiscal_year_start='April',
-                        default_pipeline='Default sales pipeline',
-                        notifications={},
-                    )
-                    db.add(setting)
+                    setting = main.get_or_create_settings(db)
+                    setting.timezone = ''
                     db.commit()
                 h = basic('admin', 'supersecretpass123')
                 r = c.get('/api/ai/exceptions/readiness', headers=h)
