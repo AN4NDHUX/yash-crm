@@ -859,6 +859,8 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
 
 
 __all__ = [
+    "RESOURCE_MAP",
+    "SEARCH_COLUMNS",
     "STAGE_PROBABILITY",
     "STAGE_STATUS",
     "TRANSACTION_NUMBERS",
