@@ -32,6 +32,13 @@
 
 * { box-sizing: border-box; }
 html { background: var(--bg); scroll-behavior: smooth; overflow-x: hidden; }
+
+/* Hidden must win over component display rules.
+   Owner-only controls depend on this for secure UI visibility. */
+[hidden] {
+  display: none !important;
+}
+
 body { margin: 0; min-width: 320px; max-width: 100%; overflow-x: hidden; color: var(--text); background: var(--bg); font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
