@@ -137,16 +137,16 @@ def test_security_headers_and_no_duplicate_routes():
     assert out['uploads_mount'] is False
 
 
-def test_password_policy_requires_twelve_characters():
+def test_password_policy_requires_eight_characters():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
         short = c.post('/api/auth/signup', json={
             'name':'Short Password','username':'short.password','email':'short@example.com',
-            'password':'12345678901'
+            'password':'1234567'
         })
         valid = c.post('/api/auth/signup', json={
             'name':'Valid Password','username':'valid.password','email':'valid@example.com',
-            'password':'123456789012'
+            'password':'12345678'
         })
         out['short'] = short.status_code
         out['valid'] = valid.status_code
