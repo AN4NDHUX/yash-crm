@@ -184,3 +184,26 @@ def test_existing_empty_workspace_user_can_accept_invitation_safely():
         out['moved'] = before != after and after == target_org
     """)
     assert out == {'accepted': 200, 'moved': True}
+
+
+def test_normal_member_cannot_change_organization_settings():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Settings Owner','username':'settings.owner','email':'settings.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'settings.member@example.com'})
+        token = invite.json()['invitation_token']
+        owner_update = c.put('/api/settings/general', json={'org_name':'Owner Workspace'})
+        out['owner_update'] = owner_update.status_code
+        c.post('/api/auth/logout')
+        c.post('/api/auth/signup', json={
+            'name':'Settings Member','username':'settings.member','email':'settings.member@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        denied = c.put('/api/settings/general', json={'org_name':'Unauthorized Rename'})
+        out['member_update'] = denied.status_code
+        out['code'] = (denied.json().get('detail') or {}).get('code')
+    """)
+    assert out == {'owner_update': 200, 'member_update': 403, 'code': 'ORG_ADMIN_REQUIRED'}
