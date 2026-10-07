@@ -4237,7 +4237,8 @@ def delegate_request(request_id: int, payload: dict[str, Any], db: Session = Dep
 
 
 @app.get("/api/automation/executions")
-def list_workflow_executions(status: str | None = None, resource: str | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_workflow_executions(status: str | None = None, resource: str | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     query = select(WorkflowExecution).order_by(WorkflowExecution.created_at.desc()).limit(limit)
     if status:
         query = query.where(WorkflowExecution.status == status)
@@ -4248,7 +4249,8 @@ def list_workflow_executions(status: str | None = None, resource: str | None = N
 
 
 @app.post("/api/automation/executions/{execution_id}/run")
-def run_queued_workflow(execution_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def run_queued_workflow(execution_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     execution = db.get(WorkflowExecution, execution_id)
     if execution is None:
         raise HTTPException(404, "Workflow execution not found")
@@ -4279,7 +4281,8 @@ def run_queued_workflow(execution_id: int, db: Session = Depends(get_db)) -> dic
 
 
 @app.get("/api/blueprints/{blueprint_id}/transitions")
-def blueprint_transition_history(blueprint_id: int, record_id: int | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+def blueprint_transition_history(blueprint_id: int, record_id: int | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     if db.get(Blueprint, blueprint_id) is None:
         raise HTTPException(404, "Blueprint not found")
     query = select(BlueprintTransitionLog).where(BlueprintTransitionLog.blueprint_id == blueprint_id).order_by(BlueprintTransitionLog.created_at.desc()).limit(limit)
@@ -4568,16 +4571,18 @@ def archive_platform_record(resource: str, item_id: int, db: Session = Depends(g
 
 
 @app.post("/api/platform/{resource}/{item_id}/restore")
-def restore_platform_record(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def restore_platform_record(resource: str, item_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     config = platform_config(resource)
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id))
     if record is None:
         raise HTTPException(404, "Record not found")
+    if not can_access_record(db, resource, record, actor, "write"):
+        raise HTTPException(403, "You do not have access to restore this record")
     record.archived = False
     add_audit(db, "restore", resource, item_id, f"Restored {config['singular']} '{record.title}'", after=serialize_platform(record))
     db.commit()
     db.refresh(record)
-    return serialize_platform(record, db)
+    return serialize_platform(record, db, actor)
 
 
 
@@ -4636,14 +4641,15 @@ def export_audit_csv(resource: str | None = None, action: str | None = None, act
 
 
 @app.get("/api/administration/recycle-bin")
-def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db)) -> dict[str, Any]:
+def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     items: list[dict[str, Any]] = []
     for resource, model in RESOURCE_MAP.items():
         if not hasattr(model, "archived"):
             continue
         rows = db.scalars(select(model).where(getattr(model, "archived") == True).limit(limit)).all()
         for row in rows:
-            serialized = serialize(row, db)
+            serialized = serialize(row, db, actor)
             items.append({"resource": resource, "id": row.id, "name": serialized.get("name") or serialized.get("full_name") or serialized.get("subject") or serialized.get("title") or f"#{row.id}", "archived_at": serialized.get("updated_at")})
     rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == True).order_by(PlatformRecord.updated_at.desc()).limit(limit)).all()
     items.extend({"resource": row.resource, "id": row.id, "name": row.title, "archived_at": row.updated_at.isoformat() if row.updated_at else None, "platform": True} for row in rows)
@@ -4652,7 +4658,8 @@ def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Dep
 
 
 @app.post("/api/administration/restore")
-def restore_archived(payload: RestorePayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def restore_archived(payload: RestorePayload, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     if payload.resource in PLATFORM_RESOURCES:
         record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == payload.resource, PlatformRecord.id == payload.record_id))
     else:
@@ -4660,14 +4667,17 @@ def restore_archived(payload: RestorePayload, db: Session = Depends(get_db)) -> 
         record = db.get(model, payload.record_id) if model and hasattr(model, "archived") else None
     if record is None:
         raise HTTPException(404, "Archived record not found")
+    if not can_access_record(db, payload.resource, record, actor, "write"):
+        raise HTTPException(403, "You do not have access to restore this record")
     record.archived = False
-    add_audit(db, "restore", payload.resource, payload.record_id, "Restored record from recycle bin")
+    add_audit(db, "restore", payload.resource, payload.record_id, "Restored record from recycle bin", actor_id=actor.id)
     db.commit()
     return {"ok": True, "resource": payload.resource, "id": payload.record_id}
 
 
 @app.get("/api/administration/duplicates")
-def duplicate_candidates(resource: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def duplicate_candidates(resource: str, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    organization, _membership = _require_organization_admin(db, actor)
     groups: list[dict[str, Any]] = []
     if resource in PLATFORM_RESOURCES:
         rows = db.execute(select(func.lower(PlatformRecord.title), func.count(PlatformRecord.id)).where(PlatformRecord.resource == resource, PlatformRecord.archived == False).group_by(func.lower(PlatformRecord.title)).having(func.count(PlatformRecord.id) > 1)).all()
@@ -4677,12 +4687,23 @@ def duplicate_candidates(resource: str, db: Session = Depends(get_db)) -> dict[s
     elif resource in {"leads", "contacts", "users"}:
         model = RESOURCE_MAP[resource]
         email_column = getattr(model, "email")
-        query = select(func.lower(email_column), func.count(model.id)).where(email_column.is_not(None)).group_by(func.lower(email_column)).having(func.count(model.id) > 1)
+        query = select(func.lower(email_column), func.count(model.id)).where(email_column.is_not(None))
+        allowed_user_ids: list[int] | None = None
+        if resource == "users":
+            allowed_user_ids = list(db.scalars(select(OrganizationMember.user_id).where(
+                OrganizationMember.organization_id == organization.id,
+                OrganizationMember.status == "Active",
+            )).all())
+            query = query.where(model.id.in_(allowed_user_ids or [-1]))
         if hasattr(model, "archived"):
             query = query.where(getattr(model, "archived") == False)
+        query = query.group_by(func.lower(email_column)).having(func.count(model.id) > 1)
         for normalized, count in db.execute(query).all():
-            matches = db.scalars(select(model).where(func.lower(email_column) == normalized)).all()
-            groups.append({"match_on": "email", "value": normalized, "count": int(count), "records": [serialize(row, db) for row in matches]})
+            match_query = select(model).where(func.lower(email_column) == normalized)
+            if allowed_user_ids is not None:
+                match_query = match_query.where(model.id.in_(allowed_user_ids or [-1]))
+            matches = db.scalars(match_query).all()
+            groups.append({"match_on": "email", "value": normalized, "count": int(count), "records": [serialize(row, db, actor) for row in matches]})
     else:
         raise HTTPException(422, "Duplicate detection currently supports platform modules, leads, contacts and users")
     return {"resource": resource, "groups": groups, "duplicate_groups": len(groups)}
