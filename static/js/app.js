@@ -1,3 +1,5 @@
+import { requestJson } from "./core/http.js";
+
 const state = {
   meta: null,
   route: window.location.pathname,
@@ -136,37 +138,23 @@ function lookupName(resource, id) {
 }
 
 async function api(path, options = {}, retried = false) {
-  let response;
-  const { headers: extraHeaders, ...fetchOptions } = options;
-  const csrf = state.aiStatus?.csrf_token;
   try {
-    // headers are merged AFTER the options spread; previously a caller-supplied `headers`
-    // replaced Content-Type and the CSRF header wholesale.
-    response = await fetch(path, { credentials: "same-origin", ...fetchOptions, headers: { "Content-Type": "application/json", ...(csrf ? { "X-Yash-CSRF": csrf } : {}), ...(extraHeaders || {}) } });
-  }
-  catch { throw new Error("Yash CRM could not reach the server. Check the connection and try again."); }
-  const raw = await response.text();
-  let body = {};
-  try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
-  if (!response.ok) {
-    const detail = body.detail && typeof body.detail === "object" ? body.detail : null;
-    // A restart/redeploy while this tab was open invalidates nothing now that the token is stable,
-    // but a rotated YASHCRM_CSRF_SECRET or APP_PASSWORD still does: refresh once, then retry.
-    // The server rejects before acting, so replaying the request cannot double-apply it.
-    if (response.status === 403 && detail?.code === "CSRF_REJECTED" && !retried && path !== "/api/ai/status") {
+    return await requestJson(path, options, state.aiStatus?.csrf_token || null);
+  } catch (error) {
+    if (error.status === 403 && error.code === "CSRF_REJECTED" && !retried && path !== "/api/ai/status") {
       let refreshed = null;
-      try { refreshed = await api("/api/ai/status", {}, true); } catch { /* keep the original error */ }
-      if (refreshed?.csrf_token) { state.aiStatus = refreshed; return api(path, options, true); }
+      try {
+        refreshed = await requestJson("/api/ai/status", {}, null);
+      } catch {
+        throw error;
+      }
+      if (refreshed?.csrf_token) {
+        state.aiStatus = refreshed;
+        return api(path, options, true);
+      }
     }
-    const message = response.status === 401
-      ? "You are not signed in, or your sign-in expired. Reload the page and enter your credentials again."
-      : (detail?.message || body.detail || body.message || raw.slice(0, 180) || `Request failed with HTTP ${response.status}`);
-    const error = new Error(message);
-    error.status = response.status;
-    error.code = detail?.code || body.code || null;
     throw error;
   }
-  return body;
 }
 
 function toast(title, message = "", type = "success") {
