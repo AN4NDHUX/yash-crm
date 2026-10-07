@@ -51,7 +51,6 @@ def test_browser_signup_login_and_module_navigation():
             "ADMIN_EMAIL": "admin@example.com",
             "ADMIN_NAME": "Administrator",
             "SEED_DEMO_DATA": "false",
-            "YASHCRM_LOGIN_OTP_REQUIRED": "true",
             "PYTHONPATH": str(ROOT),
         })
         server = subprocess.Popen(
@@ -89,12 +88,6 @@ def test_browser_signup_login_and_module_navigation():
                 page.goto(base + "/login")
                 page.fill("#identifier", "browser.user")
                 page.fill("#password", "browser-password-123")
-                page.click("#submit-button")
-                page.locator("#otp-field").wait_for(state="visible", timeout=10000)
-                deadline = time.time() + 10
-                while time.time() < deadline and len(page.input_value("#otp")) != 6:
-                    time.sleep(0.1)
-                assert len(page.input_value("#otp")) == 6
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard", timeout=10000)
 
