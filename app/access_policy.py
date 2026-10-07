@@ -6,6 +6,7 @@ from typing import Final
 ENTITLEMENT_RESOURCE_FEATURES: Final[dict[str, str]] = {
     "reports": "reports",
     "dashboards": "reports",
+    "analytics": "advanced_analytics",
     "ai": "apex",
     "cpq": "cpq",
     "price_books": "inventory_management",
@@ -54,6 +55,8 @@ def request_entitlement_feature(path: str) -> str | None:
         return "cpq"
     if parts[1] in {"reports", "dashboards"}:
         return "reports"
+    if parts[1] == "analytics":
+        return "advanced_analytics"
     if parts[1] == "admin" and len(parts) >= 3 and parts[2] == "metadata":
         return "custom_modules"
     if parts[1] == "platform" and len(parts) >= 3:
