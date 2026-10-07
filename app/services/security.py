@@ -491,6 +491,15 @@ def _ensure_user_organization(db: Session, user: User) -> Organization:
         status="Active",
     ))
     db.flush()
+
+    actor_token = TENANT_ACTOR_ID.set(user.id)
+    organization_token = TENANT_ORGANIZATION_ID.set(organization.id)
+    try:
+        ensure_workspace_defaults(db)
+        ensure_platform_defaults(db, include_demo=False)
+    finally:
+        TENANT_ORGANIZATION_ID.reset(organization_token)
+        TENANT_ACTOR_ID.reset(actor_token)
     return organization
 
 
