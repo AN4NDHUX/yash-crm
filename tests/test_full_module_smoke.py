@@ -227,3 +227,94 @@ def test_malformed_profile_json_cannot_take_down_all_modules():
         out['failures'] = failures
     """)
     assert out['failures'] == {}
+
+
+def test_every_visible_module_avoids_500_with_legacy_security_records():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        signup = c.post('/api/auth/signup', json={
+            'name':'Module Audit User',
+            'username':'module.audit',
+            'email':'module.audit@example.com',
+            'password':'strong-password-123'
+        })
+        out['signup'] = signup.status_code
+
+        with main.SessionLocal() as db:
+            user = db.scalar(main.select(main.User).where(main.User.email == 'module.audit@example.com'))
+            org_id = main._organization_id_for_user(db, user.id)
+            user.role = 'Sales rep'
+            user.profile_name = 'Legacy Profile'
+            token_actor = main.TENANT_ACTOR_ID.set(user.id)
+            token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
+            try:
+                db.add_all([
+                    main.PlatformRecord(
+                        organization_id=org_id,
+                        owner_id=user.id,
+                        resource='roles',
+                        title='Sales rep',
+                        status='Active',
+                        data=['invalid-role-json'],
+                        archived=False,
+                    ),
+                    main.PlatformRecord(
+                        organization_id=org_id,
+                        owner_id=user.id,
+                        resource='profiles',
+                        title='Legacy Profile',
+                        status='Active',
+                        data='invalid-profile-json',
+                        archived=False,
+                    ),
+                ])
+                db.commit()
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token_org)
+                main.TENANT_ACTOR_ID.reset(token_actor)
+
+        endpoints = {
+            'dashboard': '/api/dashboard',
+            'teamspaces': '/api/teamspaces',
+            'leads': '/api/leads?limit=1',
+            'contacts': '/api/contacts?limit=1',
+            'accounts': '/api/accounts?limit=1',
+            'deals': '/api/deals?limit=1',
+            'tasks': '/api/activities?activity_type=Task&limit=1',
+            'meetings': '/api/activities?activity_type=Meeting&limit=1',
+            'calls': '/api/activities?activity_type=Call&limit=1',
+            'products': '/api/products?limit=1',
+            'price_books': '/api/platform/price_books?limit=1',
+            'vendors': '/api/platform/vendors?limit=1',
+            'quotes': '/api/platform/quotes?limit=1',
+            'sales_orders': '/api/platform/sales_orders?limit=1',
+            'purchase_orders': '/api/platform/purchase_orders?limit=1',
+            'invoices': '/api/platform/invoices?limit=1',
+            'payments': '/api/platform/payments?limit=1',
+            'campaigns': '/api/platform/campaigns?limit=1',
+            'cases': '/api/platform/cases?limit=1',
+            'solutions': '/api/platform/solutions?limit=1',
+            'documents': '/api/platform/documents?limit=1',
+            'site_visits': '/api/platform/site_visits?limit=1',
+            'forecasts': '/api/platform/forecasts?limit=1',
+            'reports': '/api/platform/reports?limit=1',
+            'dashboards': '/api/platform/dashboards?limit=1',
+            'sales_targets': '/api/platform/sales_targets?limit=1',
+            'meta': '/api/meta',
+            'catalog': '/api/platform/catalog',
+            'settings': '/api/settings/general',
+            'profile': '/api/settings/profile',
+            'ai_status': '/api/ai/status',
+        }
+        failures = {}
+        statuses = {}
+        for name, path in endpoints.items():
+            response = c.get(path)
+            statuses[name] = response.status_code
+            if response.status_code >= 500:
+                failures[name] = [response.status_code, response.text[:500]]
+        out['failures'] = failures
+        out['statuses'] = statuses
+    """)
+    assert out['signup'] == 201
+    assert out['failures'] == {}
