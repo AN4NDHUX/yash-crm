@@ -1273,6 +1273,11 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # Never return a poisoned SQLAlchemy session to the pool and never leave a
+        # partially flushed request transaction pending after an API failure.
+        db.rollback()
+        raise
     finally:
         db.close()
 
