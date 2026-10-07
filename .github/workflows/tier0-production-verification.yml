@@ -1,0 +1,109 @@
+name: Tier 0 Production Verification
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CRM Regression Tests"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier0-production-verification
+  cancel-in-progress: true
+
+jobs:
+  verify-production:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://yashcrm-production.up.railway.app' }}
+      EXPECTED_APP_REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
+      PRODUCTION_ADMIN_USERNAME: ${{ secrets.PRODUCTION_ADMIN_USERNAME }}
+      PRODUCTION_ADMIN_PASSWORD: ${{ secrets.PRODUCTION_ADMIN_PASSWORD }}
+      PRODUCTION_SMOKE_USER_A_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_A_IDENTIFIER }}
+      PRODUCTION_SMOKE_USER_A_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_USER_A_PASSWORD }}
+      PRODUCTION_SMOKE_USER_B_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_B_IDENTIFIER }}
+      PRODUCTION_SMOKE_USER_B_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_USER_B_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install migration tooling
+        run: python -m pip install -r requirements.txt
+
+      - name: Resolve expected migration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD="$(python -m alembic heads | awk 'NR==1 {print $1}')"
+          test -n "$HEAD"
+          echo "EXPECTED_MIGRATION_REVISION=$HEAD" >> "$GITHUB_ENV"
+          echo "Expected production migration: $HEAD"
+
+      - name: Validate production verification secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            PRODUCTION_ADMIN_USERNAME
+            PRODUCTION_ADMIN_PASSWORD
+            PRODUCTION_SMOKE_USER_A_IDENTIFIER
+            PRODUCTION_SMOKE_USER_A_PASSWORD
+            PRODUCTION_SMOKE_USER_B_IDENTIFIER
+            PRODUCTION_SMOKE_USER_B_PASSWORD
+          )
+          missing=()
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing required GitHub Actions secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Wait for Railway to serve the verified revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if python - <<'PY'
+import json
+import os
+from urllib.request import urlopen
+
+base = os.environ["PRODUCTION_BASE_URL"].rstrip("/")
+expected = os.environ["EXPECTED_APP_REVISION"].strip()
+with urlopen(base + "/ready", timeout=15) as response:
+    payload = json.load(response)
+live = str(payload.get("app_revision") or "")
+if (
+    response.status == 200
+    and payload.get("status") == "ok"
+    and payload.get("database") == "ready"
+    and live != "unknown"
+    and (live.startswith(expected) or expected.startswith(live))
+):
+    print(f"Railway is serving {live}")
+else:
+    raise SystemExit(1)
+PY
+            then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Railway did not serve expected revision $EXPECTED_APP_REVISION" >&2
+          exit 1
+
+      - name: Run Tier 0 production verifier
+        run: python scripts/verify_production.py
