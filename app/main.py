@@ -2922,7 +2922,9 @@ def organization_members(db: Session = Depends(get_db), actor: User = Depends(cu
 
 
 def _organization_has_business_data(db: Session, organization_id: int) -> bool:
-    for model in (Lead, Contact, Account, Deal, Activity, Product, Note, Attachment, Email, DocumentBlob):
+    # Product rows are baseline catalog data provisioned automatically for every
+    # workspace, so they cannot be used to decide whether a workspace is empty.
+    for model in (Lead, Contact, Account, Deal, Activity, Note, Attachment, Email, DocumentBlob):
         if not hasattr(model, "organization_id"):
             continue
         if int(db.scalar(select(func.count()).select_from(model).where(model.organization_id == organization_id)) or 0) > 0:
