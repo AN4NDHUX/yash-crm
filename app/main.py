@@ -56,6 +56,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker, with_loader_criteria
 
 from app.platform_catalog import PLATFORM_RESOURCES, SETUP_NAVIGATION, public_catalog
+from app.billing import BillingError, configured_provider, create_hosted_checkout, verify_webhook
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -276,6 +277,17 @@ class SubscriptionChangeRequest(Base):
     provider_reference: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class BillingWebhookEvent(Base):
+    __tablename__ = "billing_webhook_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(30), index=True)
+    event_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    event_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    request_id: Mapped[int | None] = mapped_column(ForeignKey("subscription_change_requests.id", ondelete="SET NULL"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(30), default="Received", index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class PrivacyRecord(TimestampMixin, Base):
@@ -2002,7 +2014,7 @@ def ensure_cloud_admin(db: Session) -> None:
 
 
 PUBLIC_PROBE_PATHS = frozenset({"/health", "/ready"})
-PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/auth/forgot-password", "/api/auth/reset-password"})
+PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/billing/webhook/stripe", "/api/billing/webhook/razorpay"})
 # Static, non-sensitive files that browsers request WITHOUT the page's Basic-auth
 # credentials: the manifest fetch, favicon requests and the manifest's icons. Putting
 # them behind auth makes installability and the tab icon fail with 401. Exact paths
@@ -5631,6 +5643,140 @@ def update_organization_member(
     add_audit(db, "organization_member_updated", "organizations", organization.id, f"Updated organization member #{user_id}", before=before, after={"membership_role": membership_role, "status": status}, actor_id=actor.id)
     db.commit()
     return {"ok": True, "user_id": user_id, "membership_role": membership_role, "status": status}
+
+
+def _pending_upgrade_request(db: Session, actor: User, plan: Plan) -> tuple[OrganizationSubscription, SubscriptionChangeRequest]:
+    subscription = _ensure_organization_subscription(db, actor)
+    pending = db.scalar(select(SubscriptionChangeRequest).where(
+        SubscriptionChangeRequest.organization_id == subscription.organization_id,
+        SubscriptionChangeRequest.to_plan_id == plan.id,
+        SubscriptionChangeRequest.status == "Pending Payment",
+    ).order_by(SubscriptionChangeRequest.id.desc()))
+    if pending is None:
+        pending = SubscriptionChangeRequest(
+            organization_id=subscription.organization_id,
+            requested_by=actor.id,
+            from_plan_id=subscription.plan_id,
+            to_plan_id=plan.id,
+            status="Pending Payment",
+        )
+        db.add(pending)
+        db.flush()
+    return subscription, pending
+
+
+@app.post("/api/billing/checkout")
+def billing_checkout(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    plan_code = str(payload.get("plan_code") or "").strip().lower()
+    plan = db.scalar(select(Plan).where(func.lower(Plan.code) == plan_code, Plan.active == True))
+    if plan is None:
+        raise HTTPException(404, "Selected plan is unavailable")
+    if float(plan.price_monthly or 0) <= 0:
+        raise HTTPException(422, "The selected plan does not require checkout")
+    subscription, upgrade = _pending_upgrade_request(db, actor, plan)
+    members = int(db.scalar(select(func.count()).select_from(OrganizationMember).where(
+        OrganizationMember.organization_id == subscription.organization_id,
+        OrganizationMember.status == "Active",
+    )) or 1)
+    public_url = os.getenv("APP_PUBLIC_URL", "").strip()
+    if not public_url:
+        raise HTTPException(503, detail={"code": "BILLING_NOT_READY", "message": "APP_PUBLIC_URL is required for hosted checkout."})
+    try:
+        checkout = create_hosted_checkout(
+            request_id=upgrade.id,
+            plan_name=plan.name,
+            amount_major=float(plan.price_monthly or 0),
+            currency=plan.currency,
+            seats=max(1, members),
+            customer_email=actor.email,
+            public_url=public_url,
+        )
+    except BillingError as exc:
+        raise HTTPException(503, detail={"code": "BILLING_NOT_READY", "message": str(exc)}) from exc
+    upgrade.provider = checkout.get("provider")
+    upgrade.provider_reference = checkout.get("provider_reference")
+    db.commit()
+    return {
+        "ok": True,
+        "provider": checkout.get("provider"),
+        "checkout_url": checkout.get("checkout_url"),
+        "request_id": upgrade.id,
+        "seats": max(1, members),
+        "plan": {"code": plan.code, "name": plan.name, "price_monthly": float(plan.price_monthly or 0), "currency": plan.currency},
+    }
+
+
+@app.post("/api/billing/webhook/{provider}")
+async def billing_webhook(provider: str, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+    provider = provider.strip().lower()
+    if provider not in {"stripe", "razorpay"}:
+        raise HTTPException(404, "Unsupported billing provider")
+    body = await request.body()
+    event_key = hashlib.sha256(provider.encode("utf-8") + b":" + body).hexdigest()
+    existing = db.scalar(select(BillingWebhookEvent).where(BillingWebhookEvent.event_key == event_key))
+    if existing is not None:
+        return {"ok": True, "duplicate": True, "status": existing.status}
+    try:
+        verified = verify_webhook(provider, body, {key.lower(): value for key, value in request.headers.items()})
+    except BillingError as exc:
+        raise HTTPException(400, detail={"code": "INVALID_BILLING_WEBHOOK", "message": str(exc)}) from exc
+
+    event = BillingWebhookEvent(
+        provider=provider,
+        event_key=event_key,
+        event_type=str(verified.get("event_type") or ""),
+        request_id=verified.get("request_id"),
+        status="Verified",
+    )
+    db.add(event)
+    db.flush()
+
+    request_id = verified.get("request_id")
+    if verified.get("paid") and request_id:
+        upgrade = db.get(SubscriptionChangeRequest, int(request_id))
+        if upgrade is not None and upgrade.status == "Pending Payment":
+            if upgrade.provider and upgrade.provider != provider:
+                event.status = "Provider Mismatch"
+                db.commit()
+                raise HTTPException(409, "Billing provider does not match the upgrade request")
+            subscription = db.scalar(select(OrganizationSubscription).where(
+                OrganizationSubscription.organization_id == upgrade.organization_id
+            ))
+            plan = db.get(Plan, upgrade.to_plan_id)
+            if subscription is None or plan is None:
+                event.status = "Invalid Request"
+                db.commit()
+                raise HTTPException(409, "Upgrade request can no longer be fulfilled")
+            previous_plan = db.get(Plan, subscription.plan_id)
+            now = datetime.utcnow()
+            subscription.plan_id = plan.id
+            subscription.status = "Active"
+            subscription.provider = provider
+            subscription.provider_subscription_id = str(verified.get("provider_reference") or upgrade.provider_reference or "")
+            subscription.current_period_start = now
+            subscription.current_period_end = now + timedelta(days=31)
+            subscription.cancel_at_period_end = False
+            upgrade.provider = provider
+            upgrade.provider_reference = str(verified.get("provider_reference") or upgrade.provider_reference or "")
+            upgrade.status = "Completed"
+            upgrade.completed_at = now
+            event.status = "Applied"
+            add_audit(
+                db,
+                "subscription_payment_verified",
+                "organization_subscriptions",
+                subscription.id,
+                f"Verified {provider} payment and activated {plan.name}",
+                before={"plan_code": previous_plan.code if previous_plan else None},
+                after={"plan_code": plan.code, "provider": provider},
+                actor_id=upgrade.requested_by,
+            )
+    db.commit()
+    return {"ok": True, "duplicate": False, "status": event.status}
 
 
 @app.get("/api/plans")
