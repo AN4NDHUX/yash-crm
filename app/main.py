@@ -888,6 +888,12 @@ def _apply_tenant_scope(execute_state: Any) -> None:
 
 
 def ensure_additive_schema() -> None:
+    # Keep a small additive compatibility layer for databases that may have
+    # skipped an older migration. Alembic remains the primary schema manager.
+    inspector = inspect(engine)
+    if "notifications" not in inspector.get_table_names():
+        Notification.__table__.create(bind=engine, checkfirst=True)
+
     additions = {
         "leads": {
             "archived": "BOOLEAN NOT NULL DEFAULT 0",
@@ -911,6 +917,16 @@ def ensure_additive_schema() -> None:
         },
         "organization_settings": {
             "owner_id": "INTEGER NULL",
+        },
+        "notifications": {
+            "user_id": "INTEGER NULL",
+            "kind": "VARCHAR(40) NOT NULL DEFAULT 'info'",
+            "title": "VARCHAR(220) NOT NULL DEFAULT 'Notification'",
+            "body": "TEXT NULL",
+            "resource": "VARCHAR(80) NULL",
+            "record_id": "INTEGER NULL",
+            "read_at": "DATETIME NULL",
+            "created_at": "DATETIME NULL",
         },
     }
     inspector = inspect(engine)
@@ -2483,7 +2499,9 @@ def startup() -> None:
     # performed by Alembic before the web process starts (see cloud-entrypoint.sh).
     if not IS_PRODUCTION:
         Base.metadata.create_all(bind=engine)
-        ensure_additive_schema()
+    # Run the additive compatibility check in every environment after migrations.
+    # It is idempotent and only creates/adds missing notification-era schema.
+    ensure_additive_schema()
     with SessionLocal() as db:
         if not IS_PRODUCTION or env_bool("SEED_DEMO_DATA"):
             seed_defaults(db)
@@ -5461,12 +5479,38 @@ def remove_teamspace_member(teamspace_id: int, user_id: int, db: Session = Depen
 
 @app.get("/api/notifications")
 def list_notifications(unread_only: bool = False, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
-    query = select(Notification).where(Notification.user_id == actor.id).order_by(Notification.created_at.desc()).limit(limit)
-    if unread_only:
-        query = query.where(Notification.read_at.is_(None))
-    rows = db.scalars(query).all()
-    unread = db.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == actor.id, Notification.read_at.is_(None))) or 0
-    return {"items": [{"id": row.id, "user_id": row.user_id, "kind": row.kind, "title": row.title, "body": row.body, "resource": row.resource, "record_id": row.record_id, "read_at": row.read_at.isoformat() if row.read_at else None, "created_at": row.created_at.isoformat()} for row in rows], "unread": unread}
+    try:
+        query = select(Notification).where(Notification.user_id == actor.id)
+        if unread_only:
+            query = query.where(Notification.read_at.is_(None))
+        query = query.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit)
+        rows = db.scalars(query).all()
+        unread = db.scalar(
+            select(func.count()).select_from(Notification).where(
+                Notification.user_id == actor.id,
+                Notification.read_at.is_(None),
+            )
+        ) or 0
+
+        items = []
+        for row in rows:
+            items.append({
+                "id": row.id,
+                "user_id": row.user_id,
+                "kind": row.kind or "info",
+                "title": row.title or "Notification",
+                "body": row.body,
+                "resource": row.resource,
+                "record_id": row.record_id,
+                "read_at": row.read_at.isoformat() if row.read_at else None,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            })
+        return {"items": items, "unread": int(unread)}
+    except Exception:
+        # Never let a legacy notification row/schema defect break the CRM header.
+        # The startup compatibility check repairs missing schema on the next boot.
+        db.rollback()
+        return {"items": [], "unread": 0, "degraded": True}
 
 
 @app.post("/api/notifications/{notification_id}/read")
