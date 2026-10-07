@@ -1551,8 +1551,19 @@ def serialize_platform(record: PlatformRecord, db: Session | None = None, actor:
 def add_audit(db: Session, action: str, resource: str, record_id: int | None,
               summary: str, before: dict[str, Any] | None = None,
               after: dict[str, Any] | None = None, actor_id: int | None = None) -> None:
-    db.add(AuditEvent(actor_id=actor_id, action=action, resource=resource, record_id=record_id,
-                      summary=summary[:300], before=before, after=after))
+    organization_id = TENANT_ORGANIZATION_ID.get()
+    if organization_id is None and actor_id:
+        organization_id = _organization_id_for_user(db, actor_id)
+    db.add(AuditEvent(
+        organization_id=organization_id,
+        actor_id=actor_id,
+        action=action,
+        resource=resource,
+        record_id=record_id,
+        summary=summary[:300],
+        before=before,
+        after=after,
+    ))
 
 
 def _workflow_value(values: dict[str, Any], field: str) -> Any:
