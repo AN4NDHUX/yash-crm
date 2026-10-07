@@ -255,7 +255,7 @@ def ensure_transaction_number(record: PlatformRecord) -> None:
     if not definition:
         return
     key, prefix = definition
-    values = dict(record.data or {})
+    values = _platform_data_dict(record)
     if not values.get(key):
         values[key] = f"{prefix}-{datetime.utcnow():%Y%m}-{record.id:05d}"
         sync_platform_columns(record, values)
@@ -271,7 +271,12 @@ def refresh_invoice_balance(db: Session, invoice_id: int) -> None:
     payments = db.scalars(select(PlatformRecord).where(
         PlatformRecord.resource == "payments", PlatformRecord.archived == False,
     )).all()
-    paid = sum(float(item.amount or 0) for item in payments if int((item.data or {}).get("invoice_id") or 0) == invoice_id and item.status in {"Received", "Cleared"})
+    paid = sum(
+        float(item.amount or 0)
+        for item in payments
+        if int(_platform_data_dict(item).get("invoice_id") or 0) == invoice_id
+        and item.status in {"Received", "Cleared"}
+    )
     total = float(invoice.amount or 0)
     values = _platform_data_dict(invoice)
     values["paid_amount"] = paid
