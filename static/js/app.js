@@ -827,7 +827,7 @@ async function openRecordModal(resource, id = null, preset = {}) {
   state.modal = { resource, id, preset };
   $("#modal-eyebrow").textContent = id ? `Edit ${config.singular}` : `New ${config.singular}`;
   $("#modal-title").textContent = id ? `Update ${config.singular.toLowerCase()}` : `Create ${config.singular.toLowerCase()}`;
-  $("#modal-submit").textContent = id ? "Save changes" : `Create ${config.singular.toLowerCase()}`;
+  $("#modal-submit").textContent = id ? "Save changes" : resource === "users" ? "Send invitation" : `Create ${config.singular.toLowerCase()}`;
   $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.map((field) => fieldHtml(field, record[field.key])).join("")}</div>`;
   $("#modal-backdrop").hidden = false;
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
@@ -850,7 +850,7 @@ async function openPlatformModal(resource, id = null, preset = {}) {
 }
 
 function settingsResourceConfig(resource) {
-  if (resource === "users") return { label: "Users", singular: "User", fields: [{ key: "name", label: "Name", required: true }, { key: "email", label: "Email", type: "email", required: true }, { key: "role", label: "Role", type: "select", options: ["Administrator", "Sales manager", "Sales rep"] }, { key: "status", label: "Status", type: "select", options: ["Active", "Inactive"] }] };
+  if (resource === "users") return { label: "Users", singular: "User", fields: [{ key: "name", label: "Name", required: true }, { key: "email", label: "Email", type: "email", required: true }, { key: "role", label: "Role", type: "select", options: ["Administrator", "Sales manager", "Sales rep"] }, { key: "status", label: "Status", type: "select", options: ["Active", "Inactive"], hint: "For new teammates, access begins after they accept the invitation." }] };
   if (resource === "notes") return { label: "Notes", singular: "Note", fields: [{ key: "title", label: "Title", required: true }, { key: "content", label: "Note", type: "textarea", full: true }, { key: "related_type", label: "Related module", type: "select", options: ["leads", "contacts", "accounts", "deals"] }, { key: "related_id", label: "Related record", type: "number" }] };
   if (resource === "attachments") return { label: "Attachments", singular: "Attachment", fields: [{ key: "name", label: "File name", required: true }, { key: "file_type", label: "File type" }, { key: "file_size", label: "File size" }, { key: "url", label: "File URL" }, { key: "related_type", label: "Related module", type: "select", options: ["leads", "contacts", "accounts", "deals"] }, { key: "related_id", label: "Related record", type: "number" }] };
   if (resource === "emails") return { label: "Emails", singular: "Email", fields: [{ key: "subject", label: "Subject", required: true }, { key: "from_email", label: "From", type: "email" }, { key: "to_email", label: "To", type: "email" }, { key: "status", label: "Status", type: "select", options: ["Draft", "Sent", "Scheduled"] }, { key: "sent_at", label: "Sent at", type: "datetime-local" }, { key: "body", label: "Message", type: "textarea", full: true }, { key: "related_type", label: "Related module", type: "select", options: ["leads", "contacts", "accounts", "deals"] }, { key: "related_id", label: "Related record", type: "number" }] };
@@ -888,11 +888,15 @@ async function submitRecord(event) {
   try {
     const data = readForm(event.currentTarget);
     submit.disabled = true;
-    await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+    if (resource === "users" && !id) {
+      await api("/api/admin/users/invite", { method: "POST", body: JSON.stringify(data) });
+    } else {
+      await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+    }
     if (["accounts", "contacts"].includes(resource)) invalidateLookups();
     if (resource === "users") { await refreshMeta(); if (id && id === state.profile?.id) { state.profile = await api("/api/settings/profile"); applyProfile(); } }
     closeModal();
-    toast(`${id ? "Updated" : "Created"} ${singular}`);
+    toast(resource === "users" && !id ? "Invitation created" : `${id ? "Updated" : "Created"} ${singular}`, resource === "users" && !id ? "The teammate can join this organization using the invitation link." : "");
     await renderRoute();
   } catch (error) { toast("Could not save record", error.message, "error"); }
   finally { submit.disabled = false; }
