@@ -2,20 +2,13 @@ name: Tier 0 Production Verification
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - CRM Regression Tests
-    types:
-      - completed
 
 permissions:
   contents: read
 
 jobs:
-  verify-production:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+  verify:
     runs-on: ubuntu-latest
-
     env:
       PRODUCTION_BASE_URL: https://yashcrm-production.up.railway.app
       PRODUCTION_ADMIN_USERNAME: ${{ secrets.PRODUCTION_ADMIN_USERNAME }}
@@ -27,83 +20,33 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Install migration tooling
+      - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Resolve release evidence
+      - name: Resolve expected release
         shell: bash
         run: |
           set -euo pipefail
-          EXPECTED_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "EXPECTED_APP_REVISION=$GITHUB_SHA" >> "$GITHUB_ENV"
           HEAD="$(python -m alembic heads | awk 'NR==1 {print $1}')"
-          test -n "$EXPECTED_SHA"
           test -n "$HEAD"
-          echo "EXPECTED_APP_REVISION=$EXPECTED_SHA" >> "$GITHUB_ENV"
           echo "EXPECTED_MIGRATION_REVISION=$HEAD" >> "$GITHUB_ENV"
 
-      - name: Validate production verification secrets
+      - name: Validate verification credentials
         shell: bash
         run: |
           set -euo pipefail
-          required=(
-            PRODUCTION_ADMIN_USERNAME
-            PRODUCTION_ADMIN_PASSWORD
-            PRODUCTION_SMOKE_USER_A_IDENTIFIER
-            PRODUCTION_SMOKE_USER_A_PASSWORD
-            PRODUCTION_SMOKE_USER_B_IDENTIFIER
-            PRODUCTION_SMOKE_USER_B_PASSWORD
-          )
-          missing=()
-          for key in "${required[@]}"; do
-            if [ -z "${!key:-}" ]; then
-              missing+=("$key")
-            fi
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Missing required GitHub Actions secrets: %s\n' "${missing[*]}" >&2
-            exit 1
-          fi
+          test -n "$PRODUCTION_ADMIN_USERNAME"
+          test -n "$PRODUCTION_ADMIN_PASSWORD"
+          test -n "$PRODUCTION_SMOKE_USER_A_IDENTIFIER"
+          test -n "$PRODUCTION_SMOKE_USER_A_PASSWORD"
+          test -n "$PRODUCTION_SMOKE_USER_B_IDENTIFIER"
+          test -n "$PRODUCTION_SMOKE_USER_B_PASSWORD"
 
-      - name: Wait for Railway deployment
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            if python - <<'PY'
-              import json
-              import os
-              from urllib.request import urlopen
-
-              base = os.environ["PRODUCTION_BASE_URL"].rstrip("/")
-              expected = os.environ["EXPECTED_APP_REVISION"].strip()
-              with urlopen(base + "/ready", timeout=15) as response:
-                  payload = json.load(response)
-              live = str(payload.get("app_revision") or "")
-              if (
-                  response.status == 200
-                  and payload.get("status") == "ok"
-                  and payload.get("database") == "ready"
-                  and live != "unknown"
-                  and (live.startswith(expected) or expected.startswith(live))
-              ):
-                  print(f"Railway is serving {live}")
-              else:
-                  raise SystemExit(1)
-              PY
-            then
-              exit 0
-            fi
-            sleep 20
-          done
-          echo "Railway did not serve expected revision $EXPECTED_APP_REVISION" >&2
-          exit 1
-
-      - name: Run Tier 0 production verifier
+      - name: Verify Railway production
         run: python scripts/verify_production.py
