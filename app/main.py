@@ -4672,13 +4672,17 @@ def require_admin_actor(actor: User = Depends(current_actor)) -> User:
 
 
 def _is_platform_owner(actor: User | None) -> bool:
+    """Return True only for the administrator account provisioned by APP_USERNAME.
+
+    APP_PASSWORD is verified when that account signs in; owner authorization must not
+    also depend on ADMIN_EMAIL because the configured administrator email can be edited
+    independently of the deployment username.
+    """
     if not isinstance(actor, User) or str(actor.role or "").lower() != "administrator":
         return False
     configured_username = os.getenv("APP_USERNAME", "").strip().lower()
-    configured_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-    username_matches = bool(configured_username and str(actor.username or "").strip().lower() == configured_username)
-    email_matches = bool(configured_email and str(actor.email or "").strip().lower() == configured_email)
-    return username_matches and email_matches
+    actor_username = str(actor.username or "").strip().lower()
+    return bool(configured_username and secrets.compare_digest(actor_username, configured_username))
 
 
 def require_owner_actor(actor: User = Depends(current_actor)) -> User:
