@@ -613,39 +613,131 @@ def seed_defaults(db: Session) -> None:
 
 
 def ensure_workspace_defaults(db: Session) -> None:
-    if db.get(OrganizationSetting, 1) is None:
-        db.add(OrganizationSetting(id=1, org_name="Yash CRM", timezone="Asia/Kolkata", currency="INR", date_format="DD MMM YYYY", fiscal_year_start="April", default_pipeline="Default sales pipeline", notifications={"daily_digest": True, "mentions": True, "deal_updates": True}))
-    if db.scalar(select(ApprovalProcess.id).limit(1)) is None:
-        db.add(ApprovalProcess(name="Discount approval", module="Deals", trigger="Discount is greater than 15%", approver="Sales manager", status="Active", conditions=[{"field": "discount", "operator": ">", "value": "15"}], steps=[{"order": 1, "approver": "Sales manager"}]))
-    if db.scalar(select(Blueprint.id).limit(1)) is None:
-        db.add(Blueprint(name="Deal progression", module="Deals", entry_criteria="Amount is greater than 0", stages=[{"id": "qualification", "label": "Qualification"}], transitions=[], transition_requirements=[], active=True))
+    """Provision baseline settings/security records inside the active tenant."""
+    organization_id = TENANT_ORGANIZATION_ID.get()
+    actor_id = TENANT_ACTOR_ID.get()
+
+    settings_query = select(OrganizationSetting)
+    if organization_id is None:
+        settings_query = settings_query.where(OrganizationSetting.organization_id.is_(None))
+    else:
+        settings_query = settings_query.where(OrganizationSetting.organization_id == organization_id)
+    setting = db.scalar(settings_query.order_by(OrganizationSetting.id))
+    if setting is None:
+        db.add(OrganizationSetting(
+            owner_id=actor_id,
+            organization_id=organization_id,
+            org_name="Yash CRM",
+            timezone="Asia/Kolkata",
+            currency="INR",
+            date_format="DD MMM YYYY",
+            fiscal_year_start="April",
+            default_pipeline="Default sales pipeline",
+            notifications={"daily_digest": True, "mentions": True, "deal_updates": True},
+        ))
+
+    approval_query = select(ApprovalProcess.id)
+    blueprint_query = select(Blueprint.id)
+    sharing_query = select(SharingPolicy.id)
+    if organization_id is None:
+        approval_query = approval_query.where(ApprovalProcess.organization_id.is_(None))
+        blueprint_query = blueprint_query.where(Blueprint.organization_id.is_(None))
+    else:
+        approval_query = approval_query.where(ApprovalProcess.organization_id == organization_id)
+        blueprint_query = blueprint_query.where(Blueprint.organization_id == organization_id)
+
+    if db.scalar(approval_query.limit(1)) is None:
+        db.add(ApprovalProcess(
+            organization_id=organization_id,
+            name="Discount approval",
+            module="Deals",
+            trigger="Discount is greater than 15%",
+            approver="Sales manager",
+            status="Active",
+            conditions=[{"field": "discount", "operator": ">", "value": "15"}],
+            steps=[{"order": 1, "approver": "Sales manager"}],
+        ))
+    if db.scalar(blueprint_query.limit(1)) is None:
+        db.add(Blueprint(
+            organization_id=organization_id,
+            name="Deal progression",
+            module="Deals",
+            entry_criteria="Amount is greater than 0",
+            stages=[{"id": "qualification", "label": "Qualification"}],
+            transitions=[],
+            transition_requirements=[],
+            active=True,
+        ))
+
     default_sharing = [
         ("Core role hierarchy", "*", "role_hierarchy", "Read Only"),
         ("Products are publicly readable", "products", "Public Read Only", "Read Only"),
     ]
     for name, module, scope, access in default_sharing:
-        if db.scalar(select(SharingPolicy.id).where(SharingPolicy.name == name)) is None:
-            db.add(SharingPolicy(name=name, module=module, scope=scope, criteria={}, access=access, enabled=True))
-    maya = db.scalar(select(User).order_by(User.id).limit(1))
+        policy_query = select(SharingPolicy.id).where(SharingPolicy.name == name)
+        if organization_id is None:
+            policy_query = policy_query.where(SharingPolicy.organization_id.is_(None))
+        else:
+            policy_query = policy_query.where(SharingPolicy.organization_id == organization_id)
+        if db.scalar(policy_query) is None:
+            db.add(SharingPolicy(
+                organization_id=organization_id,
+                name=name,
+                module=module,
+                scope=scope,
+                criteria={},
+                access=access,
+                enabled=True,
+            ))
+
+    owner = db.get(User, actor_id) if actor_id else None
+    if owner is None and organization_id is not None:
+        owner_id = db.scalar(
+            select(OrganizationMember.user_id)
+            .where(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.status == "Active",
+            )
+            .order_by(OrganizationMember.id)
+        )
+        owner = db.get(User, owner_id) if owner_id else None
+    if owner is None and organization_id is None:
+        owner = db.scalar(select(User).order_by(User.id).limit(1))
+
     account = db.scalar(select(Account).order_by(Account.id).limit(1))
     contact = db.scalar(select(Contact).order_by(Contact.id).limit(1))
     lead = db.scalar(select(Lead).order_by(Lead.id).limit(1))
-    if db.scalar(select(Product.id).limit(1)) is None and maya:
+    if db.scalar(select(Product.id).limit(1)) is None and owner:
         db.add_all([
-            Product(name="Yash CRM Enterprise", sku="YCR-ENT-001", category="CRM platform", unit_price=480000, stock_quantity=999, status="Active", description="Enterprise customer operations workspace.", owner_id=maya.id, related_type="accounts" if account else None, related_id=account.id if account else None),
-            Product(name="Implementation Sprint", sku="YCR-SVC-010", category="Professional services", unit_price=125000, stock_quantity=20, status="Active", description="Guided onboarding and rollout package.", owner_id=maya.id, related_type="contacts" if contact else None, related_id=contact.id if contact else None),
+            Product(name="Yash CRM Enterprise", sku="YCR-ENT-001", category="CRM platform", unit_price=480000, stock_quantity=999, status="Active", description="Enterprise customer operations workspace.", owner_id=owner.id, organization_id=organization_id, related_type="accounts" if account else None, related_id=account.id if account else None),
+            Product(name="Implementation Sprint", sku="YCR-SVC-010", category="Professional services", unit_price=125000, stock_quantity=20, status="Active", description="Guided onboarding and rollout package.", owner_id=owner.id, organization_id=organization_id, related_type="contacts" if contact else None, related_id=contact.id if contact else None),
         ])
-    if db.scalar(select(Note.id).limit(1)) is None and maya and (account or lead):
-        db.add(Note(title="Discovery notes", content="Capture the next stakeholder discussion and rollout priorities.", related_type="accounts" if account else "leads", related_id=account.id if account else lead.id, owner_id=maya.id))
-    if db.scalar(select(Attachment.id).limit(1)) is None and maya and account:
-        db.add(Attachment(name="Customer requirements.pdf", file_type="PDF", file_size="2.4 MB", url="#", related_type="accounts", related_id=account.id, owner_id=maya.id))
-    if db.scalar(select(Email.id).limit(1)) is None and maya and contact:
-        db.add(Email(subject="Follow-up and next steps", from_email="maya@yashcrm.app", to_email=contact.email, body="Sharing the next steps from our conversation.", status="Sent", sent_at=datetime.utcnow() - timedelta(hours=3), related_type="contacts", related_id=contact.id, owner_id=maya.id))
+    if db.scalar(select(Note.id).limit(1)) is None and owner and (account or lead):
+        db.add(Note(title="Discovery notes", content="Capture the next stakeholder discussion and rollout priorities.", related_type="accounts" if account else "leads", related_id=account.id if account else lead.id, owner_id=owner.id, organization_id=organization_id))
+    if db.scalar(select(Attachment.id).limit(1)) is None and owner and account:
+        db.add(Attachment(name="Customer requirements.pdf", file_type="PDF", file_size="2.4 MB", url="#", related_type="accounts", related_id=account.id, owner_id=owner.id, organization_id=organization_id))
+    if db.scalar(select(Email.id).limit(1)) is None and owner and contact:
+        db.add(Email(subject="Follow-up and next steps", from_email=owner.email, to_email=contact.email, body="Sharing the next steps from our conversation.", status="Sent", sent_at=datetime.utcnow() - timedelta(hours=3), related_type="contacts", related_id=contact.id, owner_id=owner.id, organization_id=organization_id))
     db.commit()
 
 
 def ensure_platform_defaults(db: Session, include_demo: bool = False) -> None:
-    admin = db.scalar(select(User).order_by(User.id))
+    """Provision platform/setup records for the active organization only."""
+    organization_id = TENANT_ORGANIZATION_ID.get()
+    actor_id = TENANT_ACTOR_ID.get()
+    admin = db.get(User, actor_id) if actor_id else None
+    if admin is None and organization_id is not None:
+        owner_id = db.scalar(
+            select(OrganizationMember.user_id)
+            .where(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.status == "Active",
+            )
+            .order_by(OrganizationMember.id)
+        )
+        admin = db.get(User, owner_id) if owner_id else None
+    if admin is None and organization_id is None:
+        admin = db.scalar(select(User).order_by(User.id))
     defaults: dict[str, list[dict[str, Any]]] = {
         "company_details": [{"name": "Yash CRM", "legal_name": "Yash CRM", "email": admin.email if admin else "admin@yashcrm.local", "status": "Active"}],
         "fiscal_years": [{"name": "April - March", "start_date": "2026-04-01", "end_date": "2027-03-31", "status": "Active"}],
@@ -671,10 +763,21 @@ def ensure_platform_defaults(db: Session, include_demo: bool = False) -> None:
             "dashboards": [{"name": "Sales overview", "audience": "Sales team", "components": [{"type": "metric", "source": "open_deals"}, {"type": "pipeline", "source": "deals_by_stage"}], "status": "Active"}],
         })
     for resource, rows in defaults.items():
-        if db.scalar(select(func.count()).select_from(PlatformRecord).where(PlatformRecord.resource == resource)):
+        count_query = select(func.count()).select_from(PlatformRecord).where(PlatformRecord.resource == resource)
+        if organization_id is None:
+            count_query = count_query.where(PlatformRecord.organization_id.is_(None))
+        else:
+            count_query = count_query.where(PlatformRecord.organization_id == organization_id)
+        if db.scalar(count_query):
             continue
         for values in rows:
-            record = PlatformRecord(resource=resource, title=str(values.get("name") or "Untitled"), data={})
+            record = PlatformRecord(
+                resource=resource,
+                title=str(values.get("name") or "Untitled"),
+                data={},
+                owner_id=admin.id if admin else actor_id,
+                organization_id=organization_id,
+            )
             sync_platform_columns(record, values)
             db.add(record)
     db.commit()
