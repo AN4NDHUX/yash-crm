@@ -773,25 +773,31 @@ def _role_record(db: Session, role: str | None) -> PlatformRecord | None:
         return None
     normalized = role.lower().replace("representative", "rep").replace("sales ", "").strip()
     rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "roles", PlatformRecord.archived == False)).all()
-    return next((row for row in rows if str((row.data or {}).get("name") or row.title).lower().replace("representative", "rep").replace("sales ", "").strip() == normalized), None)
+    return next((
+        row for row in rows
+        if str(_json_mapping(row.data).get("name") or row.title)
+        .lower().replace("representative", "rep").replace("sales ", "").strip() == normalized
+    ), None)
 
 
 def _role_names_visible_to_actor(db: Session, actor: User) -> set[str]:
     role = _role_record(db, actor.role)
     if role is None:
         return {str(actor.role or "").lower()}
-    scope = str((role.data or {}).get("data_scope") or "Own").lower()
+    role_data = _json_mapping(role.data)
+    scope = str(role_data.get("data_scope") or "Own").lower()
     if scope == "all" or _is_platform_owner(actor):
         return {"*"}
-    visible = {str((role.data or {}).get("name") or role.title).lower().replace("representative", "rep")}
+    visible = {str(role_data.get("name") or role.title).lower().replace("representative", "rep")}
     if "subordinate" not in scope:
         return visible
     changed = True
     while changed:
         changed = False
         for candidate in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "roles", PlatformRecord.archived == False)).all():
-            parent = str((candidate.data or {}).get("parent_role") or "").lower().replace("representative", "rep")
-            name = str((candidate.data or {}).get("name") or candidate.title).lower().replace("representative", "rep")
+            candidate_data = _json_mapping(candidate.data)
+            parent = str(candidate_data.get("parent_role") or "").lower().replace("representative", "rep")
+            name = str(candidate_data.get("name") or candidate.title).lower().replace("representative", "rep")
             if parent in visible and name not in visible:
                 visible.add(name)
                 changed = True
@@ -858,7 +864,11 @@ def can_access_record(db: Session, resource: str, record: Any, actor: User | Non
 def _metadata_fields(db: Session, resource: str) -> list[MetadataField]:
     names = {resource.lower(), resource.rstrip("s").lower(), resource.replace("_", "").lower()}
     modules = db.scalars(select(MetadataModule)).all()
-    module_ids = [item.id for item in modules if item.api_name.lower() in names or item.label.lower().replace(" ", "_") in names]
+    module_ids = [
+        item.id for item in modules
+        if str(item.api_name or "").lower() in names
+        or str(item.label or "").lower().replace(" ", "_") in names
+    ]
     if not module_ids:
         return []
     return db.scalars(select(MetadataField).where(MetadataField.module_id.in_(module_ids))).all()
