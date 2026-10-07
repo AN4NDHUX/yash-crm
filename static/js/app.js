@@ -1681,6 +1681,7 @@ function bindGlobal() {
       if (unreadLabel) unreadLabel.textContent = `${data.unread || 0} unread`;
       return data.unread || 0;
     } catch (error) {
+      setNotificationBadge(0);
       return 0;
     }
   };
@@ -1708,6 +1709,7 @@ function bindGlobal() {
         await refreshNotificationBadge();
       }));
     } catch (error) {
+      setNotificationBadge(0);
       notificationsPanel.innerHTML = `<div class="notifications-empty">Could not load notifications.</div>`;
     }
   });
