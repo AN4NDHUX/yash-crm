@@ -1,6 +1,6 @@
 # Tier 0 Production Verification
 
-Tier 0 is complete only when both GitHub CI and the production verification workflow pass for the same commit.
+Tier 0 is complete only when both GitHub CI and the manually triggered production verification workflow pass for the same commit.
 
 ## Automated gates
 
@@ -13,7 +13,7 @@ The main CI workflow verifies:
 - PostgreSQL migration upgrade to Alembic head
 - the full pytest regression suite
 
-After that workflow succeeds on main, `.github/workflows/tier0-production-verification.yml` runs against Railway.
+After the main CI workflow succeeds, run `.github/workflows/tier0-production-verification.yml` with **Run workflow** against the same `main` commit. The production gate is intentionally manual until the required production smoke credentials are configured and stable.
 
 The production verifier checks:
 
