@@ -5029,6 +5029,50 @@ def list_public_plans(db: Session = Depends(get_db), actor: User = Depends(curre
     }
 
 
+@app.patch("/api/subscription")
+def update_my_subscription(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    plan_code = str(payload.get("plan_code") or "").strip().lower()
+    if not plan_code:
+        raise HTTPException(422, "plan_code is required")
+
+    plan = db.scalar(select(Plan).where(func.lower(Plan.code) == plan_code, Plan.active == True))
+    if plan is None:
+        raise HTTPException(404, "Selected plan is unavailable")
+
+    subscription = _ensure_user_subscription(db, actor)
+    previous_plan = db.get(Plan, subscription.plan_id)
+    if subscription.plan_id == plan.id:
+        return {"ok": True, "subscription": _subscription_payload(db, actor.id), "changed": False}
+
+    before = {
+        "plan_code": previous_plan.code if previous_plan else None,
+        "plan_name": previous_plan.name if previous_plan else None,
+    }
+    subscription.plan_id = plan.id
+    subscription.status = "Active"
+    subscription.current_period_start = datetime.utcnow()
+    subscription.current_period_end = None
+    subscription.cancel_at_period_end = False
+    subscription.updated_at = datetime.utcnow()
+
+    add_audit(
+        db,
+        "subscription_plan_changed",
+        "subscriptions",
+        subscription.id,
+        f"Changed subscription from {before['plan_name'] or 'Unknown'} to {plan.name}",
+        before=before,
+        after={"plan_code": plan.code, "plan_name": plan.name},
+        actor_id=actor.id,
+    )
+    db.commit()
+    return {"ok": True, "subscription": _subscription_payload(db, actor.id), "changed": True}
+
+
 @app.get("/api/owner/plans")
 def owner_plans(db: Session = Depends(get_db), _: User = Depends(require_owner_actor)) -> dict[str, Any]:
     plans = db.scalars(select(Plan).order_by(Plan.price_monthly, Plan.id)).all()
