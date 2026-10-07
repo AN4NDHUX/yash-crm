@@ -539,7 +539,8 @@ def test_sensitive_administration_and_automation_routes_require_org_admin():
             )
             execution = main.WorkflowExecution(
                 organization_id=org_id, rule_id=0, resource='cases', record_id=0,
-                event='manual', status='queued', actions=[]
+                event='manual', status='queued', actions=[],
+                idempotency_key='tier0-boundary-execution'
             )
             db.add_all([blueprint, execution])
             db.commit()
@@ -584,7 +585,7 @@ def test_archived_platform_record_restore_respects_private_sharing():
         })
         invite = c.post('/api/organization/invitations', json={'email':'restore.member@example.com'})
         token = invite.json()['invitation_token']
-        created = c.post('/api/platform/cases', json={'name':'Private Restore Case','status':'Open'})
+        created = c.post('/api/platform/cases', json={'name':'Private Restore Case','status':'New'})
         out['create'] = created.status_code
         case_id = created.json()['id']
         out['archive'] = c.delete(f'/api/platform/cases/{case_id}').status_code
