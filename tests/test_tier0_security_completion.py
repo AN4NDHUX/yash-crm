@@ -517,3 +517,91 @@ def test_cpq_catalog_respects_product_field_security():
         out['price_present'] = bool(secure and 'unit_price' in secure)
     """)
     assert out == {'status': 200, 'product_visible': True, 'price_present': False}
+
+
+def test_sensitive_administration_and_automation_routes_require_org_admin():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Boundary Owner','username':'boundary.owner','email':'boundary.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'boundary.member@example.com'})
+        token = invite.json()['invitation_token']
+
+        with main.SessionLocal() as db:
+            owner = db.scalar(main.select(main.User).where(main.User.email == 'boundary.owner@example.com'))
+            org_id = main._organization_id_for_user(db, owner.id)
+            blueprint = main.Blueprint(
+                organization_id=org_id, name='Private Blueprint', module='Deals',
+                entry_criteria='Always', stages=['Qualification','Proposal'],
+                transitions={}, transition_requirements={}, status='Active'
+            )
+            execution = main.WorkflowExecution(
+                organization_id=org_id, rule_id=0, resource='cases', record_id=0,
+                event='manual', status='queued', actions=[]
+            )
+            db.add_all([blueprint, execution])
+            db.commit()
+            out['blueprint_id'] = blueprint.id
+            out['execution_id'] = execution.id
+
+        out['owner_recycle'] = c.get('/api/administration/recycle-bin').status_code
+        out['owner_duplicates'] = c.get('/api/administration/duplicates?resource=leads').status_code
+        out['owner_exec_list'] = c.get('/api/automation/executions').status_code
+        out['owner_blueprint'] = c.get(f"/api/blueprints/{out['blueprint_id']}/transitions").status_code
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Boundary Member','username':'boundary.member','email':'boundary.member@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        out['member_recycle'] = c.get('/api/administration/recycle-bin').status_code
+        out['member_duplicates'] = c.get('/api/administration/duplicates?resource=leads').status_code
+        out['member_restore'] = c.post('/api/administration/restore', json={'resource':'leads','record_id':999999}).status_code
+        out['member_exec_list'] = c.get('/api/automation/executions').status_code
+        out['member_exec_run'] = c.post(f"/api/automation/executions/{out['execution_id']}/run").status_code
+        out['member_blueprint'] = c.get(f"/api/blueprints/{out['blueprint_id']}/transitions").status_code
+    """)
+    assert out['owner_recycle'] == 200
+    assert out['owner_duplicates'] == 200
+    assert out['owner_exec_list'] == 200
+    assert out['owner_blueprint'] == 200
+    assert out['member_recycle'] == 403
+    assert out['member_duplicates'] == 403
+    assert out['member_restore'] == 403
+    assert out['member_exec_list'] == 403
+    assert out['member_exec_run'] == 403
+    assert out['member_blueprint'] == 403
+
+
+def test_archived_platform_record_restore_respects_private_sharing():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Restore Owner','username':'restore.owner','email':'restore.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'restore.member@example.com'})
+        token = invite.json()['invitation_token']
+        created = c.post('/api/platform/cases', json={'name':'Private Restore Case','status':'Open'})
+        out['create'] = created.status_code
+        case_id = created.json()['id']
+        out['archive'] = c.delete(f'/api/platform/cases/{case_id}').status_code
+        out['owner_restore'] = c.post(f'/api/platform/cases/{case_id}/restore').status_code
+        c.delete(f'/api/platform/cases/{case_id}')
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Restore Member','username':'restore.member','email':'restore.member@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        denied = c.post(f'/api/platform/cases/{case_id}/restore')
+        out['member_restore'] = denied.status_code
+    """)
+    assert out == {
+        'create': 201,
+        'archive': 200,
+        'owner_restore': 200,
+        'member_restore': 403,
+    }
