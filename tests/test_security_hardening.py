@@ -102,17 +102,17 @@ def test_password_login_creates_session_without_otp():
         out['ok'] = payload.get('ok')
         out['redirect'] = payload.get('redirect')
         out['session'] = c.get('/api/auth/session').status_code
-        out['verify_otp_route'] = c.post('/api/auth/login/verify-otp', json={
-            'challenge_id':'unused',
-            'otp':'000000'
-        }).status_code
+        out['otp_route_present'] = any(
+            getattr(route, 'path', None) == '/api/auth/login/verify-otp'
+            for route in main.app.routes
+        )
     """)
     assert out == {
         'status': 200,
         'ok': True,
         'redirect': '/dashboard',
         'session': 200,
-        'verify_otp_route': 401,
+        'otp_route_present': False,
     }
 
 
