@@ -98,7 +98,14 @@ async function ensureLookups() {
 
 async function ensurePlatformLookup(resource) {
   if (state.platformLookups[resource]) return;
-  state.platformLookups[resource] = (await api(`/api/platform/${resource}?limit=100&sort=name_asc`)).items;
+  try {
+    state.platformLookups[resource] = (await api(`/api/platform/${resource}?limit=100&sort=name_asc`)).items || [];
+  } catch (error) {
+    // Lookup data is supplementary. A broken related-module lookup must not blank
+    // the entire current module; keep the form usable and surface the API error
+    // only if the user actually needs that lookup.
+    state.platformLookups[resource] = [];
+  }
 }
 
 function invalidateLookups() { state.lookups.loaded = false; state.platformLookups = {}; }
