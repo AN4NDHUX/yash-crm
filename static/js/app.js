@@ -276,25 +276,30 @@ function applyProfile() {
 
   const username = String(profile.username || profile.name || "Account").trim() || "Account";
   const role = String(profile.role || "CRM user").trim() || "CRM user";
-  const isOwnerAdmin = Boolean(profile.owner_console_access);
+  const isOwnerAdmin = profile.owner_console_access === true;
 
-  // The bottom-left identity always reflects the currently authenticated CRM account.
+  // Bottom-left identity always represents the current authenticated account.
   $(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
   $(".user-mini strong").forEach((node) => { node.textContent = username; });
   $(".user-mini small").forEach((node) => { node.textContent = role; });
 
-  // The top-right owner identity is reserved for the APP_USERNAME administrator only.
+  // These controls belong exclusively to the APP_USERNAME platform owner.
   const topProfile = $("#top-profile");
-  if (topProfile) topProfile.hidden = !isOwnerAdmin;
+  const ownerButton = $("#owner-console-button");
+  if (topProfile) {
+    topProfile.hidden = !isOwnerAdmin;
+    topProfile.setAttribute("aria-hidden", String(!isOwnerAdmin));
+  }
+  if (ownerButton) {
+    ownerButton.hidden = !isOwnerAdmin;
+    ownerButton.setAttribute("aria-hidden", String(!isOwnerAdmin));
+  }
+
   if (isOwnerAdmin) {
     $(".top-profile .avatar").forEach((node) => { node.textContent = initials(username); });
     $(".top-profile-copy strong").forEach((node) => { node.textContent = username; });
     $(".top-profile-copy small").forEach((node) => { node.textContent = role; });
   }
-
-  // Owner Console is exposed only when the authenticated session is the platform owner.
-  const ownerButton = $("#owner-console-button");
-  if (ownerButton) ownerButton.hidden = !isOwnerAdmin;
 }
 
 async function refreshNavCount() {
