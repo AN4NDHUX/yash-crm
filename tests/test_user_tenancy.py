@@ -101,7 +101,7 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
     assert out['a_restored_modules'] == 1
 
 
-def test_duplicate_email_phone_and_username_are_rejected_and_12_char_password_is_valid():
+def test_duplicate_email_phone_and_username_are_rejected_and_8_char_password_is_valid():
     out = run_app_script("""
     with TestClient(main.app) as c:
         first = c.post('/api/auth/signup', json={
