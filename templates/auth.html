@@ -301,6 +301,7 @@
     location.pathname === "/signup" ? "signup" :
     location.pathname === "/forgot-password" ? "forgot" :
     location.pathname === "/reset-password" ? "reset" : "signin";
+  const invitationToken = new URLSearchParams(location.search).get("invite") || "";
 
   if (mode !== "signin") document.body.classList.add(mode);
   document.title = ({
@@ -323,8 +324,30 @@
 
   if (mode === "signin" || mode === "signup") {
     fetch("/api/auth/session", {credentials:"same-origin"})
-      .then((r) => { if (r.ok) location.replace("/dashboard"); })
-      .catch(() => {});
+      .then(async (r) => {
+        if (!r.ok) return;
+        if (invitationToken) {
+          const accepted = await fetch("/api/organization/invitations/accept", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({invitation_token: invitationToken})
+          });
+          if (!accepted.ok) {
+            const data = await accepted.json().catch(() => ({}));
+            throw new Error(data.detail?.message || data.detail || "Could not accept invitation.");
+          }
+        }
+        location.replace("/dashboard");
+      })
+      .catch((error) => { if (invitationToken && error?.message) showError(error.message); });
+  }
+
+  if (invitationToken) {
+    document.querySelectorAll('a[href="/login"],a[href="/signup"]').forEach((link) => {
+      const destination = link.getAttribute("href");
+      link.setAttribute("href", destination + "?invite=" + encodeURIComponent(invitationToken));
+    });
   }
 
   form.addEventListener("submit", async (event) => {
@@ -395,6 +418,18 @@
       if (mode === "reset") {
         location.replace("/login");
         return;
+      }
+      if (mode === "signin" && invitationToken) {
+        const accepted = await fetch("/api/organization/invitations/accept", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({invitation_token: invitationToken})
+        });
+        if (!accepted.ok) {
+          const inviteResult = await accepted.json().catch(() => ({}));
+          throw new Error(inviteResult.detail?.message || inviteResult.detail || "Could not accept invitation.");
+        }
       }
       const requested = new URLSearchParams(location.search).get("next");
       const safeNext = requested && requested.startsWith("/") && !requested.startsWith("//") ? requested : (result.redirect || "/dashboard");
