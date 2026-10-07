@@ -3821,3 +3821,65 @@ textarea {
   .pricing-grid { grid-template-columns: 1fr; }
   .pricing-card { min-height: 0; }
 }
+
+
+/* Upgrade plan entry point and selectable pricing cards */
+.upgrade-plan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #2f80ed;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background-color .16s ease, color .16s ease, transform .16s ease;
+}
+.upgrade-plan-button span {
+  font-size: 16px;
+  line-height: 1;
+}
+.upgrade-plan-button:hover,
+.upgrade-plan-button:focus-visible {
+  background: #edf5ff;
+  color: #1769e0;
+}
+.upgrade-plan-button:active {
+  transform: translateY(1px);
+}
+.pricing-card.selectable {
+  cursor: pointer;
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.pricing-card.selectable:hover {
+  transform: translateY(-2px);
+  border-color: #b9c9df;
+  box-shadow: 0 18px 40px rgba(20,33,61,.10);
+}
+.pricing-card.selectable:focus-visible {
+  outline: 3px solid rgba(23,105,224,.18);
+  outline-offset: 3px;
+}
+.pricing-card.current {
+  cursor: default;
+}
+.pricing-select-row {
+  margin-top: 18px;
+}
+.pricing-select-button {
+  width: 100%;
+}
+.pricing-select-button:disabled {
+  cursor: default;
+  opacity: .7;
+}
+@media (max-width: 760px) {
+  .upgrade-plan-button {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+}
