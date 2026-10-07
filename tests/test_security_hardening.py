@@ -199,3 +199,23 @@ def test_document_download_is_tenant_authorized_and_database_backed():
     assert out['second_signup'] == 201
     assert out['second_login'] == 200
     assert out['cross_tenant'] == 404
+
+
+def test_ready_exposes_release_evidence_without_secrets():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        response = c.get('/ready')
+        payload = response.json()
+        out['status'] = response.status_code
+        out['service'] = payload.get('service')
+        out['database'] = payload.get('database')
+        out['app_revision'] = payload.get('app_revision')
+        out['has_migration_revision'] = 'migration_revision' in payload
+    """, APP_REVISION="tier0-test-revision")
+    assert out == {
+        'status': 200,
+        'service': 'yash-crm',
+        'database': 'ready',
+        'app_revision': 'tier0-test-revision',
+        'has_migration_revision': True,
+    }
