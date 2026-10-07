@@ -318,3 +318,93 @@ def test_every_visible_module_avoids_500_with_legacy_security_records():
     """)
     assert out['signup'] == 201
     assert out['failures'] == {}
+
+
+def test_every_populated_module_lists_for_normal_tenant_user_without_500():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        signup = c.post('/api/auth/signup', json={
+            'name':'Populated Module User',
+            'username':'populated.audit',
+            'email':'populated.audit@example.com',
+            'password':'strong-password-123'
+        })
+        out['signup'] = signup.status_code
+
+        with main.SessionLocal() as db:
+            user = db.scalar(main.select(main.User).where(main.User.email == 'populated.audit@example.com'))
+            org_id = main._organization_id_for_user(db, user.id)
+            user.role = 'Sales rep'
+            user.profile_name = 'Standard'
+
+            subscription = main._ensure_organization_subscription(db, user)
+            plan = db.scalar(main.select(main.Plan).where(main.func.lower(main.Plan.code) == 'crm_plus'))
+            if plan is not None:
+                subscription.plan_id = plan.id
+                subscription.status = 'Active'
+
+            token_actor = main.TENANT_ACTOR_ID.set(user.id)
+            token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
+            try:
+                account = main.Account(organization_id=org_id, owner_id=user.id, name='Audit Account', status='Active')
+                contact = main.Contact(organization_id=org_id, owner_id=user.id, first_name='Audit', last_name='Contact', status='Active')
+                lead = main.Lead(organization_id=org_id, owner_id=user.id, name='Audit Lead', company='Audit Co', status='New')
+                deal = main.Deal(organization_id=org_id, owner_id=user.id, name='Audit Deal', stage='Qualification', status='Open', amount=1000)
+                activity = main.Activity(organization_id=org_id, owner_id=user.id, activity_type='Task', subject='Audit Task', status='Open')
+                product = main.Product(organization_id=org_id, owner_id=user.id, name='Audit Product', status='Active')
+                db.add_all([account, contact, lead, deal, activity, product])
+
+                for resource in main.PLATFORM_RESOURCES:
+                    db.add(main.PlatformRecord(
+                        organization_id=org_id,
+                        owner_id=user.id,
+                        resource=resource,
+                        title=f'Audit {resource}',
+                        status='Active',
+                        data={'name': f'Audit {resource}'},
+                        archived=False,
+                    ))
+
+                db.commit()
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token_org)
+                main.TENANT_ACTOR_ID.reset(token_actor)
+
+        endpoints = {
+            'dashboard': '/api/dashboard',
+            'teamspaces': '/api/teamspaces',
+            'leads': '/api/leads?limit=100',
+            'contacts': '/api/contacts?limit=100',
+            'accounts': '/api/accounts?limit=100',
+            'deals': '/api/deals?limit=100',
+            'tasks': '/api/activities?activity_type=Task&limit=100',
+            'meetings': '/api/activities?activity_type=Meeting&limit=100',
+            'calls': '/api/activities?activity_type=Call&limit=100',
+            'products': '/api/products?limit=100',
+        }
+        for resource in main.PLATFORM_RESOURCES:
+            endpoints[f'platform:{resource}'] = f'/api/platform/{resource}?limit=100'
+
+        failures = {}
+        statuses = {}
+        totals = {}
+        for name, path in endpoints.items():
+            response = c.get(path)
+            statuses[name] = response.status_code
+            if response.status_code >= 500:
+                failures[name] = [response.status_code, response.text[:1000]]
+                continue
+            if response.status_code == 200:
+                payload = response.json()
+                if isinstance(payload, dict) and 'total' in payload:
+                    totals[name] = payload.get('total')
+
+        out['failures'] = failures
+        out['statuses'] = statuses
+        out['totals'] = totals
+    """)
+    assert out['signup'] == 201
+    assert out['failures'] == {}
+    for resource in ['leads','contacts','accounts','deals','tasks','products']:
+        assert out['statuses'][resource] == 200
+        assert out['totals'][resource] >= 1
