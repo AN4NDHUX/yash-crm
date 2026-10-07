@@ -2176,6 +2176,107 @@ def _notify_account_once(db: Session, user: User, kind: str, title: str, body: s
         _notify_account(db, user, kind, title, body)
 
 
+def _ensure_plan_catalog(db: Session) -> None:
+    """Keep the subscription catalog aligned with the CRM pricing presented in-product."""
+    catalog = [
+        {
+            "code": "free", "name": "Free", "price_monthly": 0, "currency": "INR",
+            "max_records": 1000, "max_storage_mb": 250, "max_custom_modules": 2, "ai_limit_monthly": 0,
+            "features": {
+                "reports": True, "custom_modules": True, "apex": False, "max_users": 3,
+                "tagline": "Forever free, for 3 users",
+                "included_features": [
+                    "Contact management", "Follow-up reminders", "Workflow automation",
+                    "Custom email templates", "Tasks, meetings & calls", "Data import and export",
+                    "Standard reports", "APIs", "Mobile apps"
+                ]
+            }
+        },
+        {
+            "code": "bigin_express", "name": "Bigin Express", "price_monthly": 400, "currency": "INR",
+            "max_records": 5000, "max_storage_mb": 1024, "max_custom_modules": 0, "ai_limit_monthly": 0,
+            "features": {
+                "reports": True, "custom_modules": False, "apex": False,
+                "tagline": "First-timer, moving from spreadsheets",
+                "included_features": [
+                    "Sales pipeline", "Built-in calling", "Appointment scheduling", "Payment collection",
+                    "Tags", "Email integration", "Calendar integration", "Social Ads integration",
+                    "Custom fields", "QuickBooks integration"
+                ]
+            }
+        },
+        {
+            "code": "standard", "name": "Standard", "price_monthly": 800, "currency": "INR",
+            "max_records": 10000, "max_storage_mb": 2048, "max_custom_modules": 10, "ai_limit_monthly": 1500,
+            "features": {
+                "reports": True, "custom_modules": True, "apex": True,
+                "tagline": "Small team, getting started",
+                "included_features": [
+                    "Email integration & mass emails", "Built-in calling", "Multiple sales pipelines",
+                    "Calendar integration", "Data capture via forms", "Sales forecasting", "Data enrichment",
+                    "Custom modules", "HIPAA compliance", "Gmail and Outlook integration",
+                    "Slack, Zoom, Teams integration"
+                ]
+            }
+        },
+        {
+            "code": "professional", "name": "Professional", "price_monthly": 1400, "currency": "INR",
+            "max_records": 100000, "max_storage_mb": 10240, "max_custom_modules": 50, "ai_limit_monthly": 10000,
+            "features": {
+                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True,
+                "inventory_management": True, "cpq": True, "customer_portals": True,
+                "tagline": "Growing team, needs automation", "popular": True,
+                "included_features": [
+                    "AI agents", "Process management", "Inventory management", "Predictive intelligence",
+                    "Unlimited reports", "Configure, Price, Quote (CPQ)", "Custom portals",
+                    "Customer journeys", "Web-to-case forms", "Google Ads integration"
+                ]
+            }
+        },
+        {
+            "code": "enterprise", "name": "Enterprise", "price_monthly": 2400, "currency": "INR",
+            "max_records": None, "max_storage_mb": None, "max_custom_modules": None, "ai_limit_monthly": None,
+            "features": {
+                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True,
+                "priority_support": True, "approval_process": True, "developer_sandbox": True,
+                "tagline": "Running a mature sales org",
+                "included_features": [
+                    "Multi-team management", "Reporting hierarchy", "Custom buttons and functions",
+                    "Extended field types", "Sequential data collection", "Approval process",
+                    "Account Based Marketing", "Developer sandbox", "Field-level encryption",
+                    "Extended AI capabilities", "QuickBooks integration"
+                ]
+            }
+        },
+        {
+            "code": "crm_plus", "name": "CRM Plus", "price_monthly": 20, "currency": "USD",
+            "max_records": None, "max_storage_mb": None, "max_custom_modules": None, "ai_limit_monthly": None,
+            "features": {
+                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True,
+                "priority_support": True, "suite_bundle": True,
+                "tagline": "Sales, marketing, service in one unified package.",
+                "included_features": ["Unified sales workspace", "Marketing workspace", "Customer service workspace"]
+            }
+        },
+    ]
+
+    for spec in catalog:
+        plan = db.scalar(select(Plan).where(Plan.code == spec["code"]))
+        if plan is None:
+            plan = Plan(code=spec["code"])
+            db.add(plan)
+        plan.name = spec["name"]
+        plan.price_monthly = spec["price_monthly"]
+        plan.currency = spec["currency"]
+        plan.max_records = spec["max_records"]
+        plan.max_storage_mb = spec["max_storage_mb"]
+        plan.max_custom_modules = spec["max_custom_modules"]
+        plan.ai_limit_monthly = spec["ai_limit_monthly"]
+        plan.active = True
+        plan.features = spec["features"]
+    db.flush()
+
+
 def _default_plan(db: Session) -> Plan:
     plan = db.scalar(select(Plan).where(Plan.code == "free"))
     if plan is None:
@@ -2503,6 +2604,7 @@ def startup() -> None:
     # It is idempotent and only creates/adds missing notification-era schema.
     ensure_additive_schema()
     with SessionLocal() as db:
+        _ensure_plan_catalog(db)
         if not IS_PRODUCTION or env_bool("SEED_DEMO_DATA"):
             seed_defaults(db)
         ensure_cloud_admin(db)
@@ -4904,6 +5006,27 @@ def owner_login_history(
         "device": _device_summary(event.user_agent),
         "occurred_at": event.occurred_at.isoformat(),
     } for event, user in rows], "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/plans")
+def list_public_plans(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    plans = db.scalars(select(Plan).where(Plan.active == True).order_by(Plan.price_monthly, Plan.id)).all()
+    current = _subscription_payload(db, actor.id)
+    return {
+        "items": [{
+            "id": plan.id,
+            "code": plan.code,
+            "name": plan.name,
+            "price_monthly": float(plan.price_monthly or 0),
+            "currency": plan.currency,
+            "max_records": plan.max_records,
+            "max_storage_mb": plan.max_storage_mb,
+            "max_custom_modules": plan.max_custom_modules,
+            "ai_limit_monthly": plan.ai_limit_monthly,
+            "features": plan.features or {},
+        } for plan in plans],
+        "current_subscription": current,
+    }
 
 
 @app.get("/api/owner/plans")
