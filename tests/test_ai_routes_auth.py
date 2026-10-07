@@ -203,7 +203,10 @@ class ConfigRobustnessTests(unittest.TestCase):
             with TestClient(main.app) as c:
                 with main.SessionLocal() as db:
                     admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
-                    setting = main.get_or_create_settings(db)
+                    organization_id = main._organization_id_for_user(db, admin.id)
+                    setting = db.scalar(main.select(main.OrganizationSetting).where(
+                        main.OrganizationSetting.organization_id == organization_id
+                    ))
                     setting.timezone = ''
                     db.commit()
                 h = basic('admin', 'supersecretpass123')
