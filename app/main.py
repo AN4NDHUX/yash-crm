@@ -57,6 +57,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sess
 
 from app.platform_catalog import PLATFORM_RESOURCES, SETUP_NAVIGATION, public_catalog
 from app.billing import BillingError, configured_provider, create_hosted_checkout, verify_webhook
+from app.access_policy import request_entitlement_feature, request_resource_action
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -2892,67 +2893,13 @@ def _profile_action_allowed(db: Session, actor: User, resource: str, action: str
     return True
 
 
-def _request_resource_action(path: str, method: str) -> tuple[str | None, str]:
-    method = method.upper()
-    action = "read" if method in {"GET", "HEAD"} else "create" if method == "POST" else "update" if method in {"PATCH", "PUT"} else "delete" if method == "DELETE" else "read"
-    clean = path.strip("/")
-    parts = clean.split("/")
-    if len(parts) < 2 or parts[0] != "api":
-        return None, action
-    if parts[1] == "platform" and len(parts) >= 3:
-        return parts[2], action
-    if parts[1] in {"auth", "organization", "owner", "plans", "subscription", "settings", "security"}:
-        return None, action
-    if parts[1] == "admin" and len(parts) >= 3 and parts[2] == "metadata":
-        return "custom_modules", action
-    return parts[1], action
-
-
-ENTITLEMENT_RESOURCE_FEATURES: dict[str, str] = {
-    "reports": "reports",
-    "dashboards": "reports",
-    "ai": "apex",
-    "cpq": "cpq",
-    "price_books": "inventory_management",
-    "vendors": "inventory_management",
-    "quotes": "inventory_management",
-    "sales_orders": "inventory_management",
-    "purchase_orders": "inventory_management",
-    "invoices": "inventory_management",
-    "payments": "inventory_management",
-    "portals": "customer_portals",
-    "approval_processes": "approval_process",
-    "approvals": "approval_process",
-    "sandbox": "developer_sandbox",
-    "sandboxes": "developer_sandbox",
-}
-
-
-def _request_entitlement_feature(path: str) -> str | None:
-    clean = path.strip("/")
-    parts = clean.split("/")
-    if len(parts) < 2 or parts[0] != "api":
-        return None
-    if parts[1] == "ai":
-        return "apex"
-    if parts[1] == "cpq":
-        return "cpq"
-    if parts[1] in {"reports", "dashboards"}:
-        return "reports"
-    if parts[1] == "admin" and len(parts) >= 3 and parts[2] == "metadata":
-        return "custom_modules"
-    if parts[1] == "platform" and len(parts) >= 3:
-        return ENTITLEMENT_RESOURCE_FEATURES.get(parts[2])
-    return ENTITLEMENT_RESOURCE_FEATURES.get(parts[1])
-
-
 def _enforce_request_access(db: Session, actor: User, path: str, method: str) -> None:
     if _is_platform_owner(actor):
         return
-    feature = _request_entitlement_feature(path)
+    feature = request_entitlement_feature(path)
     if feature:
         _enforce_plan_feature(db, actor, feature)
-    resource, action = _request_resource_action(path, method)
+    resource, action = request_resource_action(path, method)
     if resource and not _profile_action_allowed(db, actor, resource, action):
         raise HTTPException(403, detail={
             "code": "PROFILE_PERMISSION_DENIED",
