@@ -64,7 +64,7 @@ DOCUMENT_UPLOAD_ROOT = UPLOAD_ROOT / "documents"
 LEAD_CONVERSION_LOCK = threading.Lock()
 AUTH_RATE_LIMIT_LOCK = threading.Lock()
 AUTH_RATE_LIMIT_BUCKETS: dict[str, list[float]] = {}
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 8
 
 
 class ReadinessTrustedHostMiddleware(TrustedHostMiddleware):
