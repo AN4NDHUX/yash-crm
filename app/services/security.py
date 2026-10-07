@@ -446,6 +446,30 @@ def _organization_id_for_user(db: Session, user_id: int) -> int | None:
     return membership.organization_id if membership else None
 
 
+def _organization_user_ids(db: Session, actor: User) -> set[int]:
+    """Return active CRM users in the actor's organization.
+
+    User accounts are global authentication identities, so membership—not the users
+    table itself—is the tenant boundary for user administration.
+    """
+    organization_id = _organization_id_for_user(db, actor.id)
+    if organization_id is None:
+        return {actor.id}
+    return {
+        int(user_id)
+        for user_id in db.scalars(
+            select(OrganizationMember.user_id).where(
+                OrganizationMember.organization_id == organization_id,
+                OrganizationMember.status == "Active",
+            )
+        ).all()
+    }
+
+
+def _user_in_actor_organization(db: Session, actor: User, user_id: int) -> bool:
+    return int(user_id) in _organization_user_ids(db, actor)
+
+
 
 def _ensure_user_organization(db: Session, user: User) -> Organization:
     organization = _organization_for_user(db, user.id)
@@ -808,6 +832,8 @@ def can_access_record(db: Session, resource: str, record: Any, actor: User | Non
     actor_org = _organization_id_for_user(db, actor.id)
     if _is_platform_owner(actor):
         return True
+    if isinstance(record, User):
+        return _user_in_actor_organization(db, actor, record.id)
     if hasattr(record, "organization_id"):
         record_org = getattr(record, "organization_id", None)
         if record_org is None or actor_org != record_org:
@@ -1015,6 +1041,8 @@ __all__ = [
     "_notify_account_once",
     "_organization_for_user",
     "_organization_id_for_user",
+    "_organization_user_ids",
+    "_user_in_actor_organization",
     "_organization_id_required",
     "_organization_record_count",
     "_organization_slug_for_user",
