@@ -218,7 +218,7 @@ async function pricingView() {
     const popular = features.popular === true;
     const price = Number(plan.price_monthly || 0);
     const priceLabel = price === 0 ? `${currencySymbol(plan.currency)}0` : `${currencySymbol(plan.currency)}${price.toLocaleString("en-IN")}`;
-    return `<article class="pricing-card ${popular ? "popular" : ""} ${current ? "current" : ""}">
+    return `<article class="pricing-card selectable ${popular ? "popular" : ""} ${current ? "current" : ""}" data-plan-card="${esc(plan.code)}" tabindex="0" role="button" aria-pressed="${current}">
       ${popular ? '<span class="pricing-popular">Most Popular</span>' : ""}
       <div class="pricing-card-head">
         <h2>${esc(plan.name)}</h2>
@@ -232,15 +232,70 @@ async function pricingView() {
         <span>${plan.max_records == null ? "Unlimited" : Number(plan.max_records).toLocaleString("en-IN")} records</span>
         <span>${plan.max_custom_modules == null ? "Unlimited" : Number(plan.max_custom_modules).toLocaleString("en-IN")} custom modules</span>
       </div>
+      <div class="pricing-select-row">
+        <button class="button ${current ? "button-ghost" : "button-primary"} pricing-select-button"
+          type="button" data-select-plan="${esc(plan.code)}" ${current ? "disabled" : ""}>
+          ${current ? "Current plan" : "Select plan"}
+        </button>
+      </div>
     </article>`;
   }).join("");
 
-  return `${pageHeader("Account", "Plans & Pricing", "Compare Yash CRM subscription plans, included capabilities, and usage limits.")}
+  return `${pageHeader("Account", "Upgrade plan", "Choose the Yash CRM plan that best matches your team and feature requirements.")}
     <section class="pricing-grid">${cards}</section>
     <section class="pricing-note card">
-      <strong>Pricing basis</strong>
-      <p>Prices shown are per user per month where applicable. Taxes and external provider charges are not included.</p>
+      <strong>Subscription</strong>
+      <p>Selecting a plan updates your active Yash CRM subscription. Prices are per user per month where applicable; taxes and external provider charges are separate.</p>
     </section>`;
+}
+
+function bindPricing() {
+  const choose = async (planCode, button) => {
+    if (!planCode || button?.disabled) return;
+    const original = button?.textContent;
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Updating…";
+      }
+      const result = await api("/api/subscription", {
+        method: "PATCH",
+        body: JSON.stringify({ plan_code: planCode }),
+      });
+      toast("Plan updated", `Your subscription is now ${result.subscription?.plan_name || titleCase(planCode)}.`);
+      await renderRoute();
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.textContent = original || "Select plan";
+      }
+      toast("Could not update plan", error.message, "error");
+    }
+  };
+
+  $$("[data-select-plan]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      choose(button.dataset.selectPlan, button);
+    });
+  });
+
+  $$("[data-plan-card]").forEach((card) => {
+    const trigger = () => {
+      const button = $("[data-select-plan]", card);
+      if (button && !button.disabled) choose(button.dataset.selectPlan, button);
+    };
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      trigger();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        trigger();
+      }
+    });
+  });
 }
 
 function pageHeader(eyebrow, title, copy, actions = "") {
@@ -379,8 +434,12 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "pricing") {
-      setBreadcrumb("Plans & Pricing", "Account");
+      return navigate("/subscriptions", true);
+    }
+    if (parts[0] === "subscriptions") {
+      setBreadcrumb("Upgrade plan", "Account");
       content.innerHTML = await pricingView();
+      bindPricing();
       return;
     }
     if (parts[0] === "activities" && !parts[1]) {
