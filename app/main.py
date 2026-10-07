@@ -3118,10 +3118,14 @@ async def cloud_security(request: Request, call_next):
         tenant_token = TENANT_ACTOR_ID.set(int(actor_id))
         try:
             with SessionLocal() as db:
-                organization_id = _organization_id_for_user(db, int(actor_id))
-                if organization_id:
-                    request.state.organization_id = organization_id
-                    organization_token = TENANT_ORGANIZATION_ID.set(int(organization_id))
+                context_actor = db.get(User, int(actor_id))
+                # The deployment-provisioned platform owner is intentionally global.
+                # Customer administrators and normal users remain organization-scoped.
+                if context_actor is not None and not _is_platform_owner(context_actor):
+                    organization_id = _organization_id_for_user(db, int(actor_id))
+                    if organization_id:
+                        request.state.organization_id = organization_id
+                        organization_token = TENANT_ORGANIZATION_ID.set(int(organization_id))
         except Exception:
             organization_token = None
     try:
