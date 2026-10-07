@@ -347,7 +347,7 @@ def test_every_populated_module_lists_for_normal_tenant_user_without_500():
             token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
             try:
                 account = main.Account(organization_id=org_id, owner_id=user.id, name='Audit Account', status='Active')
-                contact = main.Contact(organization_id=org_id, owner_id=user.id, first_name='Audit', last_name='Contact', status='Active')
+                contact = main.Contact(organization_id=org_id, owner_id=user.id, first_name='Audit', last_name='Contact')
                 lead = main.Lead(organization_id=org_id, owner_id=user.id, name='Audit Lead', company='Audit Co', status='New')
                 deal = main.Deal(organization_id=org_id, owner_id=user.id, name='Audit Deal', stage='Qualification', status='Open', amount=1000)
                 activity = main.Activity(organization_id=org_id, owner_id=user.id, activity_type='Task', subject='Audit Task', status='Open')
@@ -436,9 +436,8 @@ def test_populated_modules_survive_malformed_field_metadata():
                 db.add(module)
                 db.flush()
                 db.add(main.MetadataField(
-                    organization_id=org_id,
                     module_id=module.id,
-                    api_name=None,
+                    api_name='legacy_broken_field',
                     label='Broken legacy field',
                     field_type='text',
                     visibility=['bad-visibility'],
