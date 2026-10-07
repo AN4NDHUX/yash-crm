@@ -2427,6 +2427,13 @@ def _subscription_payload(db: Session, user_id: int) -> dict[str, Any]:
     subscription = _ensure_organization_subscription(db, user)
     organization = db.get(Organization, subscription.organization_id)
     plan = db.get(Plan, subscription.plan_id)
+    pending = db.scalar(
+        select(SubscriptionChangeRequest).where(
+            SubscriptionChangeRequest.organization_id == subscription.organization_id,
+            SubscriptionChangeRequest.status == "Pending Payment",
+        ).order_by(SubscriptionChangeRequest.id.desc())
+    )
+    pending_plan = db.get(Plan, pending.to_plan_id) if pending else None
     return {
         "id": subscription.id,
         "organization_id": subscription.organization_id,
@@ -2443,6 +2450,14 @@ def _subscription_payload(db: Session, user_id: int) -> dict[str, Any]:
         "current_period_end": subscription.current_period_end.isoformat() if subscription.current_period_end else None,
         "cancel_at_period_end": bool(subscription.cancel_at_period_end),
         "provider": subscription.provider,
+        "pending_upgrade": ({
+            "request_id": pending.id,
+            "plan_id": pending_plan.id if pending_plan else pending.to_plan_id,
+            "plan_code": pending_plan.code if pending_plan else None,
+            "plan_name": pending_plan.name if pending_plan else "Pending plan",
+            "status": pending.status,
+            "requested_at": pending.created_at.isoformat() if pending.created_at else None,
+        } if pending else None),
     }
 
 
