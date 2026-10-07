@@ -4192,6 +4192,10 @@ def get_profile(db: Session = Depends(get_db), user: User = Depends(current_acto
         raise HTTPException(404, "Profile not found")
     profile = serialize(user, db)
     profile["owner_console_access"] = _is_platform_owner(user)
+    subscription = _subscription_payload(db, user.id)
+    profile["subscription"] = subscription
+    profile["plan_name"] = subscription.get("plan_name") or "Free"
+    profile["plan_code"] = subscription.get("plan_code") or "free"
     return profile
 
 
