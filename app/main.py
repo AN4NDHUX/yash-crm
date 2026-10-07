@@ -1052,7 +1052,14 @@ AI_REVIEW_STATES = {"open", "acted_on", "dismissed", "corrected", "unclear", "re
 
 
 def _pilot_admin(db: Session) -> User | None:
-    return db.scalar(select(User).where(User.status == "Active", func.lower(User.role) == "administrator").order_by(User.id))
+    organization_id = TENANT_ORGANIZATION_ID.get()
+    query = select(User).where(User.status == "Active", func.lower(User.role) == "administrator")
+    if organization_id is not None:
+        query = query.join(OrganizationMember, OrganizationMember.user_id == User.id).where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.status == "Active",
+        )
+    return db.scalar(query.order_by(User.id))
 
 
 def _pilot_clock(db: Session) -> tuple[OrganizationSetting, ZoneInfo, datetime]:
@@ -3605,9 +3612,17 @@ def admin_roles(db: Session = Depends(get_db), _: User = Depends(require_admin_a
 
 
 @app.get("/api/admin/security/groups")
-def list_security_groups(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def list_security_groups(db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
     groups = db.scalars(select(SecurityGroup).order_by(SecurityGroup.name)).all()
-    return {"items": [{**serialize(group), "members": [serialize(db.get(User, member.user_id)) for member in db.scalars(select(SecurityGroupMember).where(SecurityGroupMember.group_id == group.id)).all() if db.get(User, member.user_id)]} for group in groups], "total": len(groups)}
+    items = []
+    for group in groups:
+        members = []
+        for member in db.scalars(select(SecurityGroupMember).where(SecurityGroupMember.group_id == group.id)).all():
+            user = db.get(User, member.user_id)
+            if user is not None and _user_in_actor_organization(db, actor, user.id):
+                members.append(serialize(user, db, actor))
+        items.append({**serialize(group), "members": members})
+    return {"items": items, "total": len(items)}
 
 
 @app.post("/api/admin/security/groups", status_code=201)
@@ -3621,8 +3636,8 @@ def create_security_group(payload: dict[str, Any], db: Session = Depends(get_db)
     db.add(group)
     db.flush()
     for user_id in payload.get("user_ids") or []:
-        if db.get(User, int(user_id)):
-            db.add(SecurityGroupMember(group_id=group.id, user_id=int(user_id), membership_role="Member"))
+        member = _require_organization_user(db, actor, int(user_id))
+        db.add(SecurityGroupMember(group_id=group.id, user_id=member.id, membership_role="Member"))
     add_audit(db, "group_created", "security_groups", group.id, f"Created security group '{name}'", actor_id=actor.id)
     db.commit()
     return serialize(group)
@@ -3641,7 +3656,13 @@ def create_territory(payload: dict[str, Any], db: Session = Depends(get_db), act
         raise HTTPException(422, "Territory name is required")
     if db.scalar(select(Territory).where(Territory.name == name)):
         raise HTTPException(409, "That territory already exists")
-    row = Territory(name=name, parent_id=payload.get("parent_id"), manager_id=payload.get("manager_id"), criteria=payload.get("criteria") or {}, visibility=str(payload.get("visibility") or "Private"), forecasting=bool(payload.get("forecasting", True)), active=bool(payload.get("active", True)))
+    manager_id = int(payload["manager_id"]) if payload.get("manager_id") not in (None, "") else None
+    if manager_id is not None:
+        _require_organization_user(db, actor, manager_id)
+    parent_id = int(payload["parent_id"]) if payload.get("parent_id") not in (None, "") else None
+    if parent_id is not None and db.get(Territory, parent_id) is None:
+        raise HTTPException(422, "Parent territory must belong to this organization")
+    row = Territory(name=name, parent_id=parent_id, manager_id=manager_id, criteria=payload.get("criteria") or {}, visibility=str(payload.get("visibility") or "Private"), forecasting=bool(payload.get("forecasting", True)), active=bool(payload.get("active", True)))
     db.add(row)
     db.flush()
     add_audit(db, "territory_created", "territories", row.id, f"Created territory '{row.name}'", actor_id=actor.id)
@@ -3679,8 +3700,9 @@ def create_privacy_record(payload: dict[str, Any], db: Session = Depends(get_db)
     required = [payload.get("user_id"), payload.get("subject_type"), payload.get("subject_id"), payload.get("consent_type")]
     if any(value in (None, "") for value in required):
         raise HTTPException(422, "user_id, subject_type, subject_id, and consent_type are required")
+    privacy_user = _require_organization_user(db, actor, int(payload["user_id"]))
     retention_until = parse_datetime_value(payload.get("retention_until")) if payload.get("retention_until") else None
-    row = PrivacyRecord(user_id=int(payload["user_id"]), subject_type=str(payload["subject_type"]), subject_id=int(payload["subject_id"]), consent_type=str(payload["consent_type"]), status=str(payload.get("status") or "Pending"), classification=str(payload.get("classification") or "Normal"), retention_until=retention_until, source=str(payload.get("source") or "admin"), metadata_json=payload.get("metadata") or {})
+    row = PrivacyRecord(user_id=privacy_user.id, subject_type=str(payload["subject_type"]), subject_id=int(payload["subject_id"]), consent_type=str(payload["consent_type"]), status=str(payload.get("status") or "Pending"), classification=str(payload.get("classification") or "Normal"), retention_until=retention_until, source=str(payload.get("source") or "admin"), metadata_json=payload.get("metadata") or {})
     db.add(row)
     db.flush()
     add_audit(db, "privacy_consent_created", "privacy_records", row.id, f"Recorded {row.consent_type} consent", actor_id=actor.id)
@@ -3691,9 +3713,12 @@ def create_privacy_record(payload: dict[str, Any], db: Session = Depends(get_db)
 @app.post("/api/admin/privacy/{subject_type}/{subject_id}/anonymize")
 def anonymize_subject(subject_type: str, subject_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
     model = RESOURCE_MAP.get(subject_type)
-    row = db.get(model, subject_id) if model else (db.get(User, subject_id) if subject_type == "users" else None)
-    if row is None:
-        raise HTTPException(404, "Privacy subject not found")
+    if subject_type == "users":
+        row = _require_organization_user(db, actor, subject_id)
+    else:
+        row = db.get(model, subject_id) if model else None
+        if row is None or not can_access_record(db, subject_type, row, actor, "write"):
+            raise HTTPException(404, "Privacy subject not found")
     if hasattr(row, "name"):
         row.name = f"Anonymized {subject_id}"
     if hasattr(row, "email"):
