@@ -249,6 +249,55 @@ def test_cloud_administrator_can_sign_in_with_app_username_or_admin_email():
     assert out['owner'] == 200
 
 
+def test_owner_console_is_only_available_to_configured_platform_owner():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        owner_login = c.post('/api/auth/login', json={
+            'identifier':'admin',
+            'password':'supersecretpass123'
+        })
+        out['owner_login'] = owner_login.status_code
+        owner_profile = c.get('/api/settings/profile')
+        out['owner_flag'] = owner_profile.json().get('owner_console_access')
+        out['owner_page'] = c.get('/owner').status_code
+        out['owner_api'] = c.get('/api/owner/overview').status_code
+        c.post('/api/auth/logout')
+
+        created = c.post('/api/auth/signup', json={
+            'name':'Other Administrator',
+            'username':'other.admin',
+            'email':'other.admin@example.com',
+            'password':'12345678'
+        })
+        out['signup'] = created.status_code
+        with main.SessionLocal() as db:
+            user = db.scalar(main.select(main.User).where(main.User.username == 'other.admin'))
+            user.role = 'Administrator'
+            db.commit()
+        c.post('/api/auth/logout')
+        second_login = c.post('/api/auth/login', json={
+            'identifier':'other.admin',
+            'password':'12345678'
+        })
+        out['second_login'] = second_login.status_code
+        profile = c.get('/api/settings/profile')
+        out['second_flag'] = profile.json().get('owner_console_access')
+        out['second_owner_page'] = c.get('/owner').status_code
+        out['second_owner_api'] = c.get('/api/owner/overview').status_code
+    """)
+    assert out == {
+        'owner_login': 200,
+        'owner_flag': True,
+        'owner_page': 200,
+        'owner_api': 200,
+        'signup': 201,
+        'second_login': 200,
+        'second_flag': False,
+        'second_owner_page': 403,
+        'second_owner_api': 403,
+    }
+
+
 def test_environment_owner_credentials_repair_stale_admin_password():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
