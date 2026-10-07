@@ -3502,3 +3502,35 @@ textarea {
     max-height: calc(100dvh - 88px);
   }
 }
+
+/* Notification bell visibility fix */
+.notification-menu {
+  flex: 0 0 auto;
+  overflow: visible !important;
+}
+.notification-trigger {
+  width: 40px !important;
+  height: 40px !important;
+  padding: 6px !important;
+  overflow: visible !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 0 !important;
+}
+.notification-icon-img {
+  width: 26px !important;
+  height: 26px !important;
+  min-width: 26px !important;
+  min-height: 26px !important;
+  max-width: none !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  display: block !important;
+  flex: 0 0 26px !important;
+  transform: none !important;
+}
+.notification-badge {
+  top: -2px !important;
+  right: -4px !important;
+}
