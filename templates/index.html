@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261006-workspace-stability-v2" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261007-session-identity-v3" />
 </head>
 <body>
   <div class="app-shell">
@@ -142,7 +142,41 @@
   </div>
 
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=20261006-workspace-stability-v2"></script>
+  <script type="module" src="/static/js/app.js?v=20261007-session-identity-v3"></script>
+  <script data-session-identity-bootstrap>
+    (() => {
+      const ownerButton = document.getElementById("owner-console-button");
+      const topProfile = document.getElementById("top-profile");
+      if (ownerButton) ownerButton.hidden = true;
+      if (topProfile) topProfile.hidden = true;
+
+      fetch("/api/settings/profile", { credentials: "same-origin", cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) throw new Error("Unable to load session profile");
+          return response.json();
+        })
+        .then((profile) => {
+          const username = String(profile.username || profile.name || "Account").trim() || "Account";
+          const role = String(profile.role || "CRM user").trim() || "CRM user";
+          const owner = profile.owner_console_access === true;
+
+          document.querySelectorAll(".user-mini strong").forEach((node) => { node.textContent = username; });
+          document.querySelectorAll(".user-mini small").forEach((node) => { node.textContent = role; });
+
+          if (ownerButton) ownerButton.hidden = !owner;
+          if (topProfile) topProfile.hidden = !owner;
+
+          if (owner) {
+            document.querySelectorAll(".top-profile-copy strong").forEach((node) => { node.textContent = username; });
+            document.querySelectorAll(".top-profile-copy small").forEach((node) => { node.textContent = role; });
+          }
+        })
+        .catch(() => {
+          if (ownerButton) ownerButton.hidden = true;
+          if (topProfile) topProfile.hidden = true;
+        });
+    })();
+  </script>
   <script>
     (() => {
       const syncSidebarRoute = () => {
