@@ -43,8 +43,9 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - run: python -m pip_audit -r requirements.txt
       - run: bandit -q -r app -lll
-      - run: python -m py_compile app/main.py
-      - run: node --check static/js/app.js
+      - run: python -m compileall -q app
+      - name: Validate all frontend modules
+        run: find static/js -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Verify PostgreSQL migrations
         run: python -m alembic upgrade head
         env:
