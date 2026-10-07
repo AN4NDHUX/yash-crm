@@ -40,6 +40,23 @@ def _post_form(url: str, fields: dict[str, Any], headers: dict[str, str]) -> dic
         raise BillingError("Billing provider is temporarily unavailable.") from exc
 
 
+def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=25) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1200]
+        raise BillingError(f"Billing provider rejected checkout creation: {detail}") from exc
+    except (URLError, TimeoutError, ValueError) as exc:
+        raise BillingError("Billing provider is temporarily unavailable.") from exc
+
+
 def create_hosted_checkout(
     *,
     request_id: int,
@@ -93,21 +110,26 @@ def create_hosted_checkout(
         raise BillingError("Razorpay credentials are not configured.")
     auth = base64.b64encode(f"{key_id}:{key_secret}".encode("utf-8")).decode("ascii")
     reference = f"yash-upgrade-{request_id}"
-    fields = {
-        "amount": str(amount_minor * seats),
+    payload = {
+        "amount": amount_minor * seats,
         "currency": currency.upper(),
-        "accept_partial": "false",
+        "accept_partial": False,
         "reference_id": reference,
         "description": f"Yash CRM {plan_name} - {seats} user(s)",
-        "customer[email]": customer_email,
-        "notify[email]": "true",
-        "reminder_enable": "true",
+        "customer": {"email": customer_email},
+        "notify": {"email": True, "sms": False},
+        "reminder_enable": True,
         "callback_url": f"{public_url}/subscriptions?checkout=success",
         "callback_method": "get",
+        "notes": {
+            "yashcrm_request_id": str(request_id),
+            "plan_name": plan_name,
+            "seats": str(seats),
+        },
     }
-    data = _post_form(
+    data = _post_json(
         "https://api.razorpay.com/v1/payment_links",
-        fields,
+        payload,
         {"Authorization": f"Basic {auth}"},
     )
     return {
@@ -132,7 +154,7 @@ def verify_webhook(provider: str, body: bytes, headers: dict[str, str]) -> dict[
         link = (((event.get("payload") or {}).get("payment_link") or {}).get("entity") or {})
         reference = str(link.get("reference_id") or "")
         request_id = int(reference.rsplit("-", 1)[-1]) if reference.startswith("yash-upgrade-") else None
-        paid = str(event.get("event") or "") in {"payment_link.paid", "payment.captured"}
+        paid = str(event.get("event") or "") == "payment_link.paid"
         return {
             "verified": True,
             "paid": paid,
