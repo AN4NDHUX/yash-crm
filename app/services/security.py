@@ -596,7 +596,7 @@ def _enforce_plan_feature(db: Session, actor: User, feature: str) -> None:
     plan = _active_plan(db, actor)
     if plan is None:
         return
-    if not bool((plan.features or {}).get(feature, False)):
+    if not bool(_json_mapping(plan.features).get(feature, False)):
         raise HTTPException(403, detail={"code": "PLAN_UPGRADE_REQUIRED", "message": f"Your {plan.name} plan does not include this feature."})
 
 
@@ -671,7 +671,7 @@ def _enforce_storage_limit(db: Session, actor: User, incoming_bytes: int) -> Non
             PlatformRecord.archived == False,
         )
     ).all()
-    used = sum(int((row.data or {}).get("file_size") or 0) for row in rows)
+    used = sum(int(_json_mapping(row.data).get("file_size") or 0) for row in rows)
     maximum = int(plan.max_storage_mb) * 1024 * 1024
     if used + max(0, int(incoming_bytes)) > maximum:
         raise HTTPException(403, detail={
@@ -864,6 +864,16 @@ def _metadata_fields(db: Session, resource: str) -> list[MetadataField]:
     return db.scalars(select(MetadataField).where(MetadataField.module_id.in_(module_ids))).all()
 
 
+def _json_mapping(value: Any) -> dict[str, Any]:
+    """Normalize persisted JSON configuration to a mapping.
+
+    Historical imports/customizations may contain null, lists, strings, or other
+    scalar JSON. Security evaluation must fail closed/open by explicit policy,
+    never with an unhandled AttributeError that returns HTTP 500 for every API.
+    """
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def field_allowed(db: Session, resource: str, field_name: str, actor: User | None, action: str = "read") -> bool:
     if not isinstance(actor, User):
         return True
@@ -878,10 +888,10 @@ def field_allowed(db: Session, resource: str, field_name: str, actor: User | Non
     if actor.role:
         principals.append(str(actor.role).lower().replace("representative", "rep"))
 
-    def matching_value(mapping: dict[str, Any]) -> Any:
+    def matching_value(mapping: Any) -> Any:
         normalized = {
             str(key).lower().replace("representative", "rep"): value
-            for key, value in (mapping or {}).items()
+            for key, value in _json_mapping(mapping).items()
         }
         for principal in principals:
             if principal in normalized:
@@ -891,8 +901,8 @@ def field_allowed(db: Session, resource: str, field_name: str, actor: User | Non
     for field in _metadata_fields(db, resource):
         if field.api_name.lower() != field_name.lower():
             continue
-        visibility = field.visibility or {}
-        permissions = field.permissions or {}
+        visibility = _json_mapping(field.visibility)
+        permissions = _json_mapping(field.permissions)
         selected_visibility = matching_value(visibility)
         if action == "read" and str(selected_visibility or "").lower() == "hidden":
             return False
@@ -929,13 +939,12 @@ def _profile_permission_record(db: Session, actor: User) -> dict[str, Any] | Non
         PlatformRecord.archived == False,
     )).all()
     for row in rows:
-        name = str((row.data or {}).get("name") or row.title or "").strip()
+        data = _json_mapping(row.data)
+        name = str(data.get("name") or row.title or "").strip()
         if name.lower() == profile_name.lower():
-            data = dict(row.data or {})
-            permissions = data.get("permissions")
-            return permissions if isinstance(permissions, dict) else {}
+            return _json_mapping(data.get("permissions"))
     direct = db.scalar(select(PermissionProfile).where(func.lower(PermissionProfile.name) == profile_name.lower()))
-    return dict(direct.grants or {}) if direct else None
+    return _json_mapping(direct.grants) if direct else None
 
 
 def _profile_action_allowed(db: Session, actor: User, resource: str, action: str) -> bool:
@@ -993,7 +1002,7 @@ def _enforce_organization_user_limit(db: Session, actor: User) -> None:
     plan = _active_plan(db, actor)
     if plan is None:
         return
-    raw_limit = (plan.features or {}).get("max_users")
+    raw_limit = _json_mapping(plan.features).get("max_users")
     if raw_limit in {None, "", 0}:
         return
     organization_id = _organization_id_required(db, actor)
