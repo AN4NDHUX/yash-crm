@@ -14,6 +14,19 @@ from app.models import *
 from app.platform_catalog import PLATFORM_RESOURCES
 from app.schemas import *
 
+
+# Security is injected after the security service is loaded. This keeps the core
+# record/automation layer independent from authentication implementation details.
+_redact_hook = lambda db, resource, data, actor: data
+_access_hook = lambda db, resource, record, actor, access="read": True
+_org_resolver_hook = lambda db, user_id: None
+
+def configure_security_hooks(redact, access, organization_resolver) -> None:
+    global _redact_hook, _access_hook, _org_resolver_hook
+    _redact_hook = redact
+    _access_hook = access
+    _org_resolver_hook = organization_resolver
+
 RESOURCE_MAP: dict[str, type[Base]] = {
     "leads": Lead,
     "contacts": Contact,
@@ -102,7 +115,7 @@ def serialize(obj: Any, db: Session | None = None, actor: User | None = None) ->
         data["full_name"] = f"{obj.first_name} {obj.last_name}".strip()
     if isinstance(obj, Activity) and obj.related_type and obj.related_id:
         data["related_label"] = related_label(db, obj.related_type, obj.related_id) if db else None
-    return redact_record_fields(db, getattr(obj, "__tablename__", ""), data, actor) if db else data
+    return _redact_hook(db, getattr(obj, "__tablename__", ""), data, actor) if db else data
 
 
 def related_label(db: Session, related_type: str, related_id: int) -> str | None:
@@ -289,7 +302,7 @@ def serialize_platform(record: PlatformRecord, db: Session | None = None, actor:
     if db and record.owner_id:
         owner = db.get(User, record.owner_id)
         data["owner_name"] = owner.name if owner else None
-    return redact_record_fields(db, record.resource, data, actor) if db else data
+    return _redact_hook(db, record.resource, data, actor) if db else data
 
 
 def add_audit(db: Session, action: str, resource: str, record_id: int | None,
@@ -297,7 +310,7 @@ def add_audit(db: Session, action: str, resource: str, record_id: int | None,
               after: dict[str, Any] | None = None, actor_id: int | None = None) -> None:
     organization_id = TENANT_ORGANIZATION_ID.get()
     if organization_id is None and actor_id:
-        organization_id = _organization_id_for_user(db, actor_id)
+        organization_id = _org_resolver_hook(db, actor_id)
     db.add(AuditEvent(
         organization_id=organization_id,
         actor_id=actor_id,
@@ -711,10 +724,11 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
             query = query.where(Deal.expected_close_date >= close_from)
         if close_to:
             query = query.where(Deal.expected_close_date <= close_to)
-    all_rows = [row for row in db.scalars(query.order_by(*order_clauses(model, sort))).all() if can_access_record(db, resource, row, actor)]
+    all_rows = [row for row in db.scalars(query.order_by(*order_clauses(model, sort))).all() if _access_hook(db, resource, row, actor)]
     count = len(all_rows)
     rows = all_rows[offset:offset + limit]
     return {"items": [serialize(row, db, actor) for row in rows], "total": count, "limit": limit, "offset": offset}
+
 
 
 __all__ = [
@@ -730,6 +744,7 @@ __all__ = [
     "add_audit",
     "apply_assignment_rule",
     "coerce_value",
+    "configure_security_hooks",
     "enforce_blueprint_transition",
     "ensure_platform_defaults",
     "ensure_transaction_number",
