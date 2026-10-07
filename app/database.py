@@ -59,14 +59,16 @@ TENANT_ORGANIZATION_ID: ContextVar[int | None] = ContextVar("yashcrm_tenant_orga
 
 @event.listens_for(Session, "do_orm_execute")
 def _apply_tenant_scope(execute_state: Any) -> None:
-    """Scope organization-aware records to the authenticated CRM organization.
+    """Scope organization-aware ORM reads and bulk mutations to the active tenant.
 
     Record ownership remains a permission concept; organization_id is the tenant
-    boundary. This permits legitimate sharing between users in one organization
-    without exposing records to another organization.
+    boundary. Applying the same criteria to ORM SELECT/UPDATE/DELETE statements
+    prevents future bulk mutations from crossing organization boundaries.
     """
     organization_id = TENANT_ORGANIZATION_ID.get()
-    if not organization_id or not execute_state.is_select:
+    if not organization_id or not (
+        execute_state.is_select or execute_state.is_update or execute_state.is_delete
+    ):
         return
     statement = execute_state.statement
     for mapper in Base.registry.mappers:
