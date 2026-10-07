@@ -77,26 +77,26 @@ jobs:
           set -euo pipefail
           for attempt in $(seq 1 30); do
             if python - <<'PY'
-import json
-import os
-from urllib.request import urlopen
+              import json
+              import os
+              from urllib.request import urlopen
 
-base = os.environ["PRODUCTION_BASE_URL"].rstrip("/")
-expected = os.environ["EXPECTED_APP_REVISION"].strip()
-with urlopen(base + "/ready", timeout=15) as response:
-    payload = json.load(response)
-live = str(payload.get("app_revision") or "")
-if (
-    response.status == 200
-    and payload.get("status") == "ok"
-    and payload.get("database") == "ready"
-    and live != "unknown"
-    and (live.startswith(expected) or expected.startswith(live))
-):
-    print(f"Railway is serving {live}")
-else:
-    raise SystemExit(1)
-PY
+              base = os.environ["PRODUCTION_BASE_URL"].rstrip("/")
+              expected = os.environ["EXPECTED_APP_REVISION"].strip()
+              with urlopen(base + "/ready", timeout=15) as response:
+                  payload = json.load(response)
+              live = str(payload.get("app_revision") or "")
+              if (
+                  response.status == 200
+                  and payload.get("status") == "ok"
+                  and payload.get("database") == "ready"
+                  and live != "unknown"
+                  and (live.startswith(expected) or expected.startswith(live))
+              ):
+                  print(f"Railway is serving {live}")
+              else:
+                  raise SystemExit(1)
+              PY
             then
               exit 0
             fi
