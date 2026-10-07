@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.access_policy import request_entitlement_feature, request_resource_action
 from app.database import SessionLocal, TENANT_ACTOR_ID, TENANT_ORGANIZATION_ID, get_db
 from app.models import *
+from app.platform_catalog import PLATFORM_RESOURCES
 from app.services.core import *
 
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
@@ -608,6 +609,16 @@ def _organization_id_required(db: Session, actor: User) -> int:
     return int(organization_id)
 
 
+def _billable_platform_resources() -> set[str]:
+    """Return platform resources that represent CRM business data, not setup metadata."""
+    billable_groups = {"Sales & Inventory", "Customer & Marketing", "Collaboration", "Analytics"}
+    return {
+        resource
+        for resource, config in PLATFORM_RESOURCES.items()
+        if str(config.get("group") or "").strip() in billable_groups
+    }
+
+
 def _organization_record_count(db: Session, actor: User) -> int:
     organization_id = _organization_id_required(db, actor)
     total = 0
@@ -617,14 +628,17 @@ def _organization_record_count(db: Session, actor: User) -> int:
                 select(func.count()).select_from(model).where(model.organization_id == organization_id)
             ) or 0
         )
-    total += int(
-        db.scalar(
-            select(func.count()).select_from(PlatformRecord).where(
-                PlatformRecord.organization_id == organization_id,
-                PlatformRecord.archived == False,
-            )
-        ) or 0
-    )
+    billable_resources = _billable_platform_resources()
+    if billable_resources:
+        total += int(
+            db.scalar(
+                select(func.count()).select_from(PlatformRecord).where(
+                    PlatformRecord.organization_id == organization_id,
+                    PlatformRecord.resource.in_(billable_resources),
+                    PlatformRecord.archived == False,
+                )
+            ) or 0
+        )
     return total
 
 
