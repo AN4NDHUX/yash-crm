@@ -88,11 +88,17 @@ function emptyState(icon, title, copy, button = "") { return `<div class="empty-
 
 async function ensureLookups() {
   if (state.lookups.loaded) return;
-  const [accounts, contacts, leads, deals] = await Promise.all([api("/api/accounts?limit=100"), api("/api/contacts?limit=100"), api("/api/leads?limit=100"), api("/api/deals?limit=100")]);
-  state.lookups.accounts = accounts.items;
-  state.lookups.contacts = contacts.items;
-  state.lookups.leads = leads.items;
-  state.lookups.deals = deals.items;
+  const resources = ["accounts", "contacts", "leads", "deals"];
+  const results = await Promise.allSettled(
+    resources.map((resource) => api(`/api/${resource}?limit=100`))
+  );
+  results.forEach((result, index) => {
+    const resource = resources[index];
+    state.lookups[resource] = result.status === "fulfilled"
+      ? (result.value?.items || [])
+      : [];
+  });
+  // Lookups enrich labels and forms; they are not allowed to block route rendering.
   state.lookups.loaded = true;
 }
 
