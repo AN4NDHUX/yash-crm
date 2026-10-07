@@ -1,0 +1,205 @@
+/* Plans & Pricing */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  align-items: stretch;
+}
+.pricing-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+  padding: 26px;
+  border: 1px solid var(--premium-border, var(--border));
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: var(--premium-shadow, var(--shadow-sm));
+}
+.pricing-card.popular {
+  border: 1.5px solid #14213d;
+  box-shadow: 0 16px 36px rgba(20,33,61,.10);
+}
+.pricing-card.current {
+  outline: 2px solid rgba(23,105,224,.22);
+  outline-offset: 2px;
+}
+.pricing-popular {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 6px 11px;
+  border-radius: 0 17px 0 10px;
+  background: #ffd54a;
+  color: #151515;
+  font-size: 11px;
+  font-weight: 800;
+}
+.pricing-card-head h2 {
+  margin: 0 0 20px;
+  font-size: 25px;
+  font-weight: 700;
+}
+.pricing-price {
+  font-size: 46px;
+  line-height: 1;
+  letter-spacing: -.04em;
+  color: var(--premium-ink, var(--text));
+}
+.pricing-cycle {
+  min-height: 20px;
+  margin-top: 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.pricing-card-head p {
+  min-height: 42px;
+  margin: 22px 0 10px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.pricing-status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #f3f6fb;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+.pricing-status.is-current {
+  background: #e9f2ff;
+  color: #1769e0;
+}
+.pricing-features {
+  display: grid;
+  gap: 11px;
+  margin: 24px 0;
+  padding: 0;
+  list-style: none;
+}
+.pricing-features li {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.pricing-features li > span:first-child {
+  color: #0f4f89;
+  font-weight: 800;
+}
+.pricing-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+.pricing-limits span {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f7f9fc;
+  color: var(--text-soft);
+  font-size: 10px;
+}
+.pricing-note {
+  margin-top: 18px;
+  padding: 18px 20px;
+}
+.pricing-note p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+@media (max-width: 1180px) {
+  .pricing-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  .pricing-grid { grid-template-columns: 1fr; }
+  .pricing-card { min-height: 0; }
+}
+
+
+/* Upgrade plan entry point and selectable pricing cards */
+.upgrade-plan-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #2f80ed;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background-color .16s ease, color .16s ease, transform .16s ease;
+}
+.upgrade-plan-button span {
+  font-size: 16px;
+  line-height: 1;
+}
+.upgrade-plan-button:hover,
+.upgrade-plan-button:focus-visible {
+  background: #edf5ff;
+  color: #1769e0;
+}
+.upgrade-plan-button:active {
+  transform: translateY(1px);
+}
+.pricing-card.selectable {
+  cursor: pointer;
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.pricing-card.selectable:hover {
+  transform: translateY(-2px);
+  border-color: #b9c9df;
+  box-shadow: 0 18px 40px rgba(20,33,61,.10);
+}
+.pricing-card.selectable:focus-visible {
+  outline: 3px solid rgba(23,105,224,.18);
+  outline-offset: 3px;
+}
+.pricing-card.current {
+  cursor: default;
+}
+.pricing-select-row {
+  margin-top: 18px;
+}
+.pricing-select-button {
+  width: 100%;
+}
+.pricing-select-button:disabled {
+  cursor: default;
+  opacity: .7;
+}
+@media (max-width: 760px) {
+  .upgrade-plan-button {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+}
+
+
+/* Sidebar account subscription label */
+.user-mini-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.user-mini-plan {
+  margin-top: 1px;
+  color: #79b8ff !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
