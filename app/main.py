@@ -906,7 +906,7 @@ def _report_rows(db: Session, module: str, actor: User | None = None) -> list[di
 
 
 def _report_definition(record: PlatformRecord, override: dict[str, Any] | None = None) -> dict[str, Any]:
-    definition = dict(record.data or {})
+    definition = dict(record.data) if isinstance(record.data, dict) else {}
     definition.setdefault("name", record.title)
     definition.setdefault("module", definition.get("source") or "deals")
     definition.setdefault("report_type", "Tabular")
@@ -998,7 +998,7 @@ def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = N
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.id == dashboard_id, PlatformRecord.resource == "dashboards", PlatformRecord.archived == False))
     if record is None:
         raise HTTPException(404, "Dashboard not found")
-    definition = dict(record.data or {})
+    definition = dict(record.data) if isinstance(record.data, dict) else {}
     widgets = definition.get("components") or definition.get("widgets") or []
     if not isinstance(widgets, list) or len(widgets) > 30:
         raise HTTPException(422, "Dashboard widgets must be a list of at most 30 items")
@@ -1378,7 +1378,7 @@ def _ai_platform_rows(db: Session, resource: str, limit: int = 20) -> list[dict[
         "owner_id": row.owner_id, "account_id": row.account_id,
         "contact_id": row.contact_id, "deal_id": row.deal_id,
         "amount": row.amount, "due_date": row.due_date.isoformat() if row.due_date else None,
-        **{key: value for key, value in (row.data or {}).items() if key in safe_keys},
+        **{key: value for key, value in (row.data if isinstance(row.data, dict) else {}).items() if key in safe_keys},
     } for row in rows]
 
 
@@ -1922,14 +1922,14 @@ def lead_journey(lead_id: int, db: Session = Depends(get_db), actor: User = Depe
     if lead is None or lead.archived or not can_access_record(db, "leads", lead, actor):
         raise HTTPException(404, "Lead not found")
     deal_ids = {lead.converted_deal_id} if lead.converted_deal_id else set()
-    visits = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "site_visits", PlatformRecord.archived == False)).all() if int((item.data or {}).get("lead_id") or 0) == lead.id]
+    visits = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "site_visits", PlatformRecord.archived == False)).all() if int((item.data if isinstance(item.data, dict) else {}).get("lead_id") or 0) == lead.id]
     quotes = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "quotes", PlatformRecord.archived == False)).all() if item.deal_id in deal_ids]
     quote_ids = {item.id for item in quotes}
-    orders = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "sales_orders", PlatformRecord.archived == False)).all() if int((item.data or {}).get("quote_id") or 0) in quote_ids]
+    orders = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "sales_orders", PlatformRecord.archived == False)).all() if int((item.data if isinstance(item.data, dict) else {}).get("quote_id") or 0) in quote_ids]
     order_ids = {item.id for item in orders}
-    invoices = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "invoices", PlatformRecord.archived == False)).all() if int((item.data or {}).get("sales_order_id") or 0) in order_ids]
+    invoices = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "invoices", PlatformRecord.archived == False)).all() if int((item.data if isinstance(item.data, dict) else {}).get("sales_order_id") or 0) in order_ids]
     invoice_ids = {item.id for item in invoices}
-    payments = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "payments", PlatformRecord.archived == False)).all() if int((item.data or {}).get("invoice_id") or 0) in invoice_ids]
+    payments = [item for item in db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "payments", PlatformRecord.archived == False)).all() if int((item.data if isinstance(item.data, dict) else {}).get("invoice_id") or 0) in invoice_ids]
     related_pairs = {("leads", lead.id)} | {("deals", item_id) for item_id in deal_ids}
     activities = [item for item in db.scalars(select(Activity).where(Activity.archived == False).order_by(Activity.created_at.desc())).all() if (item.related_type, item.related_id) in related_pairs]
     emails = [item for item in db.scalars(select(Email).where(Email.archived == False).order_by(Email.created_at.desc())).all() if (item.related_type, item.related_id) in related_pairs]
@@ -2388,7 +2388,7 @@ def _validate_custom_values(db: Session, module: MetadataModule, values: dict[st
             for row in rows:
                 if row.id == record_id:
                     continue
-                if (row.data or {}).get(field.api_name) == value:
+                if (row.data if isinstance(row.data, dict) else {}).get(field.api_name) == value:
                     raise HTTPException(409, f"{field.label} must be unique")
     return normalized
 
