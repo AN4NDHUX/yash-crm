@@ -31,18 +31,33 @@ def request_headers() -> dict[str, str]:
 def authenticate() -> None:
     if not USERNAME and not PASSWORD:
         return
-    payload = {"identifier": USERNAME, "password": PASSWORD}
-    if OTP:
-        payload["otp"] = OTP
     request = Request(
         f"{BASE}/api/auth/login",
-        data=json.dumps(payload).encode(),
+        data=json.dumps({"identifier": USERNAME, "password": PASSWORD}).encode(),
         method="POST",
         headers=request_headers(),
     )
     with OPENER.open(request) as response:
-        if response.status != 200:
+        body = json.loads(response.read() or b"{}")
+        if response.status == 200:
+            return
+        if response.status != 202 or not body.get("otp_required"):
             raise RuntimeError(f"Yash CRM login failed with HTTP {response.status}")
+        if not OTP:
+            destination = body.get("destination") or "the registered contact"
+            raise RuntimeError(
+                "Yash CRM requires a one-time login code. "
+                f"Set YASH_CRM_OTP to the 6-digit code sent to {destination}, then run the check again."
+            )
+        verify = Request(
+            f"{BASE}/api/auth/login/verify-otp",
+            data=json.dumps({"challenge_id": body.get("challenge_id"), "otp": OTP}).encode(),
+            method="POST",
+            headers=request_headers(),
+        )
+        with OPENER.open(verify) as verified:
+            if verified.status != 200:
+                raise RuntimeError(f"Yash CRM OTP verification failed with HTTP {verified.status}")
 
 
 def call(method: str, path: str, body: dict | None = None) -> dict:
