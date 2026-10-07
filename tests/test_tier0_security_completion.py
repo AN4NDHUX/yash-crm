@@ -535,7 +535,7 @@ def test_sensitive_administration_and_automation_routes_require_org_admin():
             blueprint = main.Blueprint(
                 organization_id=org_id, name='Private Blueprint', module='Deals',
                 entry_criteria='Always', stages=['Qualification','Proposal'],
-                transitions={}, transition_requirements={}, status='Active'
+                transitions=[], transition_requirements=[], active=True
             )
             execution = main.WorkflowExecution(
                 organization_id=org_id, rule_id=0, resource='cases', record_id=0,
