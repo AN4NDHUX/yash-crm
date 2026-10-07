@@ -27,7 +27,7 @@ export const PLATFORM_MODULE_ROUTES = [
   "campaigns", "cases", "solutions", "documents", "site_visits", "forecasts", "reports", "dashboards", "sales_targets",
 ];
 export const $ = (selector, root = document) => root.querySelector(selector);
-export const $ = (selector, root = document) => [...root.querySelectorAll(selector)];
+export const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 export const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
 export const titleCase = (value) => String(value || "").replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 export const initials = (value) => String(value || "Y").split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
