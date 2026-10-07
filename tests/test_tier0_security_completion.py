@@ -257,3 +257,110 @@ def test_advanced_analytics_is_plan_gated():
         'free_code': 'PLAN_UPGRADE_REQUIRED',
         'professional_status': 200,
     }
+
+
+def test_cross_organization_user_admin_is_blocked():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Admin A','username':'admin.a','email':'admin.a@example.com',
+            'password':'strong-password-123'
+        })
+        with main.SessionLocal() as db:
+            admin_a = db.scalar(main.select(main.User).where(main.User.email == 'admin.a@example.com'))
+            admin_a.role = 'Administrator'
+            db.commit()
+            out['admin_a_id'] = admin_a.id
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'User B','username':'user.b','email':'user.b@example.com',
+            'password':'strong-password-123'
+        })
+        with main.SessionLocal() as db:
+            user_b = db.scalar(main.select(main.User).where(main.User.email == 'user.b@example.com'))
+            out['user_b_id'] = user_b.id
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/login', json={'identifier':'admin.a','password':'strong-password-123'})
+        listed = c.get('/api/users?limit=100')
+        out['listed_status'] = listed.status_code
+        out['listed_ids'] = sorted(item['id'] for item in listed.json()['items'])
+        out['generic_detail'] = c.get(f"/api/users/{out['user_b_id']}").status_code
+        out['admin_patch'] = c.patch(f"/api/admin/users/{out['user_b_id']}", json={'role':'Administrator'}).status_code
+        out['admin_history'] = c.get(f"/api/admin/users/{out['user_b_id']}/login-history").status_code
+    """)
+    assert out['listed_status'] == 200
+    assert out['listed_ids'] == [out['admin_a_id']]
+    assert out['generic_detail'] == 404
+    assert out['admin_patch'] == 404
+    assert out['admin_history'] == 404
+
+
+def test_approval_actor_id_payload_cannot_impersonate_approver():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Request Owner','username':'request.owner','email':'request.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'approver@example.com'})
+        token = invite.json()['invitation_token']
+        with main.SessionLocal() as db:
+            owner = db.scalar(main.select(main.User).where(main.User.email == 'request.owner@example.com'))
+            org_id = main._organization_id_for_user(db, owner.id)
+            enterprise = db.scalar(main.select(main.Plan).where(main.Plan.code == 'enterprise'))
+            subscription = main._ensure_organization_subscription(db, owner)
+            subscription.plan_id = enterprise.id
+            subscription.status = 'Active'
+            db.commit()
+        lead = c.post('/api/leads', json={'name':'Approval Lead'}).json()
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Real Approver','username':'real.approver','email':'approver@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        with main.SessionLocal() as db:
+            approver = db.scalar(main.select(main.User).where(main.User.email == 'approver@example.com'))
+            approver.role = 'Sales manager'
+            org_id = main._organization_id_for_user(db, approver.id)
+            process = main.ApprovalProcess(
+                organization_id=org_id,
+                name='Tier0 approval',
+                module='Leads',
+                trigger='Always',
+                approver='Sales manager',
+                status='Active',
+                conditions=[],
+                steps=[{'order':1,'approver_id':approver.id,'approver':'Sales manager'}],
+            )
+            db.add(process)
+            db.commit()
+            out['approver_id'] = approver.id
+            out['process_id'] = process.id
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/login', json={'identifier':'request.owner','password':'strong-password-123'})
+        submitted = c.post('/api/approvals/requests', json={
+            'process_id':out['process_id'],'resource':'leads','record_id':lead['id']
+        })
+        out['submit'] = submitted.status_code
+        request_id = submitted.json()['id']
+        impersonation = c.post(f"/api/approvals/requests/{request_id}/approve", json={
+            'actor_id':out['approver_id'],'comment':'impersonated'
+        })
+        out['impersonation_status'] = impersonation.status_code
+        out['impersonation_code'] = (impersonation.json().get('detail') or {}).get('code')
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/login', json={'identifier':'real.approver','password':'strong-password-123'})
+        approved = c.post(f"/api/approvals/requests/{request_id}/approve", json={'comment':'approved by session user'})
+        out['approved'] = approved.status_code
+        out['final_status'] = approved.json().get('status')
+    """)
+    assert out['submit'] == 201
+    assert out['impersonation_status'] == 403
+    assert out['impersonation_code'] == 'APPROVER_NOT_AUTHORIZED'
+    assert out['approved'] == 200
+    assert out['final_status'] == 'Approved'
