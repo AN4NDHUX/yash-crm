@@ -815,7 +815,10 @@ def _sharing_allows(db: Session, resource: str, actor: User, record_owner_id: in
         if scope in {"role hierarchy", "own and subordinates"} and actor_roles:
             owner = db.get(User, record_owner_id) if record_owner_id else None
             owner_role = str(owner.role or "").lower().replace("representative", "rep") if owner else ""
-            if owner_role and owner_role in actor_roles:
+            actor_role = str(actor.role or "").lower().replace("representative", "rep")
+            # Hierarchy visibility flows downward only. Users at the same role level
+            # are peers and must not gain access to each other's private records.
+            if owner_role and owner_role != actor_role and owner_role in actor_roles:
                 return True
 
         criteria = policy.criteria or {}
