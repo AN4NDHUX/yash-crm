@@ -188,17 +188,18 @@ def verify_webhook(provider: str, body: bytes, headers: dict[str, str]) -> dict[
         metadata = obj.get("metadata") or {}
         raw_request_id = metadata.get("request_id") or obj.get("client_reference_id")
         request_id = int(raw_request_id) if str(raw_request_id or "").isdigit() else None
-        paid = str(event.get("type") or "") in {
-            "checkout.session.completed",
-            "checkout.session.async_payment_succeeded",
-            "invoice.paid",
-        }
+        event_type = str(event.get("type") or "")
+        paid = (
+            event_type == "checkout.session.async_payment_succeeded"
+            or (event_type == "checkout.session.completed" and str(obj.get("payment_status") or "").lower() == "paid")
+            or event_type == "invoice.paid"
+        )
         return {
             "verified": True,
             "paid": paid,
             "request_id": request_id,
             "provider_reference": obj.get("subscription") or obj.get("id"),
-            "event_type": event.get("type"),
+            "event_type": event_type,
             "raw": event,
         }
 
