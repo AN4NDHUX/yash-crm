@@ -1656,71 +1656,58 @@ function bindGlobal() {
       window.location.replace("/login");
     }
   });
-  const notificationsButton = $("#notifications-button");
-  const notificationsPanel = $("#notifications-panel");
-  const notificationBadge = $("#notification-badge");
+  const notificationPopupRegion = $("#notification-popup-region");
+  const shownNotificationIds = new Set();
 
-  const setNotificationBadge = (count) => {
-    if (!notificationBadge) return;
-    const unread = Math.max(0, Number(count || 0));
-    if (!unread) {
-      notificationBadge.hidden = true;
-      notificationBadge.textContent = "";
-      return;
-    }
-    notificationBadge.hidden = false;
-    notificationBadge.textContent = unread > 4 ? "4+" : String(unread);
-    notificationBadge.setAttribute("aria-label", `${unread} unread notification${unread === 1 ? "" : "s"}`);
-  };
-
-  const refreshNotificationBadge = async () => {
+  const dismissNotificationPopup = async (popup, notificationId) => {
+    popup?.remove();
+    if (!notificationId) return;
     try {
-      const data = await api("/api/notifications?limit=1");
-      setNotificationBadge(data.unread || 0);
-      const unreadLabel = $(".notifications-head span", notificationsPanel);
-      if (unreadLabel) unreadLabel.textContent = `${data.unread || 0} unread`;
-      return data.unread || 0;
-    } catch (error) {
-      setNotificationBadge(0);
-      return 0;
+      await api(`/api/notifications/${notificationId}/read`, { method: "POST" });
+    } catch {
+      // Popup dismissal must never interrupt the CRM.
     }
   };
 
-  refreshNotificationBadge();
+  const showNotificationPopup = (item) => {
+    if (!notificationPopupRegion || !item?.id || shownNotificationIds.has(item.id)) return;
+    shownNotificationIds.add(item.id);
 
-  notificationsButton?.addEventListener("click", async (event) => {
-    event.stopPropagation();
-    const opening = notificationsPanel.hidden;
-    notificationsPanel.hidden = !opening;
-    notificationsButton.setAttribute("aria-expanded", String(opening));
-    if (!opening) return;
+    const popup = document.createElement("article");
+    popup.className = `notification-popup ${item.kind === "error" ? "is-error" : ""}`;
+    popup.dataset.notificationId = String(item.id);
+    popup.innerHTML = `
+      <div class="notification-popup-icon" aria-hidden="true">!</div>
+      <div class="notification-popup-copy">
+        <strong>${esc(item.title || "Notification")}</strong>
+        ${item.body ? `<p>${esc(item.body)}</p>` : ""}
+      </div>
+      <button class="notification-popup-close" type="button" aria-label="Dismiss notification">×</button>
+    `;
 
-    notificationsPanel.innerHTML = `<div class="notifications-loading">Loading notifications…</div>`;
+    notificationPopupRegion.appendChild(popup);
+
+    const close = $(".notification-popup-close", popup);
+    close?.addEventListener("click", () => dismissNotificationPopup(popup, item.id));
+
+    window.setTimeout(() => {
+      if (popup.isConnected) dismissNotificationPopup(popup, item.id);
+    }, 9000);
+  };
+
+  const checkForNotifications = async () => {
     try {
-      const data = await api("/api/notifications?limit=20");
-      setNotificationBadge(data.unread || 0);
-      notificationsPanel.innerHTML = `<div class="notifications-head"><strong>Notifications</strong><span>${data.unread || 0} unread</span></div>${data.items?.length ? data.items.map((item) => `<button class="notification-row ${item.read_at ? "read" : "unread"}" data-notification-id="${item.id}"><span class="notification-kind">${item.kind === "error" ? "!" : "•"}</span><span><strong>${esc(item.title)}</strong><small>${esc(item.body || "")}</small></span></button>`).join("") : `<div class="notifications-empty">No notifications yet.</div>`}`;
-      $('[data-notification-id]', notificationsPanel).forEach((item) => item.addEventListener("click", async (rowEvent) => {
-        rowEvent.stopPropagation();
-        if (!item.classList.contains("unread")) return;
-        await api(`/api/notifications/${item.dataset.notificationId}/read`, { method: "POST" });
-        item.classList.remove("unread");
-        item.classList.add("read");
-        await refreshNotificationBadge();
-      }));
-    } catch (error) {
-      setNotificationBadge(0);
-      notificationsPanel.innerHTML = `<div class="notifications-empty">Could not load notifications.</div>`;
+      const data = await api("/api/notifications?unread_only=true&limit=4");
+      const items = Array.isArray(data.items) ? data.items : [];
+      items.slice().reverse().forEach(showNotificationPopup);
+    } catch {
+      // Notifications are optional UI; never show an error popup if the feed is unavailable.
     }
-  });
+  };
 
-  notificationsPanel?.addEventListener("click", (event) => event.stopPropagation());
-  document.addEventListener("click", (event) => {
-    if (!notificationsPanel || notificationsPanel.hidden) return;
-    if (event.target.closest("#notifications-button") || event.target.closest("#notifications-panel")) return;
-    notificationsPanel.hidden = true;
-    notificationsButton?.setAttribute("aria-expanded", "false");
-  });
+  checkForNotifications();
+  window.setInterval(checkForNotifications, 60000);
+
   const searchInput = $("#global-search"); let searchTimer;
   searchInput.addEventListener("input", () => { clearTimeout(searchTimer); if (!searchInput.value.trim()) { $("#search-results").classList.remove("open"); return; } searchTimer = setTimeout(async () => { try { const data = await api(`/api/search?q=${encodeURIComponent(searchInput.value)}`); const result = $("#search-results"); result.innerHTML = data.results.length ? data.results.map((item) => `<button class="search-result" data-search-route="/${item.resource}/${item.id}"><span class="result-icon">${MODULES[item.resource]?.icon || "◈"}</span><span><strong>${esc(item.label)}</strong><small>${esc(titleCase(item.resource))} · ${esc(item.meta || "")}</small></span></button>`).join("") : `<p style="padding:10px;color:var(--text-faint);font-size:11px">No matching records.</p>`; result.classList.add("open"); } catch (error) { /* search is best effort */ } }, 240); });
   document.addEventListener("click", (event) => { const result = event.target.closest("[data-search-route]"); if (result) { $("#search-results").classList.remove("open"); searchInput.value = ""; navigate(result.dataset.searchRoute); } else if (!event.target.closest("#global-search-wrap")) $("#search-results").classList.remove("open"); });
