@@ -3406,39 +3406,114 @@ def owner_export_user(user_id: int, db: Session = Depends(get_db), _: User = Dep
 
 
 
+def _require_organization_user(db: Session, actor: User, user_id: int) -> User:
+    user = db.get(User, int(user_id))
+    if user is None or not _user_in_actor_organization(db, actor, user.id):
+        raise HTTPException(404, "User not found")
+    return user
+
+
+def _organization_user_query(db: Session, actor: User):
+    organization_id = _organization_id_required(db, actor)
+    return (
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(OrganizationMember.organization_id == organization_id)
+    )
+
+
 @app.get("/api/admin/users")
-def admin_users(status: str | None = None, role: str | None = None, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0), db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
-    query = select(User).order_by(User.name)
+def admin_users(
+    status: str | None = None,
+    role: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin_actor),
+) -> dict[str, Any]:
+    query = _organization_user_query(db, actor).order_by(User.name)
     if status:
         query = query.where(User.status == status)
     if role:
         query = query.where(User.role == role)
+    total = int(db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0)
     rows = db.scalars(query.offset(offset).limit(limit)).all()
-    return {"items": [_admin_user_payload(row, db) for row in rows], "total": db.scalar(select(func.count()).select_from(query.subquery())) or 0, "limit": limit, "offset": offset}
+    return {
+        "items": [_admin_user_payload(row, db) for row in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @app.post("/api/admin/users/invite", status_code=201)
-def invite_user(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def invite_user(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_admin_actor),
+) -> dict[str, Any]:
+    _enforce_organization_user_limit(db, actor)
     name = str(payload.get("name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     if not name or parseaddr(email)[1] != email or "@" not in email:
         raise HTTPException(422, "A valid name and email are required")
-    if db.scalar(select(User).where(func.lower(User.email) == email)):
-        raise HTTPException(409, "That email address is already assigned")
-    user = User(name=name, email=email, role=str(payload.get("role") or "Sales rep"), status="Invited", profile_name=payload.get("profile_name"), manager_id=payload.get("manager_id"), team=payload.get("team"), territory_id=payload.get("territory_id"), timezone=payload.get("timezone") or "Asia/Kolkata", language=payload.get("language") or "English", invited_at=datetime.utcnow(), consent_status="Unknown", personal_data_classification="Normal")
-    db.add(user)
+
+    organization, _ = _require_organization_admin(db, actor)
+    existing_user = db.scalar(select(User).where(func.lower(User.email) == email))
+    if existing_user and _user_in_actor_organization(db, actor, existing_user.id):
+        raise HTTPException(409, "That email address is already a member of this organization")
+
+    for stale in db.scalars(select(OrganizationInvitation).where(
+        OrganizationInvitation.organization_id == organization.id,
+        func.lower(OrganizationInvitation.email) == email,
+        OrganizationInvitation.status == "Pending",
+    )).all():
+        stale.status = "Revoked"
+
+    role = str(payload.get("role") or "Sales rep")
+    membership_role = "Admin" if role.lower() == "administrator" else "Member"
+    raw_token = secrets.token_urlsafe(40)
+    now = datetime.utcnow()
+    invitation = OrganizationInvitation(
+        organization_id=organization.id,
+        email=email,
+        membership_role=membership_role,
+        token_hash=_session_token_hash(raw_token),
+        invited_by=actor.id,
+        status="Pending",
+        created_at=now,
+        expires_at=now + timedelta(days=7),
+    )
+    db.add(invitation)
     db.flush()
-    add_audit(db, "user_invited", "users", user.id, f"Invited user '{user.email}'", after=_admin_user_payload(user, db), actor_id=actor.id)
+    add_audit(
+        db,
+        "user_invited",
+        "organizations",
+        organization.id,
+        f"Invited {email} to {organization.name}",
+        after={"email": email, "name": name, "role": role, "membership_role": membership_role},
+        actor_id=actor.id,
+    )
     db.commit()
-    db.refresh(user)
-    return _admin_user_payload(user, db)
+    base = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+    accept_path = f"/signup?invite={raw_token}"
+    return {
+        "id": invitation.id,
+        "name": name,
+        "email": email,
+        "role": role,
+        "status": invitation.status,
+        "membership_role": membership_role,
+        "expires_at": invitation.expires_at.isoformat(),
+        "accept_url": f"{base}{accept_path}" if base else accept_path,
+        "invitation_token": raw_token if not IS_PRODUCTION else None,
+    }
 
 
 @app.patch("/api/admin/users/{user_id}")
 def update_admin_user(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(404, "User not found")
+    user = _require_organization_user(db, actor, user_id)
     before = _admin_user_payload(user, db)
     allowed = {"name", "email", "role", "profile_name", "manager_id", "team", "territory_id", "timezone", "language", "consent_status", "personal_data_classification", "retention_until", "sensitive_data"}
     for key, value in payload.items():
@@ -3451,8 +3526,10 @@ def update_admin_user(user_id: int, payload: dict[str, Any], db: Session = Depen
             duplicate = db.scalar(select(User).where(func.lower(User.email) == value, User.id != user.id))
             if duplicate:
                 raise HTTPException(409, "That email address is already assigned")
-        if key in {"manager_id", "territory_id"} and value is not None and not db.get(User if key == "manager_id" else Territory, int(value)):
-            raise HTTPException(422, f"Invalid {key.replace('_', ' ')}")
+        if key == "manager_id" and value is not None:
+            _require_organization_user(db, actor, int(value))
+        if key == "territory_id" and value is not None and not db.get(Territory, int(value)):
+            raise HTTPException(422, "Invalid territory")
         setattr(user, key, value)
     if "status" in payload:
         user.status = str(payload["status"])
@@ -3467,9 +3544,7 @@ def update_admin_user(user_id: int, payload: dict[str, Any], db: Session = Depen
 def user_status_action(user_id: int, action: str, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
     if action not in {"activate", "deactivate"}:
         raise HTTPException(422, "Action must be activate or deactivate")
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(404, "User not found")
+    user = _require_organization_user(db, actor, user_id)
     if user.id == actor.id and action == "deactivate":
         raise HTTPException(409, "An administrator cannot deactivate the current account")
     before = user.status
@@ -3487,19 +3562,19 @@ def user_status_action(user_id: int, action: str, db: Session = Depends(get_db),
 
 
 @app.get("/api/admin/users/{user_id}/login-history")
-def user_login_history(user_id: int, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
-    if db.get(User, user_id) is None:
-        raise HTTPException(404, "User not found")
+def user_login_history(user_id: int, limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+    _require_organization_user(db, actor, user_id)
     rows = db.scalars(select(LoginHistory).where(LoginHistory.user_id == user_id).order_by(LoginHistory.occurred_at.desc()).limit(limit)).all()
     return {"items": [serialize(row) for row in rows], "total": len(rows)}
 
 
 @app.post("/api/admin/users/{user_id}/transfer-ownership")
 def transfer_ownership(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
-    source = db.get(User, user_id)
-    target = db.get(User, int(payload.get("to_user_id") or 0))
-    if source is None or target is None or target.status != "Active" or source.id == target.id:
-        raise HTTPException(422, "Select an active, different target user")
+    source = _require_organization_user(db, actor, user_id)
+    target_id = int(payload.get("to_user_id") or 0)
+    target = _require_organization_user(db, actor, target_id) if target_id else None
+    if target is None or target.status != "Active" or source.id == target.id:
+        raise HTTPException(422, "Select an active, different target user in this organization")
     requested = payload.get("resources")
     resources = [str(item) for item in requested] if isinstance(requested, list) and requested else list(RESOURCE_MAP) + ["platform_records"]
     count = 0
