@@ -273,17 +273,26 @@ function greeting() {
 function applyProfile() {
   const profile = state.profile;
   if (!profile) return;
-  const role = profile.role || "";
+
+  const username = String(profile.username || profile.name || "Account").trim() || "Account";
+  const role = String(profile.role || "CRM user").trim() || "CRM user";
   const isOwnerAdmin = Boolean(profile.owner_console_access);
 
-  $(".user-mini .avatar").forEach((node) => { node.textContent = initials(isOwnerAdmin ? "Admin" : profile.name); });
-  $(".user-mini strong").forEach((node) => { node.textContent = isOwnerAdmin ? "Admin" : profile.name; });
-  $(".user-mini small").forEach((node) => { node.textContent = isOwnerAdmin ? "Administrator" : role; });
+  // The bottom-left identity always reflects the currently authenticated CRM account.
+  $(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
+  $(".user-mini strong").forEach((node) => { node.textContent = username; });
+  $(".user-mini small").forEach((node) => { node.textContent = role; });
 
-  $(".top-profile .avatar").forEach((node) => { node.textContent = initials(profile.name); });
-  $(".top-profile-copy strong").forEach((node) => { node.textContent = profile.name; });
-  $(".top-profile-copy small").forEach((node) => { node.textContent = role; });
+  // The top-right owner identity is reserved for the APP_USERNAME administrator only.
+  const topProfile = $("#top-profile");
+  if (topProfile) topProfile.hidden = !isOwnerAdmin;
+  if (isOwnerAdmin) {
+    $(".top-profile .avatar").forEach((node) => { node.textContent = initials(username); });
+    $(".top-profile-copy strong").forEach((node) => { node.textContent = username; });
+    $(".top-profile-copy small").forEach((node) => { node.textContent = role; });
+  }
 
+  // Owner Console is exposed only when the authenticated session is the platform owner.
   const ownerButton = $("#owner-console-button");
   if (ownerButton) ownerButton.hidden = !isOwnerAdmin;
 }
