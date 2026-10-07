@@ -495,11 +495,37 @@ def health() -> dict[str, str]:
 
 
 @app.get("/ready")
-def ready(db: Session = Depends(get_db)) -> dict[str, str]:
+def ready(db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         db.execute(select(1))
     except Exception as error:
         raise HTTPException(503, f"Database is not ready: {error.__class__.__name__}") from error
+
+    # A stamped Alembic revision is not enough: verify the physical columns used
+    # by every primary CRM list page before advertising the service as ready.
+    inspector = inspect(db.bind)
+    required_models = (Lead, Contact, Account, Deal, Activity, Product, PlatformRecord, MetadataModule, MetadataField)
+    schema_missing: dict[str, list[str]] = {}
+    table_names = set(inspector.get_table_names())
+    for model in required_models:
+        table = model.__table__.name
+        expected = {column.name for column in model.__table__.columns}
+        if table not in table_names:
+            schema_missing[table] = sorted(expected)
+            continue
+        actual = {column["name"] for column in inspector.get_columns(table)}
+        missing = sorted(expected - actual)
+        if missing:
+            schema_missing[table] = missing
+    if schema_missing:
+        raise HTTPException(
+            503,
+            detail={
+                "code": "SCHEMA_NOT_READY",
+                "message": "Production schema is missing columns required by CRM modules.",
+                "missing": schema_missing,
+            },
+        )
 
     migration_revision = "unknown"
     try:
@@ -521,6 +547,7 @@ def ready(db: Session = Depends(get_db)) -> dict[str, str]:
         "status": "ok",
         "service": "yash-crm",
         "database": "ready",
+        "schema": "ready",
         "migration_revision": migration_revision,
         "app_revision": app_revision,
     }
