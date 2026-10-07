@@ -19,7 +19,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.access_policy import request_entitlement_feature, request_resource_action
-from app.database import SessionLocal, TENANT_ACTOR_ID, TENANT_ORGANIZATION_ID
+from app.database import SessionLocal, TENANT_ACTOR_ID, TENANT_ORGANIZATION_ID, get_db
 from app.models import *
 from app.services.core import *
 
