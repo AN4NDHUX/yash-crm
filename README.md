@@ -98,7 +98,7 @@ Copy `.env.example` only as a reference; the application does not automatically 
 | `ALLOWED_HOSTS` | Required exact host list. `*` is rejected in production. |
 | `ENABLE_AUTH` | Defaults to enabled in production. |
 | `APP_USERNAME` | Username synchronized to the database-backed Administrator account. |
-| `APP_PASSWORD` | Administrator bootstrap/synchronization secret, at least 12 characters; never commit it. Production HTTP Basic access is disabled. |
+| `APP_PASSWORD` | Administrator bootstrap/synchronization secret, at least 8 characters; never commit it. Production HTTP Basic access is disabled. |
 | `ADMIN_NAME` / `ADMIN_EMAIL` | Owner/Administrator identity synchronized at startup. |
 | `APP_PUBLIC_URL` | Canonical public Railway URL used in account/reset notifications. |
 | `SMTP_*` / `TWILIO_*` | Optional delivery settings for account notifications and password-reset messages. |
