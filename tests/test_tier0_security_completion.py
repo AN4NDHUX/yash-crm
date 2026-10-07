@@ -228,3 +228,32 @@ def test_signed_billing_webhook_is_required_and_idempotent():
         'after': 'professional',
         'events': 1,
     }
+
+
+def test_advanced_analytics_is_plan_gated():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Analytics User','username':'analytics.user','email':'analytics@example.com',
+            'password':'strong-password-123'
+        })
+        denied = c.get('/api/analytics/sales-performance')
+        out['free_status'] = denied.status_code
+        out['free_code'] = (denied.json().get('detail') or {}).get('code')
+
+        with main.SessionLocal() as db:
+            user = db.scalar(main.select(main.User).where(main.User.email == 'analytics@example.com'))
+            subscription = main._ensure_organization_subscription(db, user)
+            professional = db.scalar(main.select(main.Plan).where(main.Plan.code == 'professional'))
+            subscription.plan_id = professional.id
+            subscription.status = 'Active'
+            db.commit()
+
+        allowed = c.get('/api/analytics/sales-performance')
+        out['professional_status'] = allowed.status_code
+    """)
+    assert out == {
+        'free_status': 403,
+        'free_code': 'PLAN_UPGRADE_REQUIRED',
+        'professional_status': 200,
+    }
