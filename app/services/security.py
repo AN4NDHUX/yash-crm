@@ -974,6 +974,9 @@ def _enforce_organization_user_limit(db: Session, actor: User) -> None:
             "message": f"Your {plan.name} plan allows up to {int(raw_limit)} organization users.",
         })
 
+
+configure_security_hooks(redact_record_fields, can_access_record, _organization_id_for_user)
+
 __all__ = [
     "APP_ENV",
     "AUTH_COOKIE",
