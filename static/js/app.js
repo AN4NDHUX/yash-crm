@@ -204,6 +204,45 @@ function enhanceNavigation() {
   addAfter("sales_targets", "ai", "AI Copilot");
 }
 
+async function pricingView() {
+  const data = await api("/api/plans");
+  const currentCode = data.current_subscription?.plan_code || "free";
+  const currencySymbol = (currency) => currency === "INR" ? "₹" : currency === "USD" ? "$" : currency + " ";
+  const orderedCodes = ["free", "bigin_express", "standard", "professional", "enterprise", "crm_plus"];
+  const plans = [...(data.items || [])].sort((a, b) => orderedCodes.indexOf(a.code) - orderedCodes.indexOf(b.code));
+
+  const cards = plans.map((plan) => {
+    const features = plan.features || {};
+    const included = Array.isArray(features.included_features) ? features.included_features : [];
+    const current = plan.code === currentCode;
+    const popular = features.popular === true;
+    const price = Number(plan.price_monthly || 0);
+    const priceLabel = price === 0 ? `${currencySymbol(plan.currency)}0` : `${currencySymbol(plan.currency)}${price.toLocaleString("en-IN")}`;
+    return `<article class="pricing-card ${popular ? "popular" : ""} ${current ? "current" : ""}">
+      ${popular ? '<span class="pricing-popular">Most Popular</span>' : ""}
+      <div class="pricing-card-head">
+        <h2>${esc(plan.name)}</h2>
+        <div class="pricing-price">${esc(priceLabel)}</div>
+        <div class="pricing-cycle">${price === 0 ? "No credit card required" : "/user/month"}</div>
+        <p>${esc(features.tagline || "")}</p>
+        <span class="pricing-status ${current ? "is-current" : ""}">${current ? "Current plan" : "Available plan"}</span>
+      </div>
+      <ul class="pricing-features">${included.map((item) => `<li><span>✓</span><span>${esc(item)}</span></li>`).join("")}</ul>
+      <div class="pricing-limits">
+        <span>${plan.max_records == null ? "Unlimited" : Number(plan.max_records).toLocaleString("en-IN")} records</span>
+        <span>${plan.max_custom_modules == null ? "Unlimited" : Number(plan.max_custom_modules).toLocaleString("en-IN")} custom modules</span>
+      </div>
+    </article>`;
+  }).join("");
+
+  return `${pageHeader("Account", "Plans & Pricing", "Compare Yash CRM subscription plans, included capabilities, and usage limits.")}
+    <section class="pricing-grid">${cards}</section>
+    <section class="pricing-note card">
+      <strong>Pricing basis</strong>
+      <p>Prices shown are per user per month where applicable. Taxes and external provider charges are not included.</p>
+    </section>`;
+}
+
 function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
@@ -337,6 +376,11 @@ async function renderRoute() {
       setBreadcrumb("Teamspaces", "Workspace");
       content.innerHTML = await teamspacesView();
       bindTeamspaces();
+      return;
+    }
+    if (parts[0] === "pricing") {
+      setBreadcrumb("Plans & Pricing", "Account");
+      content.innerHTML = await pricingView();
       return;
     }
     if (parts[0] === "activities" && !parts[1]) {
