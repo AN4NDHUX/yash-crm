@@ -5688,13 +5688,28 @@ def create_organization_invitation(
     db.commit()
     base = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
     accept_path = f"/signup?invite={raw_token}"
+    accept_url = f"{base}{accept_path}" if base else accept_path
+    smtp_configured = bool(os.getenv("SMTP_HOST", "").strip() and os.getenv("SMTP_FROM", "").strip())
+    if smtp_configured:
+        subject = f"You're invited to {organization.name} on Yash CRM"
+        body = (
+            f"{actor.name or actor.username or 'An administrator'} invited you to join "
+            f"{organization.name} on Yash CRM as {membership_role}.\n\n"
+            f"Accept the invitation within 7 days:\n{accept_url}\n\n"
+            "If you were not expecting this invitation, you can ignore this email."
+        )
+        threading.Thread(
+            target=lambda: _send_email_message(email, subject, body),
+            daemon=True,
+        ).start()
     return {
         "id": invitation.id,
         "email": invitation.email,
         "membership_role": invitation.membership_role,
         "status": invitation.status,
         "expires_at": invitation.expires_at.isoformat(),
-        "accept_url": f"{base}{accept_path}" if base else accept_path,
+        "accept_url": accept_url,
+        "delivery": "email_queued" if smtp_configured else "not_configured",
         "invitation_token": raw_token if not IS_PRODUCTION else None,
     }
 
