@@ -500,7 +500,30 @@ def ready(db: Session = Depends(get_db)) -> dict[str, str]:
         db.execute(select(1))
     except Exception as error:
         raise HTTPException(503, f"Database is not ready: {error.__class__.__name__}") from error
-    return {"status": "ok", "service": "yash-crm", "database": "ready"}
+
+    migration_revision = "unknown"
+    try:
+        if inspect(db.bind).has_table("alembic_version"):
+            migration_revision = str(
+                db.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
+                or "unknown"
+            )
+    except Exception:
+        migration_revision = "unknown"
+
+    app_revision = (
+        os.getenv("APP_REVISION", "").strip()
+        or os.getenv("RAILWAY_GIT_COMMIT_SHA", "").strip()
+        or os.getenv("GIT_COMMIT_SHA", "").strip()
+        or "unknown"
+    )
+    return {
+        "status": "ok",
+        "service": "yash-crm",
+        "database": "ready",
+        "migration_revision": migration_revision,
+        "app_revision": app_revision,
+    }
 
 
 @app.get("/manus-routes.json")
