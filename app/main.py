@@ -145,23 +145,27 @@ class PasswordResetToken(Base):
 class Territory(TimestampMixin, Base):
     __tablename__ = "territories"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(160), unique=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
     parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     manager_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     criteria: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
     visibility: Mapped[str] = mapped_column(String(40), default="Private")
     forecasting: Mapped[bool] = mapped_column(Boolean, default=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_territory_org_name"),)
 
 
 class SecurityGroup(TimestampMixin, Base):
     __tablename__ = "security_groups"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(160), unique=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
     group_type: Mapped[str] = mapped_column(String(40), default="Users")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     criteria: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_security_group_org_name"),)
 
 
 class SecurityGroupMember(Base):
@@ -294,6 +298,7 @@ class BillingWebhookEvent(Base):
 class PrivacyRecord(TimestampMixin, Base):
     __tablename__ = "privacy_records"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     subject_type: Mapped[str] = mapped_column(String(40))
     subject_id: Mapped[int] = mapped_column(Integer)
@@ -310,6 +315,7 @@ class PrivacyRecord(TimestampMixin, Base):
 class OwnershipTransfer(TimestampMixin, Base):
     __tablename__ = "ownership_transfers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     from_user_id: Mapped[int] = mapped_column(Integer)
     to_user_id: Mapped[int] = mapped_column(Integer)
     resources: Mapped[list[str]] = mapped_column(SAJSON, default=list)
@@ -357,6 +363,7 @@ class Notification(Base):
 class ApiRequestLog(Base):
     __tablename__ = "api_request_logs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     method: Mapped[str] = mapped_column(String(10))
     path: Mapped[str] = mapped_column(String(300))
     resource: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -368,7 +375,7 @@ class ApiRequestLog(Base):
 class MetadataModule(TimestampMixin, Base):
     __tablename__ = "metadata_modules"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    api_name: Mapped[str] = mapped_column(String(100), unique=True)
+    api_name: Mapped[str] = mapped_column(String(100))
     label: Mapped[str] = mapped_column(String(160))
     plural_label: Mapped[str] = mapped_column(String(160))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -376,6 +383,7 @@ class MetadataModule(TimestampMixin, Base):
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     config: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    __table_args__ = (UniqueConstraint("organization_id", "api_name", name="uq_metadata_module_org_api_name"),)
 
 
 class MetadataField(TimestampMixin, Base):
@@ -420,14 +428,17 @@ class MetadataView(TimestampMixin, Base):
 class PermissionProfile(TimestampMixin, Base):
     __tablename__ = "permission_profiles"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     grants: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict)
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_permission_profile_org_name"),)
 
 
 class SharingPolicy(TimestampMixin, Base):
     __tablename__ = "sharing_policies"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
     module: Mapped[str] = mapped_column(String(100), index=True)
     scope: Mapped[str] = mapped_column(String(40), default="Private")
@@ -457,6 +468,7 @@ class WorkflowExecution(Base):
 class BlueprintTransitionLog(Base):
     __tablename__ = "blueprint_transition_logs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     blueprint_id: Mapped[int] = mapped_column(ForeignKey("blueprints.id"), index=True)
     module: Mapped[str] = mapped_column(String(80))
     record_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -638,6 +650,7 @@ class OrganizationSetting(Base):
 class ApprovalProcess(TimestampMixin, Base):
     __tablename__ = "approval_processes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
     module: Mapped[str] = mapped_column(String(50), default="Deals")
     trigger: Mapped[str] = mapped_column(String(180), default="Amount is greater than 0")
@@ -683,6 +696,7 @@ class ApprovalStepDecision(Base):
 class ReportRun(Base):
     __tablename__ = "report_runs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     report_id: Mapped[int] = mapped_column(ForeignKey("platform_records.id"), index=True)
     requested_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="running", index=True)
@@ -782,6 +796,7 @@ class AIExceptionOccurrence(TimestampMixin, Base):
 class AIExceptionEvent(Base):
     __tablename__ = "ai_exception_events"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     occurrence_id: Mapped[int] = mapped_column(ForeignKey("ai_exception_occurrences.id"), index=True)
     actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     from_state: Mapped[str | None] = mapped_column(String(30), nullable=True)
@@ -819,6 +834,7 @@ class AITaskProposal(TimestampMixin, Base):
 class AITaskOperation(Base):
     __tablename__ = "ai_task_operations"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     operation_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     proposal_id: Mapped[int] = mapped_column(ForeignKey("ai_task_proposals.id"))
     activity_id: Mapped[int] = mapped_column(ForeignKey("activities.id"))
@@ -828,6 +844,7 @@ class AITaskOperation(Base):
 class AuditEvent(Base):
     __tablename__ = "audit_events"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(40), index=True)
@@ -1946,15 +1963,24 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
 
 
 def get_or_create_settings(db: Session) -> OrganizationSetting:
-    """Return settings for the authenticated workspace, falling back to a global default only outside a user request."""
+    """Return one settings record for the active organization."""
     actor_id = TENANT_ACTOR_ID.get()
-    if actor_id:
-        setting = db.scalar(select(OrganizationSetting).where(OrganizationSetting.owner_id == actor_id).order_by(OrganizationSetting.id))
+    organization_id = TENANT_ORGANIZATION_ID.get()
+    if organization_id is None and actor_id:
+        organization_id = _organization_id_for_user(db, actor_id)
+    if organization_id:
+        setting = db.scalar(select(OrganizationSetting).where(
+            OrganizationSetting.organization_id == organization_id
+        ).order_by(OrganizationSetting.id))
     else:
-        setting = db.scalar(select(OrganizationSetting).where(OrganizationSetting.owner_id.is_(None)).order_by(OrganizationSetting.id))
+        setting = db.scalar(select(OrganizationSetting).where(
+            OrganizationSetting.organization_id.is_(None),
+            OrganizationSetting.owner_id.is_(None),
+        ).order_by(OrganizationSetting.id))
     if setting is None:
         setting = OrganizationSetting(
             owner_id=actor_id,
+            organization_id=organization_id,
             org_name="Yash CRM",
             timezone="Asia/Kolkata",
             currency="INR",
