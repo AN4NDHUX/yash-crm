@@ -408,3 +408,56 @@ def test_every_populated_module_lists_for_normal_tenant_user_without_500():
     for resource in ['leads','contacts','accounts','deals','tasks','products']:
         assert out['statuses'][resource] == 200
         assert out['totals'][resource] >= 1
+
+
+def test_populated_modules_survive_malformed_field_metadata():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Metadata Audit User',
+            'username':'metadata.audit',
+            'email':'metadata.audit@example.com',
+            'password':'strong-password-123'
+        })
+        with main.SessionLocal() as db:
+            user = db.scalar(main.select(main.User).where(main.User.email == 'metadata.audit@example.com'))
+            org_id = main._organization_id_for_user(db, user.id)
+            token_actor = main.TENANT_ACTOR_ID.set(user.id)
+            token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
+            try:
+                module = main.MetadataModule(
+                    organization_id=org_id,
+                    owner_id=user.id,
+                    api_name='leads',
+                    label='Leads',
+                    plural_label='Leads',
+                    enabled=True,
+                )
+                db.add(module)
+                db.flush()
+                db.add(main.MetadataField(
+                    organization_id=org_id,
+                    module_id=module.id,
+                    api_name=None,
+                    label='Broken legacy field',
+                    field_type='text',
+                    visibility=['bad-visibility'],
+                    permissions='bad-permissions',
+                ))
+                db.add(main.Lead(
+                    organization_id=org_id,
+                    owner_id=user.id,
+                    name='Metadata Audit Lead',
+                    company='Audit',
+                    status='New',
+                ))
+                db.commit()
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token_org)
+                main.TENANT_ACTOR_ID.reset(token_actor)
+
+        response = c.get('/api/leads?limit=100')
+        out['status'] = response.status_code
+        out['body'] = response.text[:500]
+    """)
+    assert out['status'] == 200, out
