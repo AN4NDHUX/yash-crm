@@ -3,6 +3,8 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_JS = (ROOT / "static" / "js" / "app.js").read_text(encoding="utf-8")
+MODULES_JS = (ROOT / "static" / "js" / "features" / "modules.js").read_text(encoding="utf-8")
+RUNTIME_JS = (ROOT / "static" / "js" / "core" / "runtime.js").read_text(encoding="utf-8")
 INDEX = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
 
@@ -16,9 +18,10 @@ def test_query_selector_single_is_never_used_as_collection():
 
 def test_every_sidebar_route_has_a_frontend_handler():
     routes = sorted(set(re.findall(r'data-route="([^"]+)"', INDEX)))
-    core_block = APP_JS[APP_JS.index("const MODULES = {"):APP_JS.index("function badge")]
-    core = set(re.findall(r"^\s{2}([a-z_]+):\s*\{", core_block, flags=re.MULTILINE))
-    platform_match = re.search(r"const PLATFORM_MODULE_ROUTES = \[(.*?)\];", APP_JS, flags=re.DOTALL)
+    core_match = re.search(r"export const MODULES = \{(.*?)\n\};", MODULES_JS, flags=re.DOTALL)
+    assert core_match is not None
+    core = set(re.findall(r"^\s{2}([a-z_]+):\s*\{", core_match.group(1), flags=re.MULTILINE))
+    platform_match = re.search(r"export const PLATFORM_MODULE_ROUTES = \[(.*?)\];", RUNTIME_JS, flags=re.DOTALL)
     platform = set(re.findall(r'"([^"]+)"', platform_match.group(1))) if platform_match else set()
     special = {
         "dashboard", "teamspaces", "activities", "ai", "developer", "security",
