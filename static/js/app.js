@@ -154,10 +154,10 @@ function applyProfile() {
   const isOwnerAdmin = profile.owner_console_access === true;
 
   // Bottom-left identity always represents the current authenticated account.
-  $(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
-  $(".user-mini strong").forEach((node) => { node.textContent = username; });
-  $(".user-mini-role").forEach((node) => { node.textContent = role; });
-  $(".user-mini-plan").forEach((node) => { node.textContent = planName; });
+  $$(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
+  $$(".user-mini strong").forEach((node) => { node.textContent = username; });
+  $$(".user-mini-role").forEach((node) => { node.textContent = role; });
+  $$(".user-mini-plan").forEach((node) => { node.textContent = planName; });
 
   // These controls belong exclusively to the APP_USERNAME platform owner.
   const topProfile = $("#top-profile");
@@ -172,9 +172,9 @@ function applyProfile() {
   }
 
   if (isOwnerAdmin) {
-    $(".top-profile .avatar").forEach((node) => { node.textContent = initials(username); });
-    $(".top-profile-copy strong").forEach((node) => { node.textContent = username; });
-    $(".top-profile-copy small").forEach((node) => { node.textContent = role; });
+    $$(".top-profile .avatar").forEach((node) => { node.textContent = initials(username); });
+    $$(".top-profile-copy strong").forEach((node) => { node.textContent = username; });
+    $$(".top-profile-copy small").forEach((node) => { node.textContent = role; });
   }
 }
 
