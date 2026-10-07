@@ -90,36 +90,29 @@ def test_login_rate_limit_triggers():
     assert out['codes'][10] == 429
 
 
-def test_one_time_login_code_is_required_and_single_use():
+def test_password_login_creates_session_without_otp():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        first = c.post('/api/auth/login', json={
+        response = c.post('/api/auth/login', json={
             'identifier':'admin',
             'password':'supersecretpass123'
         })
-        payload = first.json()
-        out['request_status'] = first.status_code
-        out['required'] = payload.get('otp_required')
-        out['has_challenge'] = bool(payload.get('challenge_id'))
-        out['has_debug_otp'] = bool(payload.get('debug_otp'))
-        verify = c.post('/api/auth/login/verify-otp', json={
-            'challenge_id': payload.get('challenge_id'),
-            'otp': payload.get('debug_otp')
-        })
-        out['verify'] = verify.status_code
-        replay = c.post('/api/auth/login/verify-otp', json={
-            'challenge_id': payload.get('challenge_id'),
-            'otp': payload.get('debug_otp')
-        })
-        out['replay'] = replay.status_code
-    """, YASHCRM_LOGIN_OTP_REQUIRED="true")
+        payload = response.json()
+        out['status'] = response.status_code
+        out['ok'] = payload.get('ok')
+        out['redirect'] = payload.get('redirect')
+        out['session'] = c.get('/api/auth/session').status_code
+        out['verify_otp_route'] = c.post('/api/auth/login/verify-otp', json={
+            'challenge_id':'unused',
+            'otp':'000000'
+        }).status_code
+    """)
     assert out == {
-        'request_status': 202,
-        'required': True,
-        'has_challenge': True,
-        'has_debug_otp': True,
-        'verify': 200,
-        'replay': 400,
+        'status': 200,
+        'ok': True,
+        'redirect': '/dashboard',
+        'session': 200,
+        'verify_otp_route': 401,
     }
 
 
