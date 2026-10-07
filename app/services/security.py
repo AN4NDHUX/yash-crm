@@ -909,7 +909,8 @@ def field_allowed(db: Session, resource: str, field_name: str, actor: User | Non
         return normalized.get("*")
 
     for field in _metadata_fields(db, resource):
-        if field.api_name.lower() != field_name.lower():
+        api_name = str(field.api_name or "").strip().lower()
+        if not api_name or api_name != str(field_name or "").lower():
             continue
         visibility = _json_mapping(field.visibility)
         permissions = _json_mapping(field.permissions)
