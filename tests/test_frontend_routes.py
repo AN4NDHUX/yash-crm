@@ -49,5 +49,5 @@ def test_critical_navigation_runtime_contracts_exist():
 def test_security_administration_is_hidden_for_non_admin_users():
     assert 'data-route="security" data-admin-only hidden aria-hidden="true"' in INDEX
     assert 'const isAdministrator = role.toLowerCase() === "administrator";' in APP_JS
-    assert '$$("[data-admin-only]").forEach' in APP_JS
+    assert 'document.querySelectorAll("[data-admin-only]").forEach' in APP_JS
     assert 'if (role !== "administrator") return navigate("/dashboard", true);' in APP_JS
