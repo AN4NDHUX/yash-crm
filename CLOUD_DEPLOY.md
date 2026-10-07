@@ -29,7 +29,7 @@ DATABASE_URL=<Railway PostgreSQL connection string>
 ALLOWED_HOSTS=yashcrm-production.up.railway.app
 APP_PUBLIC_URL=https://yashcrm-production.up.railway.app
 APP_USERNAME=admin
-APP_PASSWORD=<unique random password, 12+ characters>
+APP_PASSWORD=<unique random password, 8+ characters>
 ADMIN_NAME=Administrator
 ADMIN_EMAIL=<real owner email>
 SEED_DEMO_DATA=false
@@ -63,7 +63,7 @@ tenant-scoped CRM access
 
 Additional controls include:
 
-- 12-character minimum for newly created/reset passwords.
+- 8-character minimum for newly created/reset passwords.
 - Login, signup and reset throttling.
 - Same-origin protection on cookie-authenticated state-changing requests.
 - Administrator-only user administration and security overview.
