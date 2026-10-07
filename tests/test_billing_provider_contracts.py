@@ -95,3 +95,59 @@ def test_stripe_checkout_remains_form_encoded(monkeypatch):
     assert "line_items%5B0%5D%5Bquantity%5D=2" in captured["body"]
     assert result["provider"] == "stripe"
     assert result["checkout_url"] == "https://checkout.stripe.com/example"
+
+
+def test_stripe_webhook_requires_paid_checkout_status(monkeypatch):
+    import hashlib
+    import hmac
+    import time
+
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+
+    def signed(payload: dict) -> tuple[bytes, dict[str, str]]:
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        timestamp = int(time.time())
+        signature = hmac.new(
+            b"whsec_test",
+            f"{timestamp}.".encode("utf-8") + body,
+            hashlib.sha256,
+        ).hexdigest()
+        return body, {"stripe-signature": f"t={timestamp},v1={signature}"}
+
+    unpaid_body, unpaid_headers = signed({
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "id": "cs_unpaid",
+            "client_reference_id": "42",
+            "payment_status": "unpaid",
+            "metadata": {"request_id": "42"},
+        }},
+    })
+    unpaid = billing.verify_webhook("stripe", unpaid_body, unpaid_headers)
+    assert unpaid["verified"] is True
+    assert unpaid["paid"] is False
+    assert unpaid["request_id"] == 42
+
+    paid_body, paid_headers = signed({
+        "type": "checkout.session.completed",
+        "data": {"object": {
+            "id": "cs_paid",
+            "client_reference_id": "42",
+            "payment_status": "paid",
+            "metadata": {"request_id": "42"},
+        }},
+    })
+    paid = billing.verify_webhook("stripe", paid_body, paid_headers)
+    assert paid["paid"] is True
+
+    async_body, async_headers = signed({
+        "type": "checkout.session.async_payment_succeeded",
+        "data": {"object": {
+            "id": "cs_async",
+            "client_reference_id": "42",
+            "payment_status": "paid",
+            "metadata": {"request_id": "42"},
+        }},
+    })
+    async_paid = billing.verify_webhook("stripe", async_body, async_headers)
+    assert async_paid["paid"] is True
