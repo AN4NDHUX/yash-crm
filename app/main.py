@@ -2922,10 +2922,29 @@ def organization_members(db: Session = Depends(get_db), actor: User = Depends(cu
 
 
 def _organization_has_business_data(db: Session, organization_id: int) -> bool:
-    for model in (Lead, Contact, Account, Deal, Activity, Product, Note, Attachment, Email, PlatformRecord, DocumentBlob):
+    for model in (Lead, Contact, Account, Deal, Activity, Product, Note, Attachment, Email, DocumentBlob):
         if not hasattr(model, "organization_id"):
             continue
         if int(db.scalar(select(func.count()).select_from(model).where(model.organization_id == organization_id)) or 0) > 0:
+            return True
+
+    # Setup/security/customization defaults are provisioned automatically and must
+    # not make a brand-new workspace look "non-empty" when accepting an invite.
+    billable_groups = {"Sales & Inventory", "Customer & Marketing", "Collaboration", "Analytics"}
+    business_resources = {
+        resource
+        for resource, config in PLATFORM_RESOURCES.items()
+        if str(config.get("group") or "").strip() in billable_groups
+    }
+    if business_resources:
+        count = db.scalar(
+            select(func.count()).select_from(PlatformRecord).where(
+                PlatformRecord.organization_id == organization_id,
+                PlatformRecord.resource.in_(business_resources),
+                PlatformRecord.archived == False,
+            )
+        )
+        if int(count or 0) > 0:
             return True
     return False
 
