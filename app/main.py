@@ -3505,16 +3505,16 @@ def _report_filter_match(row: dict[str, Any], item: dict[str, Any]) -> bool:
     return {"gt": left > right, "gte": left >= right, "lt": left < right, "lte": left <= right}[operator]
 
 
-def _report_rows(db: Session, module: str) -> list[dict[str, Any]]:
+def _report_rows(db: Session, module: str, actor: User | None = None) -> list[dict[str, Any]]:
     resource = str(module or "").strip().lower().replace(" ", "_")
     if resource in REPORT_SOURCE_BLOCKLIST or resource not in RESOURCE_MAP and resource not in PLATFORM_RESOURCES:
         raise HTTPException(422, detail={"code": "REPORT_SOURCE_INVALID", "message": "Reports can only query approved CRM modules, not report or configuration definitions."})
     if resource in RESOURCE_MAP:
         model = RESOURCE_MAP[resource]
         rows = db.scalars(select(model).where(getattr(model, "archived", False) == False)).all()
-        return [serialize(row, db) for row in rows]
+        return [serialize(row, db, actor) for row in rows if can_access_record(db, resource, row, actor)]
     rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)).all()
-    return [serialize_platform(row, db) for row in rows]
+    return [serialize_platform(row, db, actor) for row in rows if can_access_record(db, resource, row, actor)]
 
 
 def _report_definition(record: PlatformRecord, override: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -3532,8 +3532,8 @@ def _report_definition(record: PlatformRecord, override: dict[str, Any] | None =
     return definition
 
 
-def _run_report_definition(db: Session, definition: dict[str, Any]) -> dict[str, Any]:
-    rows = _report_rows(db, str(definition.get("module")))
+def _run_report_definition(db: Session, definition: dict[str, Any], actor: User | None = None) -> dict[str, Any]:
+    rows = _report_rows(db, str(definition.get("module")), actor)
     filters = definition.get("filters") or []
     if not isinstance(filters, list) or len(filters) > 20:
         raise HTTPException(422, "Report filters must be a list of at most 20 conditions")
@@ -3581,7 +3581,7 @@ def run_saved_report(report_id: int, payload: dict[str, Any] | None = None, db: 
     db.add(run)
     db.flush()
     try:
-        result = _run_report_definition(db, run.definition)
+        result = _run_report_definition(db, run.definition, actor)
         run.status, run.row_count, run.result, run.completed_at = "completed", result["total"], result, datetime.utcnow()
         add_audit(db, "report_run", "reports", record.id, f"Ran report '{record.title}'", after={"run_id": run.id, "row_count": result["total"]}, actor_id=run.requested_by)
         db.commit()
@@ -6909,7 +6909,7 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
     add_audit(db, "create", resource, record.id, f"Created {config['singular']} '{record.title}'", after=serialize_platform(record))
     db.commit()
     db.refresh(record)
-    return serialize_platform(record, db)
+    return serialize_platform(record, db, actor)
 
 
 @app.get("/api/platform/{resource}/{item_id}")
@@ -6924,19 +6924,19 @@ def get_platform_record(resource: str, item_id: int, db: Session = Depends(get_d
 
 
 @app.get("/api/platform/{resource}/{item_id}/related")
-def get_platform_related(resource: str, item_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_platform_related(resource: str, item_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     platform_config(resource)
     record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id == item_id, PlatformRecord.archived == False))
-    if record is None:
+    if record is None or not can_access_record(db, resource, record, actor):
         raise HTTPException(404, "Record not found")
     linked: dict[str, list[dict[str, Any]]] = {"accounts": [], "contacts": [], "deals": [], "activities": [], "platform_records": []}
     for key, model, identifier in (("accounts", Account, record.account_id), ("contacts", Contact, record.contact_id), ("deals", Deal, record.deal_id)):
         if identifier:
             row = db.get(model, identifier)
-            if row is not None and not getattr(row, "archived", False):
-                linked[key].append(serialize(row, db))
-    linked["activities"] = [serialize(row, db) for row in db.scalars(select(Activity).where(Activity.related_type == resource, Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
-    linked["platform_records"] = [serialize_platform(row, db) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.related_type == resource, PlatformRecord.related_id == item_id, PlatformRecord.archived == False).order_by(PlatformRecord.updated_at.desc())).all()]
+            if row is not None and not getattr(row, "archived", False) and can_access_record(db, key, row, actor):
+                linked[key].append(serialize(row, db, actor))
+    linked["activities"] = [serialize(row, db, actor) for row in db.scalars(select(Activity).where(Activity.related_type == resource, Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all() if can_access_record(db, "activities", row, actor)]
+    linked["platform_records"] = [serialize_platform(row, db, actor) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.related_type == resource, PlatformRecord.related_id == item_id, PlatformRecord.archived == False).order_by(PlatformRecord.updated_at.desc())).all() if can_access_record(db, row.resource, row, actor)]
     return linked
 
 
@@ -6965,7 +6965,7 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
     add_audit(db, "update", resource, item_id, f"Updated {config['singular']} '{record.title}'", before=before, after=serialize_platform(record))
     db.commit()
     db.refresh(record)
-    return serialize_platform(record, db)
+    return serialize_platform(record, db, actor)
 
 
 @app.delete("/api/platform/{resource}/{item_id}")
