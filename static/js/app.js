@@ -274,11 +274,18 @@ function applyProfile() {
   const profile = state.profile;
   if (!profile) return;
   const role = profile.role || "";
-  $(".user-mini .avatar, .top-profile .avatar").forEach((node) => { node.textContent = initials(profile.name); });
-  $(".user-mini strong, .top-profile-copy strong").forEach((node) => { node.textContent = profile.name; });
-  $(".user-mini small, .top-profile-copy small").forEach((node) => { node.textContent = role; });
+  const isOwnerAdmin = Boolean(profile.owner_console_access);
+
+  $(".user-mini .avatar").forEach((node) => { node.textContent = initials(isOwnerAdmin ? "Admin" : profile.name); });
+  $(".user-mini strong").forEach((node) => { node.textContent = isOwnerAdmin ? "Admin" : profile.name; });
+  $(".user-mini small").forEach((node) => { node.textContent = isOwnerAdmin ? "Administrator" : role; });
+
+  $(".top-profile .avatar").forEach((node) => { node.textContent = initials(profile.name); });
+  $(".top-profile-copy strong").forEach((node) => { node.textContent = profile.name; });
+  $(".top-profile-copy small").forEach((node) => { node.textContent = role; });
+
   const ownerButton = $("#owner-console-button");
-  if (ownerButton) ownerButton.hidden = !Boolean(profile.owner_console_access);
+  if (ownerButton) ownerButton.hidden = !isOwnerAdmin;
 }
 
 async function refreshNavCount() {
