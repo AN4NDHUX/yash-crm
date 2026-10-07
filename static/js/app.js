@@ -165,6 +165,15 @@ function applyProfile() {
   const role = String(profile.role || "CRM user").trim() || "CRM user";
   const planName = String(profile.plan_name || profile.subscription?.plan_name || "Free").trim() || "Free";
   const isOwnerAdmin = profile.owner_console_access === true;
+  const isAdministrator = role.toLowerCase() === "administrator";
+
+  // Administrative navigation is hidden by default in the HTML and is exposed
+  // only to authenticated CRM administrators. Backend authorization remains the
+  // source of truth; this prevents normal users from seeing dead-end admin UI.
+  $("[data-admin-only]").forEach((node) => {
+    node.hidden = !isAdministrator;
+    node.setAttribute("aria-hidden", String(!isAdministrator));
+  });
 
   // Bottom-left identity always represents the current authenticated account.
   $$(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
@@ -260,6 +269,8 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "security") {
+      const role = String(state.profile?.role || "").trim().toLowerCase();
+      if (role !== "administrator") return navigate("/dashboard", true);
       setBreadcrumb("Security Administration", "Administration");
       content.innerHTML = await securityAdminView();
       bindSecurityAdmin();
