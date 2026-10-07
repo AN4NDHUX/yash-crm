@@ -1653,7 +1653,8 @@ def list_ai_exceptions(view: str = Query(default="needs_review", max_length=40),
 
 @app.patch("/api/ai/exceptions/{public_id}/review")
 def review_ai_exception(public_id: str, payload: AIExceptionReviewPayload, request: Request,
-                        db: Session = Depends(get_db)) -> dict[str, Any]:
+                        db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     _require_ai_csrf(request)
     occurrence = db.scalar(select(AIExceptionOccurrence).where(AIExceptionOccurrence.public_id == public_id))
     if occurrence is None or occurrence.active_key is None:
@@ -1663,12 +1664,11 @@ def review_ai_exception(public_id: str, payload: AIExceptionReviewPayload, reque
     previous = occurrence.review_state
     occurrence.review_state = payload.state
     occurrence.dismissed_until = datetime.utcnow() + timedelta(days=7) if payload.state == "dismissed" else None
-    admin = _pilot_admin(db)
-    _exception_event(db, occurrence, payload.state, payload.reason, admin.id if admin else None, previous)
+    _exception_event(db, occurrence, payload.state, payload.reason, actor.id, previous)
     add_audit(db, "ai_exception_review", "ai_exception_occurrences", occurrence.id,
               f"Quotation exception changed from {previous} to {payload.state}",
               before={"state": previous}, after={"state": payload.state, "reason": payload.reason},
-              actor_id=admin.id if admin else None)
+              actor_id=actor.id)
     db.commit()
     return {"ok": True, "item": serialize_exception(occurrence, db.get(PlatformRecord, occurrence.source_id))}
 
@@ -1706,7 +1706,8 @@ def _rank_quote_exceptions(rows: list[AIExceptionOccurrence]) -> tuple[AIRankRes
 
 
 @app.post("/api/ai/exceptions/rank")
-def rank_ai_exceptions(payload: AIRankPayload, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+def rank_ai_exceptions(payload: AIRankPayload, request: Request, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     _require_ai_csrf(request)
     error = ai_config_error()
     if error:
@@ -1762,7 +1763,8 @@ def rank_ai_exceptions(payload: AIRankPayload, request: Request, db: Session = D
 
 
 @app.post("/api/ai/proposals/{public_id}/approve")
-def approve_ai_task_proposal(public_id: str, request: Request, db: Session = Depends(get_db)) -> dict[str, Any]:
+def approve_ai_task_proposal(public_id: str, request: Request, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     _require_ai_csrf(request)
     proposal = db.scalar(select(AITaskProposal).where(AITaskProposal.public_id == public_id).order_by(AITaskProposal.version.desc()))
     if proposal is None:
@@ -1801,13 +1803,12 @@ def approve_ai_task_proposal(public_id: str, request: Request, db: Session = Dep
     proposal.status = "succeeded"
     previous = occurrence.review_state
     occurrence.review_state = "acted_on"
-    admin = _pilot_admin(db)
-    _exception_event(db, occurrence, "acted_on", f"Task #{activity.id} created", admin.id if admin else None, previous)
+    _exception_event(db, occurrence, "acted_on", f"Task #{activity.id} created", actor.id, previous)
     add_audit(db, "ai_task_approved", "activities", activity.id,
               f"Approved quotation follow-up Task '{activity.subject}'",
               after={"proposal_id": proposal.public_id, "occurrence_id": occurrence.public_id,
                      "rule_version": occurrence.rule_version, "operation_key": proposal.operation_key},
-              actor_id=admin.id if admin else None)
+              actor_id=actor.id)
     try:
         db.commit()
     except IntegrityError:
