@@ -4,7 +4,8 @@ from logging.config import fileConfig
 import os
 from alembic import context
 from sqlalchemy import create_engine, pool
-from app.main import Base, DB_CONNECT_ARGS, DB_URL
+from app.models import Base
+from app.database import DB_CONNECT_ARGS, DB_URL
 
 config = context.config
 if config.config_file_name is not None:
