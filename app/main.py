@@ -724,6 +724,7 @@ class ApexAssistantRun(Base):
 class Blueprint(Base):
     __tablename__ = "blueprints"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
     module: Mapped[str] = mapped_column(String(50), default="Deals")
     entry_criteria: Mapped[str | None] = mapped_column(Text, nullable=True)
