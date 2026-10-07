@@ -964,7 +964,7 @@ def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = N
         if report is None:
             rendered.append({"id": widget.get("id") or index, "title": widget.get("title") or "Widget", "type": widget.get("type") or "table", "error": "Report source not found"})
             continue
-        result = _run_report_definition(db, _report_definition(report, widget.get("definition") if isinstance(widget.get("definition"), dict) else {}))
+        result = _run_report_definition(db, _report_definition(report, widget.get("definition") if isinstance(widget.get("definition"), dict) else {}), actor)
         rendered.append({"id": widget.get("id") or index, "title": widget.get("title") or report.title, "type": widget.get("type") or "table", "width": widget.get("width") or 6, "result": result})
     return {"id": record.id, "name": record.title, "audience": definition.get("audience"), "layout": definition.get("layout") or "grid", "widgets": rendered}
 
@@ -4785,7 +4785,7 @@ def download_document(item_id: int, db: Session = Depends(get_db), actor: User =
     ))
     if record is None or not can_access_record(db, "documents", record, actor):
         raise HTTPException(404, "Document not found")
-    blob = db.scalar(select(DocumentBlob).where(DocumentBlob.record_id == record.id, DocumentBlob.owner_id == actor.id))
+    blob = db.scalar(select(DocumentBlob).where(DocumentBlob.record_id == record.id))
     if blob is not None:
         download_name = Path(blob.file_name or record.title or f"document-{record.id}").name
         safe_name = download_name.replace('"', "")
@@ -4834,7 +4834,9 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
     _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
-    if resource != "users":
+    if resource == "users":
+        _enforce_organization_user_limit(db, actor)
+    else:
         _enforce_record_limit(db, actor)
     model = RESOURCE_MAP[resource]
     values = {}
@@ -4845,8 +4847,15 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
     authorize_field_values(db, resource, values, actor, "write")
     if isinstance(actor, User) and hasattr(model, "owner_id"):
         values["owner_id"] = actor.id
-    if resource == "users" and not (values.get("name") and values.get("email")):
-        raise HTTPException(422, "Name and email are required")
+    if resource == "users":
+        if not (values.get("name") and values.get("email")):
+            raise HTTPException(422, "Name and email are required")
+        email = str(values.get("email") or "").strip().lower()
+        if parseaddr(email)[1] != email or "@" not in email:
+            raise HTTPException(422, "Enter a valid email address")
+        if db.scalar(select(User.id).where(func.lower(User.email) == email)):
+            raise HTTPException(409, "That email address is already assigned")
+        values["email"] = email
     if resource == "approval_processes" and not values.get("name"):
         raise HTTPException(422, "Rule name is required")
     if resource == "blueprints" and not values.get("name"):
@@ -4870,12 +4879,22 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
         item.completed_at = datetime.utcnow()
     db.add(item)
     db.flush()
-    created = serialize(item, db)
+    if resource == "users" and isinstance(actor, User):
+        organization_id = _organization_id_required(db, actor)
+        membership_role = "Admin" if str(item.role or "").lower() == "administrator" else "Member"
+        db.add(OrganizationMember(
+            organization_id=organization_id,
+            user_id=item.id,
+            membership_role=membership_role,
+            status="Active",
+        ))
+        db.flush()
+    created = serialize(item, db, actor)
     run_record_automation(db, resource, "create", item, created)
-    add_audit(db, "create", resource, item.id, f"Created {resource.rstrip('s')} record", after=serialize(item, db))
+    add_audit(db, "create", resource, item.id, f"Created {resource.rstrip('s')} record", after=serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     db.commit()
     db.refresh(item)
-    return serialize(item, db)
+    return serialize(item, db, actor)
 
 
 @app.get("/api/{resource}/{item_id}")
@@ -4902,7 +4921,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
     if not can_access_record(db, resource, item, actor, "write"):
         raise HTTPException(403, "You do not have access to update this record")
     model = RESOURCE_MAP[resource]
-    before_full = serialize(item, db)
+    before_full = serialize(item, db, actor)
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
     incoming = payload.model_dump(exclude_unset=True)
     authorize_field_values(db, resource, incoming, actor, "write")
@@ -4925,11 +4944,11 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         item.completed_at = None
     if resource == "deals" and item.stage != before[0]:
         record_blueprint_transition(db, blueprint, resource, item_id, str(before[0] or ""), str(item.stage), serialize(item, db), actor_id=item.owner_id)
-    run_record_automation(db, resource, "update", item, serialize(item, db), before_full)
-    add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db))
+    run_record_automation(db, resource, "update", item, serialize(item, db, actor), before_full)
+    add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     db.commit()
     db.refresh(item)
-    return serialize(item, db)
+    return serialize(item, db, actor)
 
 
 @app.delete("/api/{resource}/{item_id}")
@@ -5052,7 +5071,7 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
         add_audit(db, "convert", "leads", lead.id, f"Converted lead '{lead.name}' to account, contact and deal", before={"status": "Converted" if lead.converted_deal_id else lead.status}, after={"account_id": account.id, "contact_id": contact.id, "deal_id": deal.id}, actor_id=lead.owner_id)
         db.commit()
         for record in (lead, account, contact, deal): db.refresh(record)
-        return {"lead": serialize(lead, db), "account": serialize(account, db), "contact": serialize(contact, db), "deal": serialize(deal, db)}
+        return {"lead": serialize(lead, db, actor), "account": serialize(account, db, actor), "contact": serialize(contact, db, actor), "deal": serialize(deal, db, actor)}
     except HTTPException:
         db.rollback(); raise
     except Exception:
