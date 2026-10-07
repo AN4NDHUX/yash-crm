@@ -5515,6 +5515,77 @@ def organization_members(db: Session = Depends(get_db), actor: User = Depends(cu
     } for member, user in rows]}
 
 
+def _organization_has_business_data(db: Session, organization_id: int) -> bool:
+    for model in (Lead, Contact, Account, Deal, Activity, Product, Note, Attachment, Email, PlatformRecord, DocumentBlob):
+        if not hasattr(model, "organization_id"):
+            continue
+        if int(db.scalar(select(func.count()).select_from(model).where(model.organization_id == organization_id)) or 0) > 0:
+            return True
+    return False
+
+
+@app.post("/api/organization/invitations/accept")
+def accept_organization_invitation(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    raw_token = str(payload.get("invitation_token") or payload.get("token") or "").strip()
+    if not raw_token:
+        raise HTTPException(422, "Invitation token is required")
+    invitation = db.scalar(select(OrganizationInvitation).where(
+        OrganizationInvitation.token_hash == _session_token_hash(raw_token),
+        OrganizationInvitation.status == "Pending",
+        OrganizationInvitation.expires_at > datetime.utcnow(),
+    ))
+    if invitation is None:
+        raise HTTPException(404, "Invitation is invalid or has expired")
+    if invitation.email.lower() != actor.email.lower():
+        raise HTTPException(403, "This invitation belongs to another email address")
+
+    target_org = db.get(Organization, invitation.organization_id)
+    if target_org is None or target_org.status != "Active":
+        raise HTTPException(409, "The invited organization is unavailable")
+
+    current = _organization_membership(db, actor.id)
+    if current and current.organization_id != target_org.id:
+        current_org = db.get(Organization, current.organization_id)
+        member_count = int(db.scalar(select(func.count()).select_from(OrganizationMember).where(
+            OrganizationMember.organization_id == current.organization_id,
+            OrganizationMember.status == "Active",
+        )) or 0)
+        is_owner = bool(current_org and current_org.owner_user_id == actor.id)
+        if not is_owner or member_count > 1 or _organization_has_business_data(db, current.organization_id):
+            raise HTTPException(409, detail={
+                "code": "WORKSPACE_MOVE_BLOCKED",
+                "message": "This account already belongs to a workspace with members or CRM data. Ask an administrator to migrate it safely.",
+            })
+        current.status = "Inactive"
+        if current_org:
+            current_org.status = "Inactive"
+
+    existing_target = db.scalar(select(OrganizationMember).where(
+        OrganizationMember.organization_id == target_org.id,
+        OrganizationMember.user_id == actor.id,
+    ))
+    if existing_target:
+        existing_target.status = "Active"
+        existing_target.membership_role = invitation.membership_role
+    else:
+        db.add(OrganizationMember(
+            organization_id=target_org.id,
+            user_id=actor.id,
+            membership_role=invitation.membership_role,
+            status="Active",
+        ))
+    invitation.status = "Accepted"
+    invitation.accepted_at = datetime.utcnow()
+    actor.invited_at = invitation.created_at
+    add_audit(db, "organization_invitation_accepted", "organizations", target_org.id, f"{actor.email} joined the organization", actor_id=actor.id)
+    db.commit()
+    return {"ok": True, "organization_id": target_org.id, "organization_name": target_org.name, "membership_role": invitation.membership_role}
+
+
 @app.get("/api/organization/invitations")
 def organization_invitations(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     organization, _ = _require_organization_admin(db, actor)
