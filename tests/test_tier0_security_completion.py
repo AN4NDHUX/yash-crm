@@ -364,3 +364,156 @@ def test_approval_actor_id_payload_cannot_impersonate_approver():
     assert out['impersonation_code'] == 'APPROVER_NOT_AUTHORIZED'
     assert out['approved'] == 200
     assert out['final_status'] == 'Approved'
+
+
+def test_global_search_respects_private_record_sharing():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Search Owner','username':'search.owner','email':'search.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'search.peer@example.com'})
+        token = invite.json()['invitation_token']
+        lead = c.post('/api/leads', json={'name':'SecretPeerLeadXYZ'}).json()
+        out['lead_id'] = lead['id']
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Search Peer','username':'search.peer','email':'search.peer@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        search = c.get('/api/search?q=SecretPeerLeadXYZ')
+        out['search_status'] = search.status_code
+        out['found'] = any(item.get('id') == out['lead_id'] and item.get('resource') == 'leads' for item in search.json().get('results', []))
+        out['direct'] = c.get(f"/api/leads/{out['lead_id']}").status_code
+    """)
+    assert out['search_status'] == 200
+    assert out['found'] is False
+    assert out['direct'] == 404
+
+
+def test_approval_snapshot_redacts_hidden_fields_for_approver():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Snapshot Owner','username':'snapshot.owner','email':'snapshot.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'snapshot.approver@example.com'})
+        token = invite.json()['invitation_token']
+        with main.SessionLocal() as db:
+            owner = db.scalar(main.select(main.User).where(main.User.email == 'snapshot.owner@example.com'))
+            org_id = main._organization_id_for_user(db, owner.id)
+            enterprise = db.scalar(main.select(main.Plan).where(main.Plan.code == 'enterprise'))
+            subscription = main._ensure_organization_subscription(db, owner)
+            subscription.plan_id = enterprise.id
+            subscription.status = 'Active'
+            db.commit()
+        lead = c.post('/api/leads', json={'name':'Snapshot Lead','email':'secret-snapshot@example.com'}).json()
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Snapshot Approver','username':'snapshot.approver','email':'snapshot.approver@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        with main.SessionLocal() as db:
+            approver = db.scalar(main.select(main.User).where(main.User.email == 'snapshot.approver@example.com'))
+            approver.role = 'Sales manager'
+            approver.profile_name = 'Restricted Approver'
+            org_id = main._organization_id_for_user(db, approver.id)
+            module = main.MetadataModule(
+                api_name='leads', label='Leads', plural_label='Leads',
+                owner_id=approver.id, organization_id=org_id, enabled=True, config={}
+            )
+            db.add(module)
+            db.flush()
+            db.add(main.MetadataField(
+                module_id=module.id, api_name='email', label='Email', field_type='email',
+                position=1, required=False, read_only=False, unique_value=False,
+                permissions={}, visibility={'restricted approver':'hidden'}
+            ))
+            process = main.ApprovalProcess(
+                organization_id=org_id,
+                name='Snapshot Approval',
+                module='Leads',
+                trigger='Always',
+                approver='Sales manager',
+                status='Active',
+                conditions=[],
+                steps=[{'order':1,'approver_id':approver.id,'approver':'Sales manager'}],
+            )
+            db.add(process)
+            db.commit()
+            out['process_id'] = process.id
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/login', json={'identifier':'snapshot.owner','password':'strong-password-123'})
+        submitted = c.post('/api/approvals/requests', json={
+            'process_id':out['process_id'],'resource':'leads','record_id':lead['id']
+        })
+        out['submit'] = submitted.status_code
+        request_id = submitted.json()['id']
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/login', json={'identifier':'snapshot.approver','password':'strong-password-123'})
+        detail = c.get(f"/api/approvals/requests/{request_id}")
+        out['detail'] = detail.status_code
+        snapshot = detail.json().get('snapshot') or {}
+        out['email_present'] = 'email' in snapshot
+        out['name'] = snapshot.get('name')
+    """)
+    assert out['submit'] == 201
+    assert out['detail'] == 200
+    assert out['email_present'] is False
+    assert out['name'] == 'Snapshot Lead'
+
+
+def test_cpq_catalog_respects_product_field_security():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'CPQ Owner','username':'cpq.owner','email':'cpq.owner@example.com',
+            'password':'strong-password-123'
+        })
+        invite = c.post('/api/organization/invitations', json={'email':'cpq.member@example.com'})
+        token = invite.json()['invitation_token']
+        with main.SessionLocal() as db:
+            owner = db.scalar(main.select(main.User).where(main.User.email == 'cpq.owner@example.com'))
+            org_id = main._organization_id_for_user(db, owner.id)
+            enterprise = db.scalar(main.select(main.Plan).where(main.Plan.code == 'enterprise'))
+            subscription = main._ensure_organization_subscription(db, owner)
+            subscription.plan_id = enterprise.id
+            subscription.status = 'Active'
+            db.commit()
+        product = c.post('/api/products', json={'name':'Secure Product','sku':'SEC-001','unit_price':9999,'status':'Active'}).json()
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'CPQ Member','username':'cpq.member','email':'cpq.member@example.com',
+            'password':'strong-password-123','invitation_token':token
+        })
+        with main.SessionLocal() as db:
+            member = db.scalar(main.select(main.User).where(main.User.email == 'cpq.member@example.com'))
+            member.profile_name = 'Restricted Seller'
+            org_id = main._organization_id_for_user(db, member.id)
+            module = main.MetadataModule(
+                api_name='products', label='Products', plural_label='Products',
+                owner_id=member.id, organization_id=org_id, enabled=True, config={}
+            )
+            db.add(module)
+            db.flush()
+            db.add(main.MetadataField(
+                module_id=module.id, api_name='unit_price', label='Unit Price', field_type='currency',
+                position=1, required=False, read_only=False, unique_value=False,
+                permissions={}, visibility={'restricted seller':'hidden'}
+            ))
+            db.commit()
+        catalog = c.get('/api/cpq/catalog')
+        out['status'] = catalog.status_code
+        products = catalog.json().get('products', []) if catalog.status_code == 200 else []
+        secure = next((item for item in products if item.get('id') == product['id']), None)
+        out['product_visible'] = secure is not None
+        out['price_present'] = bool(secure and 'unit_price' in secure)
+    """)
+    assert out == {'status': 200, 'product_visible': True, 'price_present': False}
