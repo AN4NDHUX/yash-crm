@@ -1,0 +1,527 @@
+/* Yash CRM premium finish --------------------------------------------------
+   Visual-only layer: the existing blue/navy theme remains the source of truth.
+*/
+.main-area {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--premium-canvas);
+}
+
+.main-area::before,
+.main-area::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A quiet, continuously breathing canvas texture for the white workspace. */
+.main-area::before {
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 62% 42% at 78% 8%, rgba(23, 105, 224, .085), transparent 68%),
+    radial-gradient(ellipse 46% 38% at 9% 88%, rgba(89, 127, 224, .055), transparent 72%),
+    linear-gradient(135deg, rgba(255, 255, 255, .94), rgba(246, 248, 252, .96));
+  transform: translate3d(0, 0, 0) scale(1.04);
+  transform-origin: center;
+  animation: premium-canvas-breathe 18s ease-in-out infinite alternate;
+}
+
+/* Fine blueprint lines add craft without turning the CRM into a decorative page. */
+.main-area::after {
+  z-index: -1;
+  opacity: .27;
+  background-image:
+    linear-gradient(rgba(23, 105, 224, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 105, 224, .035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .55), transparent 72%);
+}
+
+.topbar,
+.content-area {
+  position: relative;
+  z-index: 1;
+}
+
+.content-area {
+  background: transparent;
+}
+
+.topbar {
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 1px 0 rgba(20, 33, 61, .025), 0 10px 28px rgba(20, 33, 61, .025);
+}
+
+.page-heading,
+.stats-grid,
+.dashboard-grid,
+.settings-layout,
+.detail-layout {
+  animation: premium-content-rise .48s cubic-bezier(.2, .7, .2, 1) both;
+}
+
+.page-heading { animation-delay: 20ms; }
+.stats-grid { animation-delay: 55ms; }
+.dashboard-grid,
+.settings-layout,
+.detail-layout { animation-delay: 90ms; }
+
+.card,
+.module-toolbar,
+.settings-section,
+.detail-summary,
+.table-card,
+.deal-card,
+.kanban-column {
+  box-shadow: 0 1px 1px rgba(20, 33, 61, .025), 0 14px 32px rgba(20, 33, 61, .055);
+  transition: box-shadow .22s ease, border-color .22s ease, transform .22s ease;
+}
+
+.card:hover,
+.module-toolbar:hover,
+.settings-section:hover,
+.detail-summary:hover,
+.table-card:hover,
+.deal-card:hover,
+.kanban-column:hover {
+  border-color: #d4deec;
+  box-shadow: 0 2px 2px rgba(20, 33, 61, .025), 0 18px 38px rgba(20, 33, 61, .075);
+}
+
+.stat-card:hover,
+.quick-action:hover,
+.deal-card:hover {
+  transform: translateY(-2px);
+}
+
+.button-primary {
+  position: relative;
+  overflow: hidden;
+}
+
+.button-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, .18) 48%, transparent 70%);
+  transform: translateX(-130%);
+  transition: transform .6s ease;
+}
+
+.button-primary:hover::after { transform: translateX(130%); }
+
+.loading {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--premium-muted);
+  letter-spacing: .01em;
+}
+
+.loading::before {
+  content: "";
+  width: 44px;
+  height: 44px;
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(23, 105, 224, .12);
+  box-shadow: 0 0 0 8px rgba(23, 105, 224, .035), 0 0 0 16px rgba(23, 105, 224, .018);
+  animation: premium-loading-pulse 1.8s ease-out infinite;
+}
+
+.loading .spin {
+  position: relative;
+  z-index: 1;
+  width: 19px;
+  height: 19px;
+  border-width: 2px;
+  border-color: #d8e6fb;
+  border-top-color: var(--premium-blue-600);
+  box-shadow: 0 4px 12px rgba(23, 105, 224, .14);
+}
+
+.loading::after {
+  content: "Preparing your workspace";
+  color: var(--premium-ink);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  animation: premium-loading-copy 1.8s ease-in-out infinite;
+}
+
+@keyframes premium-canvas-breathe {
+  0% { transform: translate3d(-.8%, -.35%, 0) scale(1.04); filter: saturate(.98); }
+  50% { transform: translate3d(.45%, .3%, 0) scale(1.07); filter: saturate(1.04); }
+  100% { transform: translate3d(1%, -.2%, 0) scale(1.04); filter: saturate(.98); }
+}
+
+@keyframes premium-content-rise {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes premium-loading-pulse {
+  0% { opacity: .9; transform: scale(.72); }
+  70%, 100% { opacity: 0; transform: scale(1.2); }
+}
+
+@keyframes premium-loading-copy {
+  0%, 100% { opacity: .58; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-area::before,
+  .page-heading,
+  .stats-grid,
+  .dashboard-grid,
+  .settings-layout,
+  .detail-layout,
+  .loading::before,
+  .loading::after {
+    animation: none !important;
+  }
+
+  .card,
+  .module-toolbar,
+  .settings-section,
+  .detail-summary,
+  .table-card,
+  .deal-card,
+  .kanban-column,
+  .stat-card,
+  .quick-action {
+    transition: none !important;
+  }
+}
+
+
+/* Always-on white workspace motion ---------------------------------------
+   The animation is intentionally slow and low-contrast for a calm premium CRM.
+*/
+.main-area::before {
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 55% 46% at 86% 6%, rgba(23, 105, 224, .14), transparent 68%),
+    radial-gradient(ellipse 42% 38% at 4% 78%, rgba(108, 142, 232, .085), transparent 70%),
+    radial-gradient(ellipse 38% 28% at 52% 46%, rgba(255, 255, 255, .9), transparent 72%),
+    linear-gradient(135deg, #ffffff 0%, #f7faff 48%, #f2f6fc 100%);
+  background-size: 145% 145%, 150% 150%, 130% 130%, 100% 100%;
+  animation: premium-canvas-breathe 20s ease-in-out infinite alternate,
+             premium-canvas-shift 28s ease-in-out infinite alternate;
+}
+
+.main-area::after {
+  z-index: 0;
+  opacity: .42;
+  background-image:
+    linear-gradient(118deg, transparent 0%, rgba(255, 255, 255, .7) 43%, transparent 58%),
+    linear-gradient(rgba(23, 105, 224, .028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 105, 224, .028) 1px, transparent 1px);
+  background-size: 210% 100%, 44px 44px, 44px 44px;
+  background-position: 120% 0, 0 0, 0 0;
+  animation: premium-light-sweep 24s ease-in-out infinite;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, .78), transparent 84%);
+}
+
+.topbar,
+.content-area {
+  position: relative;
+  z-index: 1;
+}
+
+.content-area > * {
+  position: relative;
+  z-index: 1;
+}
+
+.page-heading h1 {
+  text-wrap: balance;
+}
+
+.card-head-link,
+.record-link,
+.table-action,
+.quick-action,
+.settings-nav a {
+  transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.card-head-link:hover,
+.record-link:hover {
+  color: var(--premium-blue-600);
+}
+
+.table-action:hover {
+  color: var(--premium-blue-600);
+  background: var(--premium-blue-100);
+  border-color: #c9dcf7;
+  transform: translateY(-1px);
+}
+
+.module-toolbar,
+.global-search,
+.field-input,
+.field-select,
+.field-textarea {
+  backdrop-filter: blur(8px);
+}
+
+.global-search,
+.module-toolbar {
+  background: rgba(255, 255, 255, .82);
+}
+
+.data-table tbody tr {
+  transition: background-color .18s ease, box-shadow .18s ease;
+}
+
+.data-table tbody tr:hover {
+  box-shadow: inset 3px 0 0 var(--premium-blue-600);
+}
+
+@keyframes premium-canvas-shift {
+  0% { background-position: 0% 0%, 100% 100%, 50% 40%, 0 0; }
+  100% { background-position: 100% 34%, 0% 62%, 58% 54%, 0 0; }
+}
+
+@keyframes premium-light-sweep {
+  0%, 24% { background-position: 120% 0, 0 0, 0 0; }
+  62%, 100% { background-position: -120% 0, 0 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-area::before,
+  .main-area::after,
+  .data-table tbody tr,
+  .card-head-link,
+  .record-link,
+  .table-action,
+  .quick-action,
+  .settings-nav a {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+
+/* Exact ThreeUI BrandOrbs loader host ------------------------------------ */
+.loading {
+  min-height: 220px;
+  gap: 14px;
+  color: var(--premium-muted);
+}
+
+.loading::before,
+.loading::after {
+  display: none;
+  content: none;
+  animation: none;
+}
+
+.brand-orbs-loader {
+  display: block;
+  width: 88px;
+  height: 88px;
+  border: 0;
+  border-radius: 16px;
+  background: #dad7cc;
+  box-shadow: 0 12px 28px rgba(20, 33, 61, .10), 0 0 0 1px rgba(20, 33, 61, .06);
+}
+
+.loading-label {
+  color: var(--premium-ink);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .025em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-orbs-loader {
+    /* The registered engine respects reduced motion inside its canvas document. */
+    animation: none !important;
+  }
+}
+
+
+/* Fast premium motion pass ----------------------------------------------- */
+.main-area::before {
+  animation-duration: 14s, 20s;
+  opacity: .98;
+}
+
+.main-area::after {
+  animation-duration: 18s;
+  opacity: .48;
+}
+
+.brand-orbs-loader {
+  flex: 0 0 88px;
+  width: 88px;
+  height: 88px;
+  display: block;
+  background: #dad7cc;
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 10px 26px rgba(20, 33, 61, .12), 0 0 0 1px rgba(20, 33, 61, .07);
+}
+
+.loading-label {
+  display: block;
+  color: var(--premium-ink);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: .025em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .main-area::before,
+  .main-area::after {
+    animation: none !important;
+  }
+}
+
+
+/* Deployment-safe loader fallback: logo remains visible if the iframe asset 404s. */
+.brand-orbs-shell {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #dad7cc;
+  box-shadow: 0 10px 26px rgba(20, 33, 61, .12), 0 0 0 1px rgba(20, 33, 61, .07);
+  overflow: hidden;
+}
+
+.brand-orbs-shell .brand-orbs-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.yash-loading-mark {
+  position: relative;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: block;
+  border-radius: 8px;
+  background: #1769e0;
+  box-shadow: 0 5px 15px rgba(23, 105, 224, .32), 0 0 0 3px rgba(255, 255, 255, .32);
+  overflow: hidden;
+  animation: yash-logo-pulse 1.6s ease-in-out infinite;
+}
+
+.yash-loading-mark i,
+.yash-loading-mark b {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 19px;
+  border-radius: 1px;
+  background: #fff;
+  transform: skewY(-28deg) rotate(20deg);
+}
+
+.yash-loading-mark i { left: 6px; top: 6px; }
+.yash-loading-mark b { right: 5px; bottom: 5px; opacity: .72; }
+
+@keyframes yash-logo-pulse {
+  0%, 100% { transform: scale(.94); box-shadow: 0 5px 15px rgba(23, 105, 224, .26), 0 0 0 3px rgba(255, 255, 255, .27); }
+  50% { transform: scale(1); box-shadow: 0 7px 20px rgba(23, 105, 224, .38), 0 0 0 5px rgba(255, 255, 255, .35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yash-loading-mark { animation: none !important; }
+}
+
+/* Revenue journey, management visibility, and logo-led loading state. */
+.management-grid { margin-bottom: 18px; align-items: start; }
+.performance-table th,
+.performance-table td { white-space: nowrap; }
+.performance-table td:first-child { min-width: 168px; }
+.achievement-meter {
+  display: inline-block;
+  width: 74px;
+  height: 6px;
+  margin-right: 8px;
+  overflow: hidden;
+  vertical-align: middle;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.achievement-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1769e0, #26a269);
+}
+.settings-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.journey-group { padding-bottom: 16px; }
+.journey-track { display: grid; grid-template-columns: repeat(5, minmax(58px, 1fr)); gap: 7px; margin: 12px 0; }
+.journey-stage { display: grid; justify-items: center; gap: 5px; color: var(--text-faint); font-size: 9px; text-align: center; }
+.journey-stage i {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-soft);
+  color: var(--text-muted);
+  font-style: normal;
+  font-weight: 700;
+}
+.journey-stage.complete { color: var(--premium-ink); }
+.journey-stage.complete i { color: #fff; border-color: #1769e0; background: #1769e0; box-shadow: 0 6px 16px rgba(23, 105, 224, .22); }
+.journey-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.yash-loading-logo {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 12px 34px rgba(23, 105, 224, .25), 0 0 0 1px rgba(255, 255, 255, .72);
+  animation: yash-logo-float 1.7s ease-in-out infinite;
+}
+.yash-loading-logo img { width: 46px; height: 46px; object-fit: contain; }
+.loading-steps { display: flex; align-items: center; gap: 6px; color: var(--text-faint); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.loading-steps i { font-style: normal; }
+.loading-steps b { width: 12px; height: 1px; background: var(--border-strong); }
+.loading-progress { width: 190px; height: 3px; overflow: hidden; border-radius: 99px; background: rgba(23, 105, 224, .1); }
+.loading-progress i { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, transparent, #1769e0, transparent); animation: journey-load 1.45s ease-in-out infinite; }
+@keyframes yash-logo-float { 0%, 100% { transform: translateY(2px) scale(.98); } 50% { transform: translateY(-3px) scale(1); } }
+@keyframes journey-load { 0% { transform: translateX(-110%); } 100% { transform: translateX(350%); } }
+
+@media (max-width: 720px) {
+  .management-grid { grid-template-columns: 1fr; }
+  .journey-track { grid-template-columns: repeat(5, minmax(48px, 1fr)); }
+  .loading-steps { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yash-loading-logo,
+  .loading-progress i { animation: none !important; }
+  .loading-progress i { width: 100%; transform: none; opacity: .6; }
+}
+
+
