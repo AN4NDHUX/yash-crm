@@ -78,3 +78,51 @@ def test_critical_administration_and_ai_surfaces_respond():
         out['failures'] = failures
     """)
     assert out["failures"] == {}
+
+
+def test_payments_and_invoice_lookup_survive_legacy_platform_json_shapes():
+    out = run_app_script("""
+    with TestClient(main.app) as c:
+        with main.SessionLocal() as db:
+            admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
+            org_id = main._organization_id_for_user(db, admin.id)
+            token_actor = main.TENANT_ACTOR_ID.set(admin.id)
+            token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
+            try:
+                invoice = main.PlatformRecord(
+                    organization_id=org_id,
+                    owner_id=admin.id,
+                    resource='invoices',
+                    title='Legacy invoice',
+                    status='Issued',
+                    amount=1000,
+                    data=['legacy', 'invoice'],
+                    archived=False,
+                )
+                payment = main.PlatformRecord(
+                    organization_id=org_id,
+                    owner_id=admin.id,
+                    resource='payments',
+                    title='Legacy payment',
+                    status='Received',
+                    amount=500,
+                    data='legacy-payment-json',
+                    archived=False,
+                )
+                db.add_all([invoice, payment])
+                db.commit()
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token_org)
+                main.TENANT_ACTOR_ID.reset(token_actor)
+
+        invoices = c.get('/api/platform/invoices?limit=100&sort=name_asc', headers=auth)
+        payments = c.get('/api/platform/payments?limit=100&sort=updated_desc', headers=auth)
+        out['invoice_status'] = invoices.status_code
+        out['payment_status'] = payments.status_code
+        out['invoice_items'] = len(invoices.json().get('items', [])) if invoices.status_code == 200 else None
+        out['payment_items'] = len(payments.json().get('items', [])) if payments.status_code == 200 else None
+    """)
+    assert out['invoice_status'] == 200
+    assert out['payment_status'] == 200
+    assert out['invoice_items'] >= 1
+    assert out['payment_items'] >= 1
