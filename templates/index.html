@@ -16,7 +16,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261007-popup-notifications-v1" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261007-sidebar-resize-v2" />
+  <style data-remove-notification-icon>#notifications-button,.notification-menu,.top-icon.notification-trigger{display:none!important}</style>
 </head>
 <body>
   <div class="app-shell">
@@ -91,6 +92,7 @@
         </div>
       </div>
     </aside>
+    <div class="sidebar-resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div>
 
     <button class="drawer-backdrop" id="drawer-backdrop" type="button" aria-label="Close navigation" hidden></button>
 
@@ -276,5 +278,88 @@
 
     })();
   </script>
+
+  <script data-sidebar-resize-controller>
+    (() => {
+      const root = document.documentElement;
+      const resizer = document.getElementById("sidebar-resizer");
+      const minWidth = 240;
+      const maxWidth = 440;
+      const storageKey = "yashcrm-sidebar-width";
+
+      const clamp = (value) => Math.min(maxWidth, Math.max(minWidth, value));
+      const applyWidth = (value, persist = false) => {
+        const width = clamp(Number(value) || 300);
+        root.style.setProperty("--sidebar-width", width + "px");
+        if (persist) {
+          try { localStorage.setItem(storageKey, String(width)); } catch {}
+        }
+      };
+
+      try {
+        const saved = Number(localStorage.getItem(storageKey));
+        if (saved) applyWidth(saved);
+      } catch {}
+
+      if (!resizer) return;
+
+      let active = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      const endResize = () => {
+        if (!active) return;
+        active = false;
+        document.body.classList.remove("is-resizing-sidebar");
+        try { resizer.releasePointerCapture?.(resizer._pointerId); } catch {}
+      };
+
+      resizer.addEventListener("pointerdown", (event) => {
+        if (window.innerWidth <= 1000 || event.button !== 0) return;
+        active = true;
+        startX = event.clientX;
+        startWidth = parseFloat(getComputedStyle(root).getPropertyValue("--sidebar-width")) || 300;
+        resizer._pointerId = event.pointerId;
+        resizer.setPointerCapture?.(event.pointerId);
+        document.body.classList.add("is-resizing-sidebar");
+        event.preventDefault();
+      });
+
+      resizer.addEventListener("pointermove", (event) => {
+        if (!active) return;
+        applyWidth(startWidth + (event.clientX - startX));
+      });
+
+      resizer.addEventListener("pointerup", (event) => {
+        if (!active) return;
+        const finalWidth = parseFloat(getComputedStyle(root).getPropertyValue("--sidebar-width")) || 300;
+        applyWidth(finalWidth, true);
+        endResize();
+        event.preventDefault();
+      });
+
+      resizer.addEventListener("pointercancel", endResize);
+      window.addEventListener("blur", endResize);
+
+      resizer.addEventListener("keydown", (event) => {
+        if (window.innerWidth <= 1000) return;
+        const current = parseFloat(getComputedStyle(root).getPropertyValue("--sidebar-width")) || 300;
+        if (event.key === "ArrowLeft") {
+          applyWidth(current - 12, true);
+          event.preventDefault();
+        } else if (event.key === "ArrowRight") {
+          applyWidth(current + 12, true);
+          event.preventDefault();
+        } else if (event.key === "Home") {
+          applyWidth(minWidth, true);
+          event.preventDefault();
+        } else if (event.key === "End") {
+          applyWidth(maxWidth, true);
+          event.preventDefault();
+        }
+      });
+    })();
+  </script>
+
 </body>
 </html>
