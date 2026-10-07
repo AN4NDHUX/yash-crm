@@ -320,6 +320,7 @@ def startup() -> None:
             try:
                 ensure_workspace_defaults(db)
                 ensure_platform_defaults(db, include_demo=(not IS_PRODUCTION or env_bool("SEED_DEMO_DATA")))
+                db.commit()
             finally:
                 TENANT_ORGANIZATION_ID.reset(organization_token)
                 TENANT_ACTOR_ID.reset(actor_token)
