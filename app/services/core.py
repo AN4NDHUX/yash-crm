@@ -233,7 +233,7 @@ def normalize_platform_links(db: Session, resource: str, values: dict[str, Any])
         values.update({"related_type": "leads", "related_id": lead.id})
 
     if parent is not None:
-        inherited = dict(parent.data or {})
+        inherited = _platform_data_dict(parent)
         for key in ("owner_id", "account_id", "contact_id", "deal_id"):
             if values.get(key) in (None, "") and getattr(parent, key, None) is not None:
                 values[key] = getattr(parent, key)
@@ -273,7 +273,7 @@ def refresh_invoice_balance(db: Session, invoice_id: int) -> None:
     )).all()
     paid = sum(float(item.amount or 0) for item in payments if int((item.data or {}).get("invoice_id") or 0) == invoice_id and item.status in {"Received", "Cleared"})
     total = float(invoice.amount or 0)
-    values = dict(invoice.data or {})
+    values = _platform_data_dict(invoice)
     values["paid_amount"] = paid
     values["balance_due"] = max(total - paid, 0)
     if paid >= total and total > 0:
@@ -283,8 +283,19 @@ def refresh_invoice_balance(db: Session, invoice_id: int) -> None:
     sync_platform_columns(invoice, values)
 
 
+def _platform_data_dict(record: PlatformRecord) -> dict[str, Any]:
+    """Return a safe mutable mapping for current and legacy PlatformRecord JSON.
+
+    Older deployments may contain null, list, or scalar JSON values from historical
+    imports/customization code. A malformed legacy value must never turn a module
+    list page into HTTP 500; canonical fields below remain authoritative.
+    """
+    raw = record.data
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
 def serialize_platform(record: PlatformRecord, db: Session | None = None, actor: User | None = None) -> dict[str, Any]:
-    data = dict(record.data or {})
+    data = _platform_data_dict(record)
     data.update({
         "id": record.id,
         "resource": record.resource,
