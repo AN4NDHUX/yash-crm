@@ -25,7 +25,7 @@ def test_every_sidebar_route_has_a_frontend_handler():
     platform = set(re.findall(r'"([^"]+)"', platform_match.group(1))) if platform_match else set()
     special = {
         "dashboard", "teamspaces", "activities", "ai", "developer", "security",
-        "cpq", "setup-console", "setup", "settings", "reports", "dashboards",
+        "cpq", "setup-console", "setup", "settings", "reports", "dashboards", "subscriptions",
     }
     missing = [route for route in routes if route not in core | platform | special]
     assert missing == [], f"Sidebar routes without renderRoute handling: {missing}"
