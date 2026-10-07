@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261007-upgrade-plan-v2" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261007-sidebar-plan-v1" />
   <style data-remove-notification-icon>#notifications-button,.notification-menu,.top-icon.notification-trigger{display:none!important}</style>
 </head>
 <body>
@@ -85,7 +85,7 @@
         </div>
         <div class="user-mini">
           <span class="avatar avatar-indigo"></span>
-          <div><strong>Account</strong><small>CRM user</small></div>
+          <div class="user-mini-copy"><strong>Account</strong><small class="user-mini-role">CRM user</small><small class="user-mini-plan">Free</small></div>
           <div class="user-mini-actions">
             <button class="icon-button" id="profile-shortcut" aria-label="Open profile">•••</button>
             <button class="sidebar-signout" id="logout-button" type="button">Sign out</button>
@@ -145,7 +145,7 @@
 
   <div class="notification-popup-region" id="notification-popup-region" aria-live="polite" aria-atomic="false"></div>
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=20261007-upgrade-plan-v2"></script>
+  <script type="module" src="/static/js/app.js?v=20261007-sidebar-plan-v1"></script>
   <script data-session-identity-bootstrap>
     (() => {
       const ownerButton = document.getElementById("owner-console-button");
@@ -164,7 +164,8 @@
           const owner = profile.owner_console_access === true;
 
           document.querySelectorAll(".user-mini strong").forEach((node) => { node.textContent = username; });
-          document.querySelectorAll(".user-mini small").forEach((node) => { node.textContent = role; });
+          document.querySelectorAll(".user-mini-role").forEach((node) => { node.textContent = role; });
+          document.querySelectorAll(".user-mini-plan").forEach((node) => { node.textContent = profile.plan_name || profile.subscription?.plan_name || "Free"; });
 
           if (ownerButton) ownerButton.hidden = !owner;
           if (topProfile) topProfile.hidden = !owner;
