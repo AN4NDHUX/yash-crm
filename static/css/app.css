@@ -3640,3 +3640,58 @@ textarea {
     width: calc(100vw - 24px);
   }
 }
+
+
+/* Final desktop sidebar resize controls */
+#notifications-button,
+.notification-menu,
+.top-icon.notification-trigger {
+  display: none !important;
+}
+
+@media (min-width: 1001px) {
+  .sidebar-resizer {
+    display: block !important;
+    pointer-events: auto !important;
+    position: fixed !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: calc(var(--sidebar-width) - 5px) !important;
+    width: 10px !important;
+    height: 100dvh !important;
+    z-index: 4000 !important;
+    cursor: col-resize !important;
+    touch-action: none !important;
+    background: transparent !important;
+  }
+
+  .sidebar-resizer::after {
+    content: "" !important;
+    position: absolute !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 4px !important;
+    width: 2px !important;
+    background: transparent !important;
+    transition: background-color .15s ease !important;
+  }
+
+  .sidebar-resizer:hover::after,
+  .sidebar-resizer:focus-visible::after,
+  body.is-resizing-sidebar .sidebar-resizer::after {
+    background: rgba(94, 156, 245, .82) !important;
+  }
+
+  body.is-resizing-sidebar,
+  body.is-resizing-sidebar * {
+    cursor: col-resize !important;
+    user-select: none !important;
+  }
+}
+
+@media (max-width: 1000px) {
+  .sidebar-resizer {
+    display: none !important;
+    pointer-events: none !important;
+  }
+}
