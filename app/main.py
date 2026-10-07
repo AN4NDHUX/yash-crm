@@ -2860,19 +2860,41 @@ def _metadata_fields(db: Session, resource: str) -> list[MetadataField]:
 def field_allowed(db: Session, resource: str, field_name: str, actor: User | None, action: str = "read") -> bool:
     if not isinstance(actor, User):
         return True
-    role = str(actor.role or "").lower().replace("representative", "rep")
+    if _is_platform_owner(actor):
+        return True
+
+    # Field security is primarily Profile-based (Zoho-style). Role remains a
+    # compatibility fallback for existing field-security definitions.
+    principals = []
+    if actor.profile_name:
+        principals.append(str(actor.profile_name).lower().replace("representative", "rep"))
+    if actor.role:
+        principals.append(str(actor.role).lower().replace("representative", "rep"))
+
+    def matching_value(mapping: dict[str, Any]) -> Any:
+        normalized = {
+            str(key).lower().replace("representative", "rep"): value
+            for key, value in (mapping or {}).items()
+        }
+        for principal in principals:
+            if principal in normalized:
+                return normalized[principal]
+        return normalized.get("*")
+
     for field in _metadata_fields(db, resource):
         if field.api_name.lower() != field_name.lower():
             continue
         visibility = field.visibility or {}
         permissions = field.permissions or {}
-        selected_visibility = next((value for key, value in visibility.items() if str(key).lower().replace("representative", "rep") == role), None)
+        selected_visibility = matching_value(visibility)
         if action == "read" and str(selected_visibility or "").lower() == "hidden":
             return False
-        grants = next((value for key, value in permissions.items() if str(key).lower().replace("representative", "rep") == role), None)
-        if isinstance(grants, dict) and grants.get(action) is False:
-            return False
-        if action == "write" and field.read_only:
+        grants = matching_value(permissions)
+        if isinstance(grants, dict):
+            requested = "write" if action in {"write", "create", "update"} else action
+            if grants.get(requested) is False:
+                return False
+        if action in {"write", "create", "update"} and field.read_only:
             return False
     return True
 
@@ -4621,7 +4643,12 @@ def get_general_settings(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @app.put("/api/settings/general")
-def update_general_settings(payload: SettingsPayload, db: Session = Depends(get_db)) -> dict[str, Any]:
+def update_general_settings(
+    payload: SettingsPayload,
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
     setting = get_or_create_settings(db)
     before = serialize(setting)
     values = payload.model_dump(exclude_unset=True)
@@ -4631,7 +4658,7 @@ def update_general_settings(payload: SettingsPayload, db: Session = Depends(get_
         if isinstance(value, str) and not value.strip():
             raise HTTPException(422, f"{key.replace('_', ' ').capitalize()} cannot be empty")
         setattr(setting, key, value)
-    add_audit(db, "update", "general_settings", setting.id, "Updated general settings", before=before, after=serialize(setting))
+    add_audit(db, "update", "general_settings", setting.id, "Updated general settings", before=before, after=serialize(setting), actor_id=actor.id)
     db.commit()
     db.refresh(setting)
     return serialize(setting)
