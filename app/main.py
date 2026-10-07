@@ -4984,47 +4984,64 @@ def related_records(resource: str, item_id: int, db: Session = Depends(get_db), 
     parent = db.get(RESOURCE_MAP[resource], item_id)
     if parent is None or not can_access_record(db, resource, parent, actor):
         raise HTTPException(404, "Record not found")
-    related: dict[str, list[dict[str, Any]]] = {"activities": [], "contacts": [], "accounts": [], "deals": [], "leads": [], "products": [], "notes": [], "attachments": [], "emails": []}
+
+    def visible(key: str, rows: list[Any]) -> list[dict[str, Any]]:
+        return [
+            serialize(row, db, actor)
+            for row in rows
+            if can_access_record(db, key, row, actor)
+        ]
+
+    related: dict[str, list[dict[str, Any]]] = {
+        "activities": [], "contacts": [], "accounts": [], "deals": [],
+        "leads": [], "products": [], "notes": [], "attachments": [], "emails": [],
+    }
     if resource == "accounts":
-        related["contacts"] = [serialize(item, db, actor) for item in db.scalars(select(Contact).where(Contact.account_id == item_id, Contact.archived == False)).all()]
-        related["deals"] = [serialize(item, db, actor) for item in db.scalars(select(Deal).where(Deal.account_id == item_id, Deal.archived == False)).all()]
-        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "accounts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+        related["contacts"] = visible("contacts", db.scalars(select(Contact).where(Contact.account_id == item_id, Contact.archived == False)).all())
+        related["deals"] = visible("deals", db.scalars(select(Deal).where(Deal.account_id == item_id, Deal.archived == False)).all())
+        related["activities"] = visible("activities", db.scalars(select(Activity).where(Activity.related_type == "accounts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all())
     elif resource == "contacts":
         contact = db.get(Contact, item_id)
         if contact and contact.account_id:
             account = db.get(Account, contact.account_id)
-            if account:
+            if account and can_access_record(db, "accounts", account, actor):
                 related["accounts"] = [serialize(account, db, actor)]
-        related["deals"] = [serialize(item, db, actor) for item in db.scalars(select(Deal).where(Deal.contact_id == item_id, Deal.archived == False)).all()]
-        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "contacts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+        related["deals"] = visible("deals", db.scalars(select(Deal).where(Deal.contact_id == item_id, Deal.archived == False)).all())
+        related["activities"] = visible("activities", db.scalars(select(Activity).where(Activity.related_type == "contacts", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all())
     elif resource == "leads":
         lead = db.get(Lead, item_id)
-        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "leads", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+        related["activities"] = visible("activities", db.scalars(select(Activity).where(Activity.related_type == "leads", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all())
         if lead and lead.converted_account_id:
             account = db.get(Account, lead.converted_account_id)
-            if account:
+            if account and can_access_record(db, "accounts", account, actor):
                 related["accounts"] = [serialize(account, db, actor)]
         if lead and lead.converted_contact_id:
             contact = db.get(Contact, lead.converted_contact_id)
-            if contact:
+            if contact and can_access_record(db, "contacts", contact, actor):
                 related["contacts"] = [serialize(contact, db, actor)]
         if lead and lead.converted_deal_id:
             deal = db.get(Deal, lead.converted_deal_id)
-            if deal:
+            if deal and can_access_record(db, "deals", deal, actor):
                 related["deals"] = [serialize(deal, db, actor)]
     elif resource == "deals":
         deal = db.get(Deal, item_id)
         if deal and deal.account_id:
             account = db.get(Account, deal.account_id)
-            if account:
+            if account and can_access_record(db, "accounts", account, actor):
                 related["accounts"] = [serialize(account, db, actor)]
         if deal and deal.contact_id:
             contact = db.get(Contact, deal.contact_id)
-            if contact:
+            if contact and can_access_record(db, "contacts", contact, actor):
                 related["contacts"] = [serialize(contact, db, actor)]
-        related["activities"] = [serialize(item, db, actor) for item in db.scalars(select(Activity).where(Activity.related_type == "deals", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all()]
+        related["activities"] = visible("activities", db.scalars(select(Activity).where(Activity.related_type == "deals", Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all())
+
     for key, model in {"products": Product, "notes": Note, "attachments": Attachment, "emails": Email}.items():
-        related[key] = [serialize(item, db, actor) for item in db.scalars(select(model).where(model.related_type == resource, model.related_id == item_id, model.archived == False).order_by(model.created_at.desc())).all()]
+        rows = db.scalars(select(model).where(
+            model.related_type == resource,
+            model.related_id == item_id,
+            model.archived == False,
+        ).order_by(model.created_at.desc())).all()
+        related[key] = visible(key, rows)
     return related
 
 
