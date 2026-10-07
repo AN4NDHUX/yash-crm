@@ -100,6 +100,44 @@ def ensure_additive_schema() -> None:
     if "notifications" not in inspector.get_table_names():
         Notification.__table__.create(bind=engine, checkfirst=True)
 
+    tenant_owner_tables = (
+        "teamspaces",
+        "metadata_modules",
+        "workflow_executions",
+        "leads",
+        "accounts",
+        "contacts",
+        "deals",
+        "products",
+        "notes",
+        "attachments",
+        "emails",
+        "activities",
+        "organization_settings",
+        "approval_requests",
+        "platform_records",
+        "document_blobs",
+        "ai_exception_occurrences",
+        "ai_task_proposals",
+        "import_jobs",
+    )
+    tenant_config_tables = (
+        "territories",
+        "security_groups",
+        "permission_profiles",
+        "sharing_policies",
+        "approval_processes",
+        "blueprints",
+        "blueprint_transition_logs",
+        "report_runs",
+        "audit_events",
+        "privacy_records",
+        "ownership_transfers",
+        "api_request_logs",
+        "ai_exception_events",
+        "ai_task_operations",
+    )
+
     additions = {
         "leads": {
             "archived": "BOOLEAN NOT NULL DEFAULT 0",
@@ -135,6 +173,10 @@ def ensure_additive_schema() -> None:
             "created_at": "DATETIME NULL",
         },
     }
+    for table in tenant_owner_tables + tenant_config_tables:
+        additions.setdefault(table, {})["organization_id"] = "INTEGER NULL"
+    additions.setdefault("apex_assistant_runs", {})["organization_id"] = "INTEGER NULL"
+
     inspector = inspect(engine)
     for table, columns in additions.items():
         if table not in inspector.get_table_names():
@@ -144,6 +186,60 @@ def ensure_additive_schema() -> None:
             if column not in existing:
                 with engine.begin() as connection:
                     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+
+    # If an older deployment stamped Alembic ahead of the physical schema, repair
+    # organization tenancy before request-level loader criteria begin using it.
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if {"organizations", "organization_members"}.issubset(tables):
+        with engine.begin() as connection:
+            if engine.dialect.name == "postgresql":
+                for table in tenant_owner_tables:
+                    if table in tables:
+                        columns = {column["name"] for column in inspect(connection).get_columns(table)}
+                        if {"organization_id", "owner_id"}.issubset(columns):
+                            connection.execute(text(f"""
+                                UPDATE {table} AS target
+                                SET organization_id = membership.organization_id
+                                FROM organization_members AS membership
+                                WHERE target.owner_id = membership.user_id
+                                  AND membership.status = 'Active'
+                                  AND target.organization_id IS NULL
+                            """))
+                if "apex_assistant_runs" in tables:
+                    columns = {column["name"] for column in inspect(connection).get_columns("apex_assistant_runs")}
+                    if {"organization_id", "requested_by"}.issubset(columns):
+                        connection.execute(text("""
+                            UPDATE apex_assistant_runs AS target
+                            SET organization_id = membership.organization_id
+                            FROM organization_members AS membership
+                            WHERE target.requested_by = membership.user_id
+                              AND membership.status = 'Active'
+                              AND target.organization_id IS NULL
+                        """))
+            else:
+                for table in tenant_owner_tables:
+                    if table in tables:
+                        columns = {column["name"] for column in inspect(connection).get_columns(table)}
+                        if {"organization_id", "owner_id"}.issubset(columns):
+                            connection.execute(text(f"""
+                                UPDATE {table}
+                                SET organization_id = (
+                                    SELECT membership.organization_id
+                                    FROM organization_members AS membership
+                                    WHERE membership.user_id = {table}.owner_id
+                                      AND membership.status = 'Active'
+                                    ORDER BY membership.id
+                                    LIMIT 1
+                                )
+                                WHERE organization_id IS NULL
+                                  AND EXISTS (
+                                    SELECT 1
+                                    FROM organization_members AS membership
+                                    WHERE membership.user_id = {table}.owner_id
+                                      AND membership.status = 'Active'
+                                  )
+                            """))
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
