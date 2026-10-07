@@ -3957,6 +3957,9 @@ def _create_approval_request(process: ApprovalProcess, resource: str, record_id:
     return request, False
 
 
+configure_approval_hook(_create_approval_request)
+
+
 def _approval_actor(payload: dict[str, Any], db: Session) -> User:
     actor_id = int(payload.get("actor_id") or (db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)) or 0))
     actor = db.get(User, actor_id)
