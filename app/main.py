@@ -3980,7 +3980,21 @@ def _approval_module_matches(process_module: str, resource: str) -> bool:
 def _approval_steps(process: ApprovalProcess, db: Session) -> list[dict[str, Any]]:
     raw_steps = process.steps or [{"order": 1, "approver": process.approver}]
     steps: list[dict[str, Any]] = []
-    active_users = db.scalars(select(User).where(User.status == "Active").order_by(User.id)).all()
+    organization_id = process.organization_id or TENANT_ORGANIZATION_ID.get()
+    if organization_id is None:
+        raise HTTPException(409, detail={"code": "APPROVAL_ORGANIZATION_MISSING", "message": "Approval process is not attached to an organization."})
+    active_users = db.scalars(
+        select(User)
+        .join(OrganizationMember, OrganizationMember.user_id == User.id)
+        .where(
+            OrganizationMember.organization_id == organization_id,
+            OrganizationMember.status == "Active",
+            User.status == "Active",
+        )
+        .order_by(User.id)
+    ).all()
+    active_ids = {user.id for user in active_users}
+
     for index, raw in enumerate(sorted(raw_steps, key=lambda item: int(item.get("order") or 999999))):
         label = str(raw.get("approver") or raw.get("approver_label") or process.approver or "Approver").strip()
         approver_id = int(raw["approver_id"]) if raw.get("approver_id") else None
@@ -3989,14 +4003,14 @@ def _approval_steps(process: ApprovalProcess, db: Session) -> list[dict[str, Any
             role_match = next((user for user in active_users if str(user.role or "").lower() == label.lower()), None)
             approver_id = (exact or role_match).id if (exact or role_match) else None
         if approver_id is None:
-            raise HTTPException(422, detail={"code": "APPROVER_NOT_RESOLVED", "message": f"No active user matches approval step '{label}'."})
-        if db.get(User, approver_id) is None or db.get(User, approver_id).status != "Active":
-            raise HTTPException(422, detail={"code": "APPROVER_INACTIVE", "message": f"Approval step '{label}' points to an inactive user."})
+            raise HTTPException(422, detail={"code": "APPROVER_NOT_RESOLVED", "message": f"No active organization user matches approval step '{label}'."})
+        approver = db.get(User, approver_id)
+        if approver_id not in active_ids or approver is None or approver.status != "Active":
+            raise HTTPException(422, detail={"code": "APPROVER_INACTIVE", "message": f"Approval step '{label}' must reference an active user in this organization."})
         steps.append({"order": int(raw.get("order") or index + 1), "approver_id": approver_id, "approver_label": label})
     if not steps:
         raise HTTPException(422, "Approval process must contain at least one approval step")
     return steps
-
 
 def _approval_json(request: ApprovalRequest, db: Session) -> dict[str, Any]:
     process = db.get(ApprovalProcess, request.process_id)
@@ -4035,42 +4049,37 @@ def _create_approval_request(process: ApprovalProcess, resource: str, record_id:
 configure_approval_hook(_create_approval_request)
 
 
-def _approval_actor(payload: dict[str, Any], db: Session) -> User:
-    actor_id = int(payload.get("actor_id") or (db.scalar(select(User.id).where(User.status == "Active").order_by(User.id)) or 0))
-    actor = db.get(User, actor_id)
-    if actor is None or actor.status != "Active":
-        raise HTTPException(403, "An active approval actor is required")
-    return actor
-
-
 @app.post("/api/approvals/requests", status_code=201)
-def submit_approval_request(payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def submit_approval_request(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     process_id = int(payload.get("process_id") or 0)
     process = db.get(ApprovalProcess, process_id)
     if process is None:
         raise HTTPException(404, "Approval process not found")
-    requester = _approval_actor(payload, db)
-    request, duplicate = _create_approval_request(process, str(payload.get("resource") or "").strip(), int(payload.get("record_id") or 0), requester.id, payload.get("comment"), db)
+    if process.organization_id != _organization_id_required(db, actor):
+        raise HTTPException(404, "Approval process not found")
+    request, duplicate = _create_approval_request(process, str(payload.get("resource") or "").strip(), int(payload.get("record_id") or 0), actor.id, payload.get("comment"), db)
     db.commit()
     db.refresh(request)
     return {**_approval_json(request, db), "duplicate": duplicate}
 
 
 @app.get("/api/approvals/requests")
-def list_approval_requests(status: str | None = None, approver_id: int | None = None, resource: str | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db)) -> dict[str, Any]:
+def list_approval_requests(status: str | None = None, approver_id: int | None = None, resource: str | None = None, limit: int = Query(default=100, ge=1, le=200), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     query = select(ApprovalRequest).order_by(ApprovalRequest.submitted_at.desc()).limit(limit)
     if status:
         query = query.where(ApprovalRequest.status == status)
     if resource:
         query = query.where(ApprovalRequest.resource == resource)
     if approver_id:
+        if not _user_in_actor_organization(db, actor, approver_id):
+            raise HTTPException(404, "Approver not found")
         query = query.join(ApprovalStepDecision, ApprovalStepDecision.request_id == ApprovalRequest.id).where(ApprovalStepDecision.approver_id == approver_id, ApprovalStepDecision.status == "Pending")
     rows = db.scalars(query).unique().all()
     return {"items": [_approval_json(row, db) for row in rows], "total": len(rows)}
 
 
 @app.get("/api/approvals/requests/{request_id}")
-def get_approval_request(request_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_approval_request(request_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     request = db.get(ApprovalRequest, request_id)
     if request is None:
         raise HTTPException(404, "Approval request not found")
@@ -4090,13 +4099,12 @@ def _ensure_approval_actor(step: ApprovalStepDecision, actor: User) -> None:
 
 
 @app.post("/api/approvals/requests/{request_id}/approve")
-def approve_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def approve_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     request = db.get(ApprovalRequest, request_id)
     if request is None:
         raise HTTPException(404, "Approval request not found")
     if request.status != "Pending":
         return {**_approval_json(request, db), "duplicate": True}
-    actor = _approval_actor(payload, db)
     step = _current_approval_step(request, db)
     _ensure_approval_actor(step, actor)
     step.status = "Approved"
@@ -4121,13 +4129,12 @@ def approve_request(request_id: int, payload: dict[str, Any], db: Session = Depe
 
 
 @app.post("/api/approvals/requests/{request_id}/reject")
-def reject_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def reject_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     request = db.get(ApprovalRequest, request_id)
     if request is None:
         raise HTTPException(404, "Approval request not found")
     if request.status != "Pending":
         return {**_approval_json(request, db), "duplicate": True}
-    actor = _approval_actor(payload, db)
     step = _current_approval_step(request, db)
     _ensure_approval_actor(step, actor)
     step.status = "Rejected"
@@ -4144,19 +4151,18 @@ def reject_request(request_id: int, payload: dict[str, Any], db: Session = Depen
 
 
 @app.post("/api/approvals/requests/{request_id}/delegate")
-def delegate_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db)) -> dict[str, Any]:
+def delegate_request(request_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     request = db.get(ApprovalRequest, request_id)
     if request is None:
         raise HTTPException(404, "Approval request not found")
     if request.status != "Pending":
         raise HTTPException(409, "Only pending approval requests can be delegated")
-    actor = _approval_actor(payload, db)
     step = _current_approval_step(request, db)
     _ensure_approval_actor(step, actor)
     delegate_id = int(payload.get("delegate_to") or 0)
     delegate = db.get(User, delegate_id)
-    if delegate is None or delegate.status != "Active":
-        raise HTTPException(422, "Delegate must be an active user")
+    if delegate is None or delegate.status != "Active" or not _user_in_actor_organization(db, actor, delegate_id):
+        raise HTTPException(422, "Delegate must be an active user in this organization")
     step.delegated_to = delegate.id
     step.approver_id = delegate.id
     step.comment = payload.get("comment") or f"Delegated by {actor.name}"
