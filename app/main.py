@@ -1048,16 +1048,24 @@ def sales_performance(db: Session, actor: User | None = None) -> dict[str, Any]:
     for user in users:
         candidates = []
         for target in targets:
-            data = target.data or {}
+            data = dict(target.data) if isinstance(target.data, dict) else {}
             start, end = _date_value(data.get("period_start")), _date_value(data.get("period_end"))
             if target.owner_id == user.id and start and end and start <= today <= end and target.status == "Active":
                 candidates.append((start, end, target))
         candidates.sort(key=lambda item: (item[0], item[2].id), reverse=True)
         target_record = candidates[0][2] if candidates else None
-        target_data = dict(target_record.data or {}) if target_record else {}
+        target_data = dict(target_record.data) if target_record and isinstance(target_record.data, dict) else {}
         start = _date_value(target_data.get("period_start")) or date(today.year, today.month, 1)
         end = _date_value(target_data.get("period_end")) or today
-        achieved = sum(float(item.amount or 0) for item in payments if item.owner_id == user.id and start <= (_date_value((item.data or {}).get("payment_date")) or item.created_at.date()) <= end)
+        achieved = sum(
+            float(item.amount or 0)
+            for item in payments
+            if item.owner_id == user.id
+            and start <= (
+                _date_value((item.data if isinstance(item.data, dict) else {}).get("payment_date"))
+                or item.created_at.date()
+            ) <= end
+        )
         target_amount = float(target_data.get("target_amount") or 0)
         achievement = round((achieved / target_amount * 100), 1) if target_amount else 0.0
         rate = float(target_data.get("incentive_rate") or 0)
@@ -1083,7 +1091,7 @@ def sales_performance(db: Session, actor: User | None = None) -> dict[str, Any]:
     open_quotes = db.scalars(quote_query).all()
     quote_attention = []
     for quote in open_quotes:
-        valid_until = _date_value((quote.data or {}).get("valid_until"))
+        valid_until = _date_value((quote.data if isinstance(quote.data, dict) else {}).get("valid_until"))
         if valid_until is None or valid_until <= today + timedelta(days=7):
             quote_attention.append({"id": quote.id, "name": quote.title, "status": quote.status, "valid_until": valid_until.isoformat() if valid_until else None, "owner_id": quote.owner_id})
     attention = {
@@ -1122,7 +1130,7 @@ def _quote_rule_facts(quote: PlatformRecord, db: Session, today: date, currency:
     status = str(quote.status or "").strip().casefold()
     if status not in AI_INCLUDED_QUOTE_STATUSES:
         return None
-    values = quote.data or {}
+    values = dict(quote.data) if isinstance(quote.data, dict) else {}
     raw_validity = values.get("valid_until")
     malformed = False
     try:
