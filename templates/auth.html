@@ -346,7 +346,8 @@
         username: String(data.get("username") || "").trim(),
         email: String(data.get("email") || "").trim(),
         phone: String(data.get("phone") || "").trim(),
-        password: String(data.get("password") || "")
+        password: String(data.get("password") || ""),
+        invitation_token: new URLSearchParams(location.search).get("invite") || ""
       };
       const confirm = String(data.get("confirm_password") || "");
       if (payload.name.length < 2) return showError("Enter your full name.");
