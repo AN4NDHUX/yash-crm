@@ -126,3 +126,58 @@ def test_payments_and_invoice_lookup_survive_legacy_platform_json_shapes():
     assert out['payment_status'] == 200
     assert out['invoice_items'] >= 1
     assert out['payment_items'] >= 1
+
+
+def test_dashboard_survives_legacy_sales_platform_json_shapes():
+    out = run_app_script("""
+    with TestClient(main.app) as c:
+        with main.SessionLocal() as db:
+            admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
+            org_id = main._organization_id_for_user(db, admin.id)
+            token_actor = main.TENANT_ACTOR_ID.set(admin.id)
+            token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
+            try:
+                db.add_all([
+                    main.PlatformRecord(
+                        organization_id=org_id,
+                        owner_id=admin.id,
+                        resource='sales_targets',
+                        title='Legacy target',
+                        status='Active',
+                        data=['bad-target-shape'],
+                        archived=False,
+                    ),
+                    main.PlatformRecord(
+                        organization_id=org_id,
+                        owner_id=admin.id,
+                        resource='payments',
+                        title='Legacy payment',
+                        status='Received',
+                        amount=100,
+                        data='bad-payment-shape',
+                        archived=False,
+                    ),
+                    main.PlatformRecord(
+                        organization_id=org_id,
+                        owner_id=admin.id,
+                        resource='quotes',
+                        title='Legacy quote',
+                        status='Sent',
+                        amount=1000,
+                        data=12345,
+                        archived=False,
+                    ),
+                ])
+                db.commit()
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token_org)
+                main.TENANT_ACTOR_ID.reset(token_actor)
+
+        response = c.get('/api/dashboard', headers=auth)
+        out['status'] = response.status_code
+        if response.status_code == 200:
+            payload = response.json()
+            out['has_metrics'] = isinstance(payload.get('metrics'), dict)
+            out['has_attention'] = isinstance(payload.get('attention'), dict)
+    """)
+    assert out == {'status': 200, 'has_metrics': True, 'has_attention': True}
