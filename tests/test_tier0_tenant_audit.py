@@ -207,3 +207,26 @@ def test_normal_member_cannot_change_organization_settings():
         out['code'] = (denied.json().get('detail') or {}).get('code')
     """)
     assert out == {'owner_update': 200, 'member_update': 403, 'code': 'ORG_ADMIN_REQUIRED'}
+
+
+def test_platform_owner_can_view_cross_organization_records():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        # Create a customer tenant and record.
+        c.post('/api/auth/signup', json={
+            'name':'Customer Tenant','username':'customer.tenant','email':'customer.tenant@example.com',
+            'password':'strong-password-123'
+        })
+        lead = c.post('/api/leads', json={'name':'Cross-org visibility test'}).json()
+        lead_id = lead['id']
+        c.post('/api/auth/logout')
+
+        # Sign in as deployment-provisioned platform owner.
+        owner_login = c.post('/api/auth/login', json={
+            'identifier':'platform.owner',
+            'password':'supersecretpass123'
+        })
+        out['owner_login'] = owner_login.status_code
+        out['owner_get'] = c.get(f"/api/leads/{lead_id}").status_code
+    """)
+    assert out == {'owner_login': 200, 'owner_get': 200}
