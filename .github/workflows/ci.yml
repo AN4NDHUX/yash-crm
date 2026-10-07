@@ -43,7 +43,7 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - run: python -m pip_audit -r requirements.txt
       - run: bandit -q -r app -lll
-      - run: python -m compileall -q app
+      - run: python -m compileall -q app migrations
       - name: Validate all frontend modules
         run: find static/js -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Verify PostgreSQL migrations
