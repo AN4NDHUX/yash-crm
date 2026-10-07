@@ -274,9 +274,11 @@ function applyProfile() {
   const profile = state.profile;
   if (!profile) return;
   const role = profile.role || "";
-  $$(".user-mini .avatar, .top-profile .avatar").forEach((node) => { node.textContent = initials(profile.name); });
-  $$(".user-mini strong, .top-profile-copy strong").forEach((node) => { node.textContent = profile.name; });
-  $$(".user-mini small, .top-profile-copy small").forEach((node) => { node.textContent = role; });
+  $(".user-mini .avatar, .top-profile .avatar").forEach((node) => { node.textContent = initials(profile.name); });
+  $(".user-mini strong, .top-profile-copy strong").forEach((node) => { node.textContent = profile.name; });
+  $(".user-mini small, .top-profile-copy small").forEach((node) => { node.textContent = role; });
+  const ownerButton = $("#owner-console-button");
+  if (ownerButton) ownerButton.hidden = !Boolean(profile.owner_console_access);
 }
 
 async function refreshNavCount() {
