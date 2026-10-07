@@ -2817,7 +2817,9 @@ def auth_session(request: Request, db: Session = Depends(get_db)) -> dict[str, A
     user = _session_user(request, db)
     if user is None:
         raise HTTPException(401, "No active session")
-    return {"authenticated": True, "user": serialize(user, db)}
+    payload = serialize(user, db)
+    payload["owner_console_access"] = _is_platform_owner(user)
+    return {"authenticated": True, "user": payload}
 
 
 @app.post("/api/auth/forgot-password")
@@ -4068,7 +4070,9 @@ def update_general_settings(payload: SettingsPayload, db: Session = Depends(get_
 def get_profile(db: Session = Depends(get_db), user: User = Depends(current_actor)) -> dict[str, Any]:
     if user is None:
         raise HTTPException(404, "Profile not found")
-    return serialize(user, db)
+    profile = serialize(user, db)
+    profile["owner_console_access"] = _is_platform_owner(user)
+    return profile
 
 
 @app.put("/api/settings/profile")
@@ -4667,6 +4671,22 @@ def require_admin_actor(actor: User = Depends(current_actor)) -> User:
     return actor
 
 
+def _is_platform_owner(actor: User | None) -> bool:
+    if not isinstance(actor, User) or str(actor.role or "").lower() != "administrator":
+        return False
+    configured_username = os.getenv("APP_USERNAME", "").strip().lower()
+    configured_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    username_matches = bool(configured_username and str(actor.username or "").strip().lower() == configured_username)
+    email_matches = bool(configured_email and str(actor.email or "").strip().lower() == configured_email)
+    return username_matches and email_matches
+
+
+def require_owner_actor(actor: User = Depends(current_actor)) -> User:
+    if not _is_platform_owner(actor):
+        raise HTTPException(403, detail={"code": "OWNER_REQUIRED", "message": "Platform Owner access is required."})
+    return actor
+
+
 def _require_admin_resource(resource: str, actor: User | None) -> None:
     if resource == "users" and (not isinstance(actor, User) or str(actor.role or "").lower() != "administrator"):
         raise HTTPException(403, detail={"code": "ADMIN_REQUIRED", "message": "User administration is restricted to Administrators."})
@@ -4689,7 +4709,7 @@ def _admin_user_payload(user: User, db: Session) -> dict[str, Any]:
 
 
 @app.get("/owner", response_class=HTMLResponse)
-def owner_console(_: User = Depends(require_admin_actor)) -> FileResponse:
+def owner_console(_: User = Depends(require_owner_actor)) -> FileResponse:
     return FileResponse(ROOT / "templates" / "owner.html", media_type="text/html")
 
 
@@ -4710,7 +4730,7 @@ def _device_summary(user_agent: str | None) -> str:
 
 
 @app.get("/api/owner/overview")
-def owner_overview(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_overview(db: Session = Depends(get_db), _: User = Depends(require_owner_actor)) -> dict[str, Any]:
     now = datetime.utcnow()
     today = datetime(now.year, now.month, now.day)
     total_users = int(db.scalar(select(func.count()).select_from(User)) or 0)
@@ -4768,7 +4788,7 @@ def owner_users(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin_actor),
+    _: User = Depends(require_owner_actor),
 ) -> dict[str, Any]:
     query = select(User).order_by(User.created_at.desc())
     if status:
@@ -4802,7 +4822,7 @@ def owner_users(
 
 
 @app.get("/api/owner/users/{user_id}")
-def owner_user_detail(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_user_detail(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_owner_actor)) -> dict[str, Any]:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
@@ -4841,7 +4861,7 @@ def owner_login_history(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin_actor),
+    _: User = Depends(require_owner_actor),
 ) -> dict[str, Any]:
     query = select(LoginHistory, User).outerjoin(User, User.id == LoginHistory.user_id)
     if success is not None:
@@ -4865,7 +4885,7 @@ def owner_login_history(
 
 
 @app.get("/api/owner/plans")
-def owner_plans(db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_plans(db: Session = Depends(get_db), _: User = Depends(require_owner_actor)) -> dict[str, Any]:
     plans = db.scalars(select(Plan).order_by(Plan.price_monthly, Plan.id)).all()
     return {"items": [{
         "id": plan.id,
@@ -4883,7 +4903,7 @@ def owner_plans(db: Session = Depends(get_db), _: User = Depends(require_admin_a
 
 
 @app.patch("/api/owner/users/{user_id}/subscription")
-def owner_update_subscription(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_update_subscription(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_owner_actor)) -> dict[str, Any]:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
@@ -4908,7 +4928,7 @@ def owner_update_subscription(user_id: int, payload: dict[str, Any], db: Session
 
 
 @app.patch("/api/owner/users/{user_id}/status")
-def owner_update_user_status(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_update_user_status(user_id: int, payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(require_owner_actor)) -> dict[str, Any]:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
@@ -4932,7 +4952,7 @@ def owner_update_user_status(user_id: int, payload: dict[str, Any], db: Session 
 
 
 @app.post("/api/owner/users/{user_id}/sessions/revoke")
-def owner_revoke_user_sessions(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_revoke_user_sessions(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_owner_actor)) -> dict[str, Any]:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
@@ -4950,7 +4970,7 @@ def owner_revoke_user_sessions(user_id: int, db: Session = Depends(get_db), acto
 
 
 @app.post("/api/owner/users/{user_id}/password-reset")
-def owner_send_password_reset(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_admin_actor)) -> dict[str, Any]:
+def owner_send_password_reset(user_id: int, db: Session = Depends(get_db), actor: User = Depends(require_owner_actor)) -> dict[str, Any]:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
@@ -4981,7 +5001,7 @@ def owner_send_password_reset(user_id: int, db: Session = Depends(get_db), actor
 
 
 @app.get("/api/owner/users/{user_id}/export")
-def owner_export_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin_actor)) -> StreamingResponse:
+def owner_export_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_owner_actor)) -> StreamingResponse:
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, "User not found")
