@@ -170,7 +170,7 @@ function applyProfile() {
   // Administrative navigation is hidden by default in the HTML and is exposed
   // only to authenticated CRM administrators. Backend authorization remains the
   // source of truth; this prevents normal users from seeing dead-end admin UI.
-  $("[data-admin-only]").forEach((node) => {
+  document.querySelectorAll("[data-admin-only]").forEach((node) => {
     node.hidden = !isAdministrator;
     node.setAttribute("aria-hidden", String(!isAdministrator));
   });
