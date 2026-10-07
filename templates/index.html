@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261007-pricing-v1" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261007-upgrade-plan-v2" />
   <style data-remove-notification-icon>#notifications-button,.notification-menu,.top-icon.notification-trigger{display:none!important}</style>
 </head>
 <body>
@@ -74,7 +74,7 @@
         <a href="/security" data-route="security"><span aria-hidden="true"></span> Security Administration</a>
         <a href="/setup" data-route="setup">Settings &amp; Setup</a>
         <a href="/setup-console/modules" data-route="setup-console">Setup Console</a>
-        <a href="/pricing" data-route="pricing">Plans &amp; Pricing</a>
+        <a href="/subscriptions" data-route="subscriptions">Upgrade plan</a>
       </nav>
 
       <div class="sidebar-footer">
@@ -102,6 +102,7 @@
         <button class="icon-button menu-toggle" id="menu-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">☰</button>
         <div class="breadcrumbs" id="breadcrumbs"><span>Workspace</span><b>/</b><strong>Dashboard </strong></div>
         <div class="topbar-actions">
+          <a class="upgrade-plan-button" id="upgrade-plan-button" href="/subscriptions" aria-label="Upgrade plan"><span aria-hidden="true">✦</span> Upgrade</a>
           <a class="button button-ghost owner-console-access" id="owner-console-button" href="https://yashcrm-production.up.railway.app/owner" hidden>Owner Console</a>
           <div class="global-search" id="global-search-wrap">
             <span>⌕</span>
@@ -144,7 +145,7 @@
 
   <div class="notification-popup-region" id="notification-popup-region" aria-live="polite" aria-atomic="false"></div>
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=20261007-pricing-v1"></script>
+  <script type="module" src="/static/js/app.js?v=20261007-upgrade-plan-v2"></script>
   <script data-session-identity-bootstrap>
     (() => {
       const ownerButton = document.getElementById("owner-console-button");
