@@ -3883,3 +3883,22 @@ textarea {
     font-size: 12px;
   }
 }
+
+
+/* Sidebar account subscription label */
+.user-mini-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.user-mini-plan {
+  margin-top: 1px;
+  color: #79b8ff !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
