@@ -1,6 +1,13 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CSS_ROOT = ROOT / "static" / "css"
+
+
+def layered_css() -> str:
+    entry = (CSS_ROOT / "app.css").read_text(encoding="utf-8")
+    layers = ["foundation.css", "workspace.css", "motion.css", "modules.css", "components.css"]
+    return entry + "\n" + "\n".join((CSS_ROOT / name).read_text(encoding="utf-8") for name in layers)
 
 
 def test_mobile_viewport_and_pwa_metadata_present():
@@ -13,7 +20,7 @@ def test_mobile_viewport_and_pwa_metadata_present():
 
 
 def test_responsive_breakpoints_cover_phone_tablet_and_desktop_drawer():
-    css = (ROOT / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    css = layered_css()
     assert "@media (max-width: 1000px)" in css
     assert "@media (max-width: 760px)" in css
     assert "@media (max-width: 480px)" in css
@@ -24,7 +31,7 @@ def test_responsive_breakpoints_cover_phone_tablet_and_desktop_drawer():
 
 
 def test_wide_tables_scroll_instead_of_breaking_mobile_layout():
-    css = (ROOT / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    css = layered_css()
     assert ".table-wrap, .data-table-wrap" in css
     assert "overflow-x: auto" in css
     assert "-webkit-overflow-scrolling: touch" in css
@@ -40,12 +47,12 @@ def test_mobile_drawer_contract_is_wired():
 
 
 def test_reduced_motion_is_supported():
-    css = (ROOT / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    css = layered_css()
     assert "@media (prefers-reduced-motion: reduce)" in css
 
 
 def test_mobile_routes_disable_blur_prone_compositor_effects():
-    css = (ROOT / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    css = layered_css()
     marker = "Mobile rendering stability"
     assert marker in css
     mobile = css[css.index(marker):]
