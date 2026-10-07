@@ -2762,34 +2762,50 @@ def _role_names_visible_to_actor(db: Session, actor: User) -> set[str]:
 def _sharing_allows(db: Session, resource: str, actor: User, record_owner_id: int | None, access: str = "read") -> bool:
     if record_owner_id == actor.id or "*" in _role_names_visible_to_actor(db, actor):
         return True
+    requested = "write" if str(access).lower() in {"write", "update", "delete"} else "read"
     actor_roles = _role_names_visible_to_actor(db, actor)
-    policies = db.scalars(select(SharingPolicy).where(SharingPolicy.enabled == True, or_(SharingPolicy.module == resource, SharingPolicy.module == "*"))).all()
+    policies = db.scalars(select(SharingPolicy).where(
+        SharingPolicy.enabled == True,
+        or_(SharingPolicy.module == resource, SharingPolicy.module == "*"),
+    )).all()
     for policy in policies:
-        if str(policy.access or "Read Only").lower() not in {"read", "read only", "read/write", "read_write"}:
+        policy_access = str(policy.access or "Read Only").lower().replace("_", " ")
+        allows_write = policy_access in {"read/write", "read write", "write", "read and write"}
+        allows_read = allows_write or policy_access in {"read", "read only"}
+        if requested == "write" and not allows_write:
             continue
-        scope = str(policy.scope or "").lower()
-        if scope in {"public", "public read only", "public read/write"} and access == "read":
-            return True
-        if scope in {"role hierarchy", "role_hierarchy", "own and subordinates"} and actor_roles:
-            owner = db.get(User, record_owner_id) if record_owner_id else None
-            if owner and str(owner.role or "").lower() in actor_roles:
+        if requested == "read" and not allows_read:
+            continue
+
+        scope = str(policy.scope or "").lower().replace("_", " ")
+        if scope in {"public", "public read only", "public read/write", "public read write"}:
+            if requested == "read" or allows_write:
                 return True
+
+        if scope in {"role hierarchy", "own and subordinates"} and actor_roles:
+            owner = db.get(User, record_owner_id) if record_owner_id else None
+            owner_role = str(owner.role or "").lower().replace("representative", "rep") if owner else ""
+            if owner_role and owner_role in actor_roles:
+                return True
+
         criteria = policy.criteria or {}
         allowed_roles = criteria.get("roles") if isinstance(criteria, dict) else None
-        if isinstance(allowed_roles, list) and any(str(role).lower() in actor_roles for role in allowed_roles):
-            return True
+        if isinstance(allowed_roles, list):
+            normalized = {str(role).lower().replace("representative", "rep") for role in allowed_roles}
+            if actor_roles.intersection(normalized):
+                return True
     return False
-
 
 def can_access_record(db: Session, resource: str, record: Any, actor: User | None, access: str = "read") -> bool:
     if not isinstance(actor, User):
         return True
     actor_org = _organization_id_for_user(db, actor.id)
-    record_org = getattr(record, "organization_id", None)
-    if record_org is not None and actor_org != record_org:
-        return False
     if _is_platform_owner(actor):
         return True
+    if hasattr(record, "organization_id"):
+        record_org = getattr(record, "organization_id", None)
+        if record_org is None or actor_org != record_org:
+            return False
     if not hasattr(record, "owner_id"):
         return True
     return _sharing_allows(db, resource, actor, getattr(record, "owner_id", None), access)
