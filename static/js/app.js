@@ -265,7 +265,20 @@ function bindPricing() {
         body: JSON.stringify({ plan_code: planCode }),
       });
       if (result.requires_payment) {
-        toast("Upgrade requested", result.message || "The paid plan will activate after verified payment.");
+        toast("Upgrade requested", "Opening secure checkout…");
+        try {
+          const checkout = await api("/api/billing/checkout", {
+            method: "POST",
+            body: JSON.stringify({ plan_code: planCode }),
+          });
+          if (checkout.checkout_url) {
+            window.location.assign(checkout.checkout_url);
+            return;
+          }
+          toast("Checkout unavailable", "The upgrade request is saved. Contact your administrator to complete payment.", "error");
+        } catch (billingError) {
+          toast("Checkout unavailable", billingError.message || "The upgrade request is saved, but billing is not configured yet.", "error");
+        }
       } else {
         toast("Plan updated", `Your subscription is now ${result.subscription?.plan_name || titleCase(planCode)}.`);
       }
