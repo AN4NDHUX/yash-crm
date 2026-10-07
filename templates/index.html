@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/app.css?v=20261007-notifications-v5" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261007-popup-notifications-v1" />
 </head>
 <body>
   <div class="app-shell">
@@ -106,13 +106,6 @@
             <kbd></kbd>
             <div class="search-results" id="search-results" role="listbox" aria-label="Search results"></div>
           </div>
-          <div class="notification-menu">
-            <button class="icon-button top-icon notification-trigger" id="notifications-button" aria-label="Notifications" aria-expanded="false" aria-controls="notifications-panel">
-              <img class="notification-icon-img" src="/static/icons/notification-bell-2d.svg?v=20261007-bell-svg-v2" alt="" aria-hidden="true" />
-              <span class="notification-badge" id="notification-badge" hidden></span>
-            </button>
-            <div class="notifications-panel" id="notifications-panel" hidden></div>
-          </div>
           <button class="top-profile" id="top-profile" aria-label="Open profile" hidden>
             <span class="avatar avatar-indigo"></span>
             <span class="top-profile-copy"><strong>Administrator</strong><small>Administrator</small></span>
@@ -146,8 +139,9 @@
     </section>
   </div>
 
+  <div class="notification-popup-region" id="notification-popup-region" aria-live="polite" aria-atomic="false"></div>
   <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/js/app.js?v=20261007-notifications-v7"></script>
+  <script type="module" src="/static/js/app.js?v=20261007-popup-notifications-v1"></script>
   <script data-session-identity-bootstrap>
     (() => {
       const ownerButton = document.getElementById("owner-console-button");
