@@ -2286,7 +2286,7 @@ def _ensure_plan_catalog(db: Session) -> None:
             "code": "free", "name": "Free", "price_monthly": 0, "currency": "INR",
             "max_records": 1000, "max_storage_mb": 250, "max_custom_modules": 2, "ai_limit_monthly": 0,
             "features": {
-                "reports": True, "custom_modules": True, "apex": False, "max_users": 3,
+                "reports": True, "custom_modules": True, "apex": False, "max_users": 3, "inventory_management": False, "cpq": False, "customer_portals": False, "approval_process": False, "developer_sandbox": False,
                 "tagline": "Forever free, for 3 users",
                 "included_features": [
                     "Contact management", "Follow-up reminders", "Workflow automation",
@@ -2299,7 +2299,7 @@ def _ensure_plan_catalog(db: Session) -> None:
             "code": "bigin_express", "name": "Bigin Express", "price_monthly": 400, "currency": "INR",
             "max_records": 5000, "max_storage_mb": 1024, "max_custom_modules": 0, "ai_limit_monthly": 0,
             "features": {
-                "reports": True, "custom_modules": False, "apex": False,
+                "reports": True, "custom_modules": False, "apex": False, "max_users": 5, "inventory_management": False, "cpq": False, "customer_portals": False, "approval_process": False, "developer_sandbox": False,
                 "tagline": "First-timer, moving from spreadsheets",
                 "included_features": [
                     "Sales pipeline", "Built-in calling", "Appointment scheduling", "Payment collection",
@@ -2312,7 +2312,7 @@ def _ensure_plan_catalog(db: Session) -> None:
             "code": "standard", "name": "Standard", "price_monthly": 800, "currency": "INR",
             "max_records": 10000, "max_storage_mb": 2048, "max_custom_modules": 10, "ai_limit_monthly": 1500,
             "features": {
-                "reports": True, "custom_modules": True, "apex": True,
+                "reports": True, "custom_modules": True, "apex": True, "max_users": 25, "inventory_management": False, "cpq": False, "customer_portals": False, "approval_process": False, "developer_sandbox": False,
                 "tagline": "Small team, getting started",
                 "included_features": [
                     "Email integration & mass emails", "Built-in calling", "Multiple sales pipelines",
@@ -2326,8 +2326,8 @@ def _ensure_plan_catalog(db: Session) -> None:
             "code": "professional", "name": "Professional", "price_monthly": 1400, "currency": "INR",
             "max_records": 100000, "max_storage_mb": 10240, "max_custom_modules": 50, "ai_limit_monthly": 10000,
             "features": {
-                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True,
-                "inventory_management": True, "cpq": True, "customer_portals": True,
+                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True, "max_users": 100,
+                "inventory_management": True, "cpq": True, "customer_portals": True, "approval_process": False, "developer_sandbox": False,
                 "tagline": "Growing team, needs automation", "popular": True,
                 "included_features": [
                     "AI agents", "Process management", "Inventory management", "Predictive intelligence",
@@ -2340,8 +2340,8 @@ def _ensure_plan_catalog(db: Session) -> None:
             "code": "enterprise", "name": "Enterprise", "price_monthly": 2400, "currency": "INR",
             "max_records": None, "max_storage_mb": None, "max_custom_modules": None, "ai_limit_monthly": None,
             "features": {
-                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True,
-                "priority_support": True, "approval_process": True, "developer_sandbox": True,
+                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True, "max_users": None,
+                "priority_support": True, "inventory_management": True, "cpq": True, "customer_portals": True, "approval_process": True, "developer_sandbox": True,
                 "tagline": "Running a mature sales org",
                 "included_features": [
                     "Multi-team management", "Reporting hierarchy", "Custom buttons and functions",
@@ -2355,8 +2355,8 @@ def _ensure_plan_catalog(db: Session) -> None:
             "code": "crm_plus", "name": "CRM Plus", "price_monthly": 20, "currency": "USD",
             "max_records": None, "max_storage_mb": None, "max_custom_modules": None, "ai_limit_monthly": None,
             "features": {
-                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True,
-                "priority_support": True, "suite_bundle": True,
+                "reports": True, "custom_modules": True, "apex": True, "advanced_analytics": True, "max_users": None,
+                "priority_support": True, "inventory_management": True, "cpq": True, "customer_portals": True, "approval_process": True, "developer_sandbox": True, "suite_bundle": True,
                 "tagline": "Sales, marketing, service in one unified package.",
                 "included_features": ["Unified sales workspace", "Marketing workspace", "Customer service workspace"]
             }
@@ -2820,6 +2820,153 @@ def redact_record_fields(db: Session, resource: str, data: dict[str, Any], actor
     return {key: value for key, value in data.items() if field_allowed(db, resource, key, actor, "read")}
 
 
+def _profile_permission_record(db: Session, actor: User) -> dict[str, Any] | None:
+    profile_name = str(actor.profile_name or "").strip()
+    if not profile_name:
+        return None
+    rows = db.scalars(select(PlatformRecord).where(
+        PlatformRecord.resource == "profiles",
+        PlatformRecord.archived == False,
+    )).all()
+    for row in rows:
+        name = str((row.data or {}).get("name") or row.title or "").strip()
+        if name.lower() == profile_name.lower():
+            data = dict(row.data or {})
+            permissions = data.get("permissions")
+            return permissions if isinstance(permissions, dict) else {}
+    direct = db.scalar(select(PermissionProfile).where(func.lower(PermissionProfile.name) == profile_name.lower()))
+    return dict(direct.grants or {}) if direct else None
+
+
+def _profile_action_allowed(db: Session, actor: User, resource: str, action: str) -> bool:
+    if _is_platform_owner(actor):
+        return True
+    matrix = _profile_permission_record(db, actor)
+    if matrix is None:
+        # Compatibility default for accounts that have not yet been assigned a configured profile.
+        return True
+    candidates = [
+        matrix.get(resource),
+        (matrix.get("modules") or {}).get(resource) if isinstance(matrix.get("modules"), dict) else None,
+        matrix.get("*"),
+        matrix.get("default"),
+    ]
+    rule = next((item for item in candidates if item is not None), None)
+    if rule is None:
+        return True
+    if isinstance(rule, bool):
+        return rule
+    if isinstance(rule, list):
+        return action in {str(v).lower() for v in rule}
+    if isinstance(rule, dict):
+        aliases = {
+            "read": ["read", "view"],
+            "create": ["create"],
+            "update": ["update", "edit"],
+            "delete": ["delete"],
+            "export": ["export"],
+            "import": ["import"],
+            "admin": ["admin", "manage"],
+        }
+        for key in aliases.get(action, [action]):
+            if key in rule:
+                return bool(rule[key])
+        return True
+    return True
+
+
+def _request_resource_action(path: str, method: str) -> tuple[str | None, str]:
+    method = method.upper()
+    action = "read" if method in {"GET", "HEAD"} else "create" if method == "POST" else "update" if method in {"PATCH", "PUT"} else "delete" if method == "DELETE" else "read"
+    clean = path.strip("/")
+    parts = clean.split("/")
+    if len(parts) < 2 or parts[0] != "api":
+        return None, action
+    if parts[1] == "platform" and len(parts) >= 3:
+        return parts[2], action
+    if parts[1] in {"auth", "organization", "owner", "plans", "subscription", "settings", "security"}:
+        return None, action
+    if parts[1] == "admin" and len(parts) >= 3 and parts[2] == "metadata":
+        return "custom_modules", action
+    return parts[1], action
+
+
+ENTITLEMENT_RESOURCE_FEATURES: dict[str, str] = {
+    "reports": "reports",
+    "dashboards": "reports",
+    "ai": "apex",
+    "cpq": "cpq",
+    "price_books": "inventory_management",
+    "vendors": "inventory_management",
+    "quotes": "inventory_management",
+    "sales_orders": "inventory_management",
+    "purchase_orders": "inventory_management",
+    "invoices": "inventory_management",
+    "payments": "inventory_management",
+    "portals": "customer_portals",
+    "approval_processes": "approval_process",
+    "approvals": "approval_process",
+    "sandbox": "developer_sandbox",
+    "sandboxes": "developer_sandbox",
+}
+
+
+def _request_entitlement_feature(path: str) -> str | None:
+    clean = path.strip("/")
+    parts = clean.split("/")
+    if len(parts) < 2 or parts[0] != "api":
+        return None
+    if parts[1] == "ai":
+        return "apex"
+    if parts[1] == "cpq":
+        return "cpq"
+    if parts[1] in {"reports", "dashboards"}:
+        return "reports"
+    if parts[1] == "admin" and len(parts) >= 3 and parts[2] == "metadata":
+        return "custom_modules"
+    if parts[1] == "platform" and len(parts) >= 3:
+        return ENTITLEMENT_RESOURCE_FEATURES.get(parts[2])
+    return ENTITLEMENT_RESOURCE_FEATURES.get(parts[1])
+
+
+def _enforce_request_access(db: Session, actor: User, path: str, method: str) -> None:
+    if _is_platform_owner(actor):
+        return
+    feature = _request_entitlement_feature(path)
+    if feature:
+        _enforce_plan_feature(db, actor, feature)
+    resource, action = _request_resource_action(path, method)
+    if resource and not _profile_action_allowed(db, actor, resource, action):
+        raise HTTPException(403, detail={
+            "code": "PROFILE_PERMISSION_DENIED",
+            "message": f"Your profile does not allow {action} access to {resource.replace('_', ' ')}.",
+        })
+
+
+def _enforce_organization_user_limit(db: Session, actor: User) -> None:
+    plan = _active_plan(db, actor)
+    if plan is None:
+        return
+    raw_limit = (plan.features or {}).get("max_users")
+    if raw_limit in {None, "", 0}:
+        return
+    organization_id = _organization_id_required(db, actor)
+    active_members = int(db.scalar(select(func.count()).select_from(OrganizationMember).where(
+        OrganizationMember.organization_id == organization_id,
+        OrganizationMember.status == "Active",
+    )) or 0)
+    pending = int(db.scalar(select(func.count()).select_from(OrganizationInvitation).where(
+        OrganizationInvitation.organization_id == organization_id,
+        OrganizationInvitation.status == "Pending",
+        OrganizationInvitation.expires_at > datetime.utcnow(),
+    )) or 0)
+    if active_members + pending >= int(raw_limit):
+        raise HTTPException(403, detail={
+            "code": "PLAN_USER_LIMIT",
+            "message": f"Your {plan.name} plan allows up to {int(raw_limit)} organization users.",
+        })
+
+
 def validate_production_settings() -> None:
     if not IS_PRODUCTION:
         return
@@ -2938,6 +3085,15 @@ async def cloud_security(request: Request, call_next):
         except Exception:
             organization_token = None
     try:
+        if actor_id and path.startswith("/api/") and not is_public and not is_preflight:
+            try:
+                with SessionLocal() as db:
+                    guard_actor = db.get(User, int(actor_id))
+                    if guard_actor is not None:
+                        _enforce_request_access(db, guard_actor, path, request.method)
+            except HTTPException as exc:
+                content = {"detail": exc.detail}
+                return add_security_headers(JSONResponse(status_code=exc.status_code, content=content), request)
         response = await call_next(request)
     finally:
         if organization_token is not None:
@@ -5376,6 +5532,7 @@ def create_organization_invitation(
     actor: User = Depends(current_actor),
 ) -> dict[str, Any]:
     organization, _ = _require_organization_admin(db, actor)
+    _enforce_organization_user_limit(db, actor)
     email = str(payload.get("email") or "").strip().lower()
     membership_role = str(payload.get("membership_role") or "Member").strip().title()
     if parseaddr(email)[1] != email or "@" not in email:
