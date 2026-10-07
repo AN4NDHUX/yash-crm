@@ -2,15 +2,27 @@ name: Tier 0 Production Verification
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - CRM Regression Tests
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
 
+concurrency:
+  group: tier0-production-verification
+  cancel-in-progress: true
+
 jobs:
   verify:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     env:
-      PRODUCTION_BASE_URL: https://yashcrm-production.up.railway.app
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://yashcrm-production.up.railway.app' }}
       PRODUCTION_ADMIN_USERNAME: ${{ secrets.PRODUCTION_ADMIN_USERNAME }}
       PRODUCTION_ADMIN_PASSWORD: ${{ secrets.PRODUCTION_ADMIN_PASSWORD }}
       PRODUCTION_SMOKE_USER_A_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_A_IDENTIFIER }}
@@ -20,6 +32,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-python@v6
         with:
@@ -32,21 +46,38 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "EXPECTED_APP_REVISION=$GITHUB_SHA" >> "$GITHUB_ENV"
+          EXPECTED_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
           HEAD="$(python -m alembic heads | awk 'NR==1 {print $1}')"
+          test -n "$EXPECTED_SHA"
           test -n "$HEAD"
+          echo "EXPECTED_APP_REVISION=$EXPECTED_SHA" >> "$GITHUB_ENV"
           echo "EXPECTED_MIGRATION_REVISION=$HEAD" >> "$GITHUB_ENV"
 
-      - name: Validate verification credentials
+      - name: Validate production verification credentials
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$PRODUCTION_ADMIN_USERNAME"
-          test -n "$PRODUCTION_ADMIN_PASSWORD"
-          test -n "$PRODUCTION_SMOKE_USER_A_IDENTIFIER"
-          test -n "$PRODUCTION_SMOKE_USER_A_PASSWORD"
-          test -n "$PRODUCTION_SMOKE_USER_B_IDENTIFIER"
-          test -n "$PRODUCTION_SMOKE_USER_B_PASSWORD"
+          required=(
+            PRODUCTION_ADMIN_USERNAME
+            PRODUCTION_ADMIN_PASSWORD
+            PRODUCTION_SMOKE_USER_A_IDENTIFIER
+            PRODUCTION_SMOKE_USER_A_PASSWORD
+            PRODUCTION_SMOKE_USER_B_IDENTIFIER
+            PRODUCTION_SMOKE_USER_B_PASSWORD
+          )
+          missing=()
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing required GitHub Actions secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Wait for Railway deployment
+        run: python scripts/wait_for_production.py
 
       - name: Verify Railway production
         run: python scripts/verify_production.py
