@@ -230,3 +230,61 @@ def test_platform_owner_can_view_cross_organization_records():
         out['owner_get'] = c.get(f"/api/leads/{lead_id}").status_code
     """)
     assert out == {'owner_login': 200, 'owner_get': 200}
+
+
+def test_bulk_orm_update_and_delete_are_tenant_scoped():
+    out = run_app_script("""
+    from sqlalchemy import delete, select, update
+
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Bulk Tenant A','username':'bulk.a','email':'bulk.a@example.com',
+            'password':'strong-password-123'
+        })
+        lead_a = c.post('/api/leads', json={'name':'Tenant A Lead'}).json()
+        org_a = c.get('/api/organization').json()['id']
+        c.post('/api/auth/logout')
+
+        c.post('/api/auth/signup', json={
+            'name':'Bulk Tenant B','username':'bulk.b','email':'bulk.b@example.com',
+            'password':'strong-password-123'
+        })
+        lead_b = c.post('/api/leads', json={'name':'Tenant B Lead'}).json()
+        org_b = c.get('/api/organization').json()['id']
+
+        with main.SessionLocal() as db:
+            token = main.TENANT_ORGANIZATION_ID.set(org_b)
+            try:
+                updated = db.execute(
+                    update(main.Lead).values(name='Tenant B Bulk Updated')
+                )
+                deleted = db.execute(
+                    delete(main.Lead).where(main.Lead.id == lead_a['id'])
+                )
+                db.commit()
+                out['updated_rows'] = int(updated.rowcount or 0)
+                out['deleted_rows'] = int(deleted.rowcount or 0)
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token)
+
+        with main.SessionLocal() as db:
+            token = main.TENANT_ORGANIZATION_ID.set(org_a)
+            try:
+                a = db.scalar(select(main.Lead).where(main.Lead.id == lead_a['id']))
+                out['a_name'] = a.name if a else None
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token)
+
+            token = main.TENANT_ORGANIZATION_ID.set(org_b)
+            try:
+                b = db.scalar(select(main.Lead).where(main.Lead.id == lead_b['id']))
+                out['b_name'] = b.name if b else None
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token)
+    """)
+    assert out == {
+        'updated_rows': 1,
+        'deleted_rows': 0,
+        'a_name': 'Tenant A Lead',
+        'b_name': 'Tenant B Bulk Updated',
+    }
