@@ -780,7 +780,7 @@ def ensure_platform_defaults(db: Session, include_demo: bool = False) -> None:
             )
             sync_platform_columns(record, values)
             db.add(record)
-    db.commit()
+    db.flush()
 
 
 STAGE_PROBABILITY = {"Qualification": 20, "Needs Analysis": 40, "Proposal": 60, "Negotiation": 80, "Closed Won": 100, "Closed Lost": 0}
