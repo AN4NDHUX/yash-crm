@@ -2543,12 +2543,31 @@ def _enforce_plan_feature(db: Session, actor: User, feature: str) -> None:
         raise HTTPException(403, detail={"code": "PLAN_UPGRADE_REQUIRED", "message": f"Your {plan.name} plan does not include this feature."})
 
 
-def _owned_record_count(db: Session, actor: User) -> int:
+def _organization_id_required(db: Session, actor: User) -> int:
+    organization_id = _organization_id_for_user(db, actor.id)
+    if not organization_id:
+        organization = _ensure_user_organization(db, actor)
+        organization_id = organization.id
+    return int(organization_id)
+
+
+def _organization_record_count(db: Session, actor: User) -> int:
+    organization_id = _organization_id_required(db, actor)
     total = 0
     for model in (Lead, Contact, Account, Deal, Activity):
-        if hasattr(model, "owner_id"):
-            total += int(db.scalar(select(func.count()).select_from(model).where(model.owner_id == actor.id)) or 0)
-    total += int(db.scalar(select(func.count()).select_from(PlatformRecord).where(PlatformRecord.owner_id == actor.id, PlatformRecord.archived == False)) or 0)
+        total += int(
+            db.scalar(
+                select(func.count()).select_from(model).where(model.organization_id == organization_id)
+            ) or 0
+        )
+    total += int(
+        db.scalar(
+            select(func.count()).select_from(PlatformRecord).where(
+                PlatformRecord.organization_id == organization_id,
+                PlatformRecord.archived == False,
+            )
+        ) or 0
+    )
     return total
 
 
@@ -2556,8 +2575,11 @@ def _enforce_record_limit(db: Session, actor: User) -> None:
     plan = _active_plan(db, actor)
     if plan is None or plan.max_records is None:
         return
-    if _owned_record_count(db, actor) >= int(plan.max_records):
-        raise HTTPException(403, detail={"code": "PLAN_RECORD_LIMIT", "message": f"Your {plan.name} plan record limit has been reached."})
+    if _organization_record_count(db, actor) >= int(plan.max_records):
+        raise HTTPException(403, detail={
+            "code": "PLAN_RECORD_LIMIT",
+            "message": f"Your organization has reached the {plan.name} plan record limit.",
+        })
 
 
 def _enforce_custom_module_limit(db: Session, actor: User) -> None:
@@ -2565,20 +2587,40 @@ def _enforce_custom_module_limit(db: Session, actor: User) -> None:
     plan = _active_plan(db, actor)
     if plan is None or plan.max_custom_modules is None:
         return
-    current = int(db.scalar(select(func.count()).select_from(MetadataModule).where(MetadataModule.owner_id == actor.id)) or 0)
+    organization_id = _organization_id_required(db, actor)
+    current = int(
+        db.scalar(
+            select(func.count()).select_from(MetadataModule).where(
+                MetadataModule.organization_id == organization_id
+            )
+        ) or 0
+    )
     if current >= int(plan.max_custom_modules):
-        raise HTTPException(403, detail={"code": "PLAN_CUSTOM_MODULE_LIMIT", "message": f"Your {plan.name} plan custom-module limit has been reached."})
+        raise HTTPException(403, detail={
+            "code": "PLAN_CUSTOM_MODULE_LIMIT",
+            "message": f"Your organization has reached the {plan.name} custom-module limit.",
+        })
 
 
 def _enforce_storage_limit(db: Session, actor: User, incoming_bytes: int) -> None:
     plan = _active_plan(db, actor)
     if plan is None or plan.max_storage_mb is None:
         return
-    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.resource == "documents", PlatformRecord.owner_id == actor.id, PlatformRecord.archived == False)).all()
+    organization_id = _organization_id_required(db, actor)
+    rows = db.scalars(
+        select(PlatformRecord).where(
+            PlatformRecord.resource == "documents",
+            PlatformRecord.organization_id == organization_id,
+            PlatformRecord.archived == False,
+        )
+    ).all()
     used = sum(int((row.data or {}).get("file_size") or 0) for row in rows)
     maximum = int(plan.max_storage_mb) * 1024 * 1024
     if used + max(0, int(incoming_bytes)) > maximum:
-        raise HTTPException(403, detail={"code": "PLAN_STORAGE_LIMIT", "message": f"Your {plan.name} plan storage limit has been reached."})
+        raise HTTPException(403, detail={
+            "code": "PLAN_STORAGE_LIMIT",
+            "message": f"Your organization has reached the {plan.name} storage limit.",
+        })
 
 
 def _enforce_ai_limit(db: Session, actor: User) -> None:
@@ -2586,11 +2628,22 @@ def _enforce_ai_limit(db: Session, actor: User) -> None:
     plan = _active_plan(db, actor)
     if plan is None or plan.ai_limit_monthly is None:
         return
+    organization_id = _organization_id_required(db, actor)
     now = datetime.utcnow()
-    start = datetime(now.year, now.month, 1)
-    used = int(db.scalar(select(func.count()).select_from(ApexAssistantRun).where(ApexAssistantRun.requested_by == actor.id, ApexAssistantRun.created_at >= start)) or 0)
+    month_start = datetime(now.year, now.month, 1)
+    used = int(
+        db.scalar(
+            select(func.count()).select_from(ApexAssistantRun).where(
+                ApexAssistantRun.organization_id == organization_id,
+                ApexAssistantRun.created_at >= month_start,
+            )
+        ) or 0
+    )
     if used >= int(plan.ai_limit_monthly):
-        raise HTTPException(403, detail={"code": "PLAN_AI_LIMIT", "message": f"Your {plan.name} plan monthly AI limit has been reached."})
+        raise HTTPException(403, detail={
+            "code": "PLAN_AI_LIMIT",
+            "message": f"Your organization has reached the {plan.name} monthly AI limit.",
+        })
 
 
 def _claim_legacy_custom_modules(db: Session, actor: User) -> None:
@@ -3039,6 +3092,19 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
         ))
         if existing_phone:
             raise HTTPException(409, "An account already exists for this phone number")
+    invitation_token = str(payload.get("invitation_token") or payload.get("invite") or "").strip()
+    invitation = None
+    if invitation_token:
+        invitation = db.scalar(select(OrganizationInvitation).where(
+            OrganizationInvitation.token_hash == _session_token_hash(invitation_token),
+            OrganizationInvitation.status == "Pending",
+            OrganizationInvitation.expires_at > datetime.utcnow(),
+        ))
+        if invitation is None:
+            raise HTTPException(422, "Invitation is invalid or has expired")
+        if invitation.email.lower() != email:
+            raise HTTPException(422, "Sign up using the email address that received the invitation")
+
     user = User(
         name=name,
         email=email,
@@ -3052,7 +3118,18 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     )
     db.add(user)
     db.flush()
-    _ensure_user_subscription(db, user)
+    if invitation is not None:
+        db.add(OrganizationMember(
+            organization_id=invitation.organization_id,
+            user_id=user.id,
+            membership_role=invitation.membership_role,
+            status="Active",
+        ))
+        invitation.status = "Accepted"
+        invitation.accepted_at = datetime.utcnow()
+        user.invited_at = invitation.created_at
+    else:
+        _ensure_user_subscription(db, user)
     db.commit()
     db.refresh(user)
     token = _create_session(request, db, user)
@@ -5211,6 +5288,192 @@ def owner_login_history(
         "device": _device_summary(event.user_agent),
         "occurred_at": event.occurred_at.isoformat(),
     } for event, user in rows], "total": total, "limit": limit, "offset": offset}
+
+
+def _organization_membership(db: Session, user_id: int) -> OrganizationMember | None:
+    return db.scalar(
+        select(OrganizationMember).where(
+            OrganizationMember.user_id == user_id,
+            OrganizationMember.status == "Active",
+        ).order_by(OrganizationMember.id)
+    )
+
+
+def _require_organization_admin(db: Session, actor: User) -> tuple[Organization, OrganizationMember]:
+    membership = _organization_membership(db, actor.id)
+    if membership is None:
+        organization = _ensure_user_organization(db, actor)
+        membership = _organization_membership(db, actor.id)
+    else:
+        organization = db.get(Organization, membership.organization_id)
+    if organization is None or membership is None:
+        raise HTTPException(404, "Organization not found")
+    if not (_is_platform_owner(actor) or str(membership.membership_role or "").lower() in {"owner", "admin", "administrator"}):
+        raise HTTPException(403, detail={"code": "ORG_ADMIN_REQUIRED", "message": "Organization administrator access is required."})
+    return organization, membership
+
+
+@app.get("/api/organization")
+def organization_overview(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    organization = _ensure_user_organization(db, actor)
+    membership = _organization_membership(db, actor.id)
+    members = int(db.scalar(select(func.count()).select_from(OrganizationMember).where(
+        OrganizationMember.organization_id == organization.id,
+        OrganizationMember.status == "Active",
+    )) or 0)
+    return {
+        "id": organization.id,
+        "name": organization.name,
+        "slug": organization.slug,
+        "status": organization.status,
+        "membership_role": membership.membership_role if membership else "Member",
+        "member_count": members,
+        "subscription": _subscription_payload(db, actor.id),
+    }
+
+
+@app.get("/api/organization/members")
+def organization_members(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    organization = _ensure_user_organization(db, actor)
+    rows = db.execute(
+        select(OrganizationMember, User)
+        .join(User, User.id == OrganizationMember.user_id)
+        .where(OrganizationMember.organization_id == organization.id)
+        .order_by(OrganizationMember.created_at, OrganizationMember.id)
+    ).all()
+    return {"items": [{
+        "user_id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "username": user.username,
+        "role": user.role,
+        "membership_role": member.membership_role,
+        "status": member.status,
+        "joined_at": member.created_at.isoformat() if member.created_at else None,
+    } for member, user in rows]}
+
+
+@app.get("/api/organization/invitations")
+def organization_invitations(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    organization, _ = _require_organization_admin(db, actor)
+    rows = db.scalars(select(OrganizationInvitation).where(
+        OrganizationInvitation.organization_id == organization.id
+    ).order_by(OrganizationInvitation.created_at.desc())).all()
+    return {"items": [{
+        "id": row.id,
+        "email": row.email,
+        "membership_role": row.membership_role,
+        "status": row.status,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+    } for row in rows]}
+
+
+@app.post("/api/organization/invitations", status_code=201)
+def create_organization_invitation(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    organization, _ = _require_organization_admin(db, actor)
+    email = str(payload.get("email") or "").strip().lower()
+    membership_role = str(payload.get("membership_role") or "Member").strip().title()
+    if parseaddr(email)[1] != email or "@" not in email:
+        raise HTTPException(422, "Enter a valid invitation email address")
+    if membership_role not in {"Member", "Admin"}:
+        raise HTTPException(422, "membership_role must be Member or Admin")
+    existing_user = db.scalar(select(User).where(func.lower(User.email) == email))
+    if existing_user:
+        existing_member = db.scalar(select(OrganizationMember).where(
+            OrganizationMember.organization_id == organization.id,
+            OrganizationMember.user_id == existing_user.id,
+            OrganizationMember.status == "Active",
+        ))
+        if existing_member:
+            raise HTTPException(409, "This user is already a member of the organization")
+    now = datetime.utcnow()
+    for stale in db.scalars(select(OrganizationInvitation).where(
+        OrganizationInvitation.organization_id == organization.id,
+        func.lower(OrganizationInvitation.email) == email,
+        OrganizationInvitation.status == "Pending",
+    )).all():
+        stale.status = "Revoked"
+    raw_token = secrets.token_urlsafe(40)
+    invitation = OrganizationInvitation(
+        organization_id=organization.id,
+        email=email,
+        membership_role=membership_role,
+        token_hash=_session_token_hash(raw_token),
+        invited_by=actor.id,
+        status="Pending",
+        created_at=now,
+        expires_at=now + timedelta(days=7),
+    )
+    db.add(invitation)
+    db.flush()
+    add_audit(db, "organization_invitation_created", "organizations", organization.id, f"Invited {email} as {membership_role}", actor_id=actor.id)
+    db.commit()
+    base = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+    accept_path = f"/signup?invite={raw_token}"
+    return {
+        "id": invitation.id,
+        "email": invitation.email,
+        "membership_role": invitation.membership_role,
+        "status": invitation.status,
+        "expires_at": invitation.expires_at.isoformat(),
+        "accept_url": f"{base}{accept_path}" if base else accept_path,
+        "invitation_token": raw_token if not IS_PRODUCTION else None,
+    }
+
+
+@app.delete("/api/organization/invitations/{invitation_id}")
+def revoke_organization_invitation(
+    invitation_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    organization, _ = _require_organization_admin(db, actor)
+    invitation = db.scalar(select(OrganizationInvitation).where(
+        OrganizationInvitation.id == invitation_id,
+        OrganizationInvitation.organization_id == organization.id,
+    ))
+    if invitation is None:
+        raise HTTPException(404, "Invitation not found")
+    if invitation.status == "Pending":
+        invitation.status = "Revoked"
+        add_audit(db, "organization_invitation_revoked", "organizations", organization.id, f"Revoked invitation for {invitation.email}", actor_id=actor.id)
+        db.commit()
+    return {"ok": True, "status": invitation.status}
+
+
+@app.patch("/api/organization/members/{user_id}")
+def update_organization_member(
+    user_id: int,
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    organization, _ = _require_organization_admin(db, actor)
+    member = db.scalar(select(OrganizationMember).where(
+        OrganizationMember.organization_id == organization.id,
+        OrganizationMember.user_id == user_id,
+    ))
+    if member is None:
+        raise HTTPException(404, "Organization member not found")
+    if user_id == organization.owner_user_id:
+        raise HTTPException(409, "The organization owner role cannot be changed here")
+    membership_role = str(payload.get("membership_role") or member.membership_role).strip().title()
+    status = str(payload.get("status") or member.status).strip().title()
+    if membership_role not in {"Member", "Admin"}:
+        raise HTTPException(422, "membership_role must be Member or Admin")
+    if status not in {"Active", "Inactive"}:
+        raise HTTPException(422, "status must be Active or Inactive")
+    before = {"membership_role": member.membership_role, "status": member.status}
+    member.membership_role = membership_role
+    member.status = status
+    add_audit(db, "organization_member_updated", "organizations", organization.id, f"Updated organization member #{user_id}", before=before, after={"membership_role": membership_role, "status": status}, actor_id=actor.id)
+    db.commit()
+    return {"ok": True, "user_id": user_id, "membership_role": membership_role, "status": status}
 
 
 @app.get("/api/plans")
