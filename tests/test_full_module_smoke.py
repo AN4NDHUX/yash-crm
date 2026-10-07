@@ -181,3 +181,49 @@ def test_dashboard_survives_legacy_sales_platform_json_shapes():
             out['has_attention'] = isinstance(payload.get('attention'), dict)
     """)
     assert out == {'status': 200, 'has_metrics': True, 'has_attention': True}
+
+
+def test_malformed_profile_json_cannot_take_down_all_modules():
+    out = run_app_script("""
+    with TestClient(main.app) as c:
+        with main.SessionLocal() as db:
+            admin = db.scalar(main.select(main.User).where(main.func.lower(main.User.role) == 'administrator').order_by(main.User.id))
+            org_id = main._organization_id_for_user(db, admin.id)
+            admin.profile_name = 'Legacy Broken Profile'
+            token_actor = main.TENANT_ACTOR_ID.set(admin.id)
+            token_org = main.TENANT_ORGANIZATION_ID.set(org_id)
+            try:
+                db.add(main.PlatformRecord(
+                    organization_id=org_id,
+                    owner_id=admin.id,
+                    resource='profiles',
+                    title='Legacy Broken Profile',
+                    status='Active',
+                    data=['invalid-profile-json'],
+                    archived=False,
+                ))
+                db.commit()
+            finally:
+                main.TENANT_ORGANIZATION_ID.reset(token_org)
+                main.TENANT_ACTOR_ID.reset(token_actor)
+
+        failures = {}
+        paths = [
+            '/api/dashboard',
+            '/api/leads?limit=1',
+            '/api/contacts?limit=1',
+            '/api/accounts?limit=1',
+            '/api/deals?limit=1',
+            '/api/activities?limit=1',
+            '/api/products?limit=1',
+            '/api/platform/vendors?limit=1',
+            '/api/platform/payments?limit=1',
+            '/api/platform/reports?limit=1',
+        ]
+        for path in paths:
+            response = c.get(path, headers=auth)
+            if response.status_code >= 500:
+                failures[path] = [response.status_code, response.text[:300]]
+        out['failures'] = failures
+    """)
+    assert out['failures'] == {}
