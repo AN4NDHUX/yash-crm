@@ -184,6 +184,25 @@ class LoginHistory(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", SAJSON, default=dict)
 
 
+class Organization(TimestampMixin, Base):
+    __tablename__ = "organizations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(30), default="Active", index=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
+
+class OrganizationMember(TimestampMixin, Base):
+    __tablename__ = "organization_members"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    membership_role: Mapped[str] = mapped_column(String(30), default="Member")
+    status: Mapped[str] = mapped_column(String(30), default="Active", index=True)
+    __table_args__ = (UniqueConstraint("organization_id", "user_id", name="uq_organization_member"),)
+
+
 class Plan(TimestampMixin, Base):
     __tablename__ = "plans"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -213,6 +232,36 @@ class Subscription(TimestampMixin, Base):
     provider: Mapped[str | None] = mapped_column(String(60), nullable=True)
     provider_customer_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
     provider_subscription_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+
+
+class OrganizationSubscription(TimestampMixin, Base):
+    __tablename__ = "organization_subscriptions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), unique=True, index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="Active", index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    provider_customer_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+
+
+class SubscriptionChangeRequest(Base):
+    __tablename__ = "subscription_change_requests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    requested_by: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    from_plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id"), nullable=True)
+    to_plan_id: Mapped[int] = mapped_column(ForeignKey("plans.id"), index=True)
+    status: Mapped[str] = mapped_column(String(30), default="Pending Payment", index=True)
+    provider: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    provider_reference: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PrivacyRecord(TimestampMixin, Base):
@@ -1895,6 +1944,8 @@ def ensure_cloud_admin(db: Session) -> None:
         if not _password_valid(fallback_password, admin.password_hash):
             admin.password_hash = _password_hash(fallback_password)
             admin.password_changed_at = datetime.utcnow()
+    db.flush()
+    _ensure_organization_subscription(db, admin)
     db.commit()
 
 
@@ -2284,11 +2335,11 @@ def _default_plan(db: Session) -> Plan:
             code="free",
             name="Free",
             price_monthly=0,
-            currency="USD",
+            currency="INR",
             max_records=1000,
             max_storage_mb=250,
             max_custom_modules=2,
-            ai_limit_monthly=100,
+            ai_limit_monthly=0,
             active=True,
             features={"reports": True, "custom_modules": True, "apex": False},
         )
@@ -2297,40 +2348,95 @@ def _default_plan(db: Session) -> Plan:
     return plan
 
 
-def _ensure_user_subscription(db: Session, user: User) -> Subscription:
-    subscription = db.scalar(select(Subscription).where(Subscription.user_id == user.id))
-    if subscription is None:
-        plan = _default_plan(db)
-        now = datetime.utcnow()
-        subscription = Subscription(
-            user_id=user.id,
-            plan_id=plan.id,
-            status="Active",
-            started_at=now,
-            current_period_start=now,
-        )
-        db.add(subscription)
-        db.flush()
+def _organization_slug_for_user(user: User) -> str:
+    base = re.sub(r"[^a-z0-9-]+", "-", str(user.username or user.name or f"user-{user.id}").lower()).strip("-")
+    return (base or f"user-{user.id}")[:90] + f"-{user.id}"
+
+
+def _organization_for_user(db: Session, user_id: int) -> Organization | None:
+    membership = db.scalar(
+        select(OrganizationMember)
+        .where(OrganizationMember.user_id == user_id, OrganizationMember.status == "Active")
+        .order_by(OrganizationMember.id)
+    )
+    return db.get(Organization, membership.organization_id) if membership else None
+
+
+def _ensure_user_organization(db: Session, user: User) -> Organization:
+    organization = _organization_for_user(db, user.id)
+    if organization is not None:
+        return organization
+
+    organization = Organization(
+        name=(user.name or user.username or "Yash CRM")[:160],
+        slug=_organization_slug_for_user(user),
+        status="Active",
+        owner_user_id=user.id,
+    )
+    db.add(organization)
+    db.flush()
+    db.add(OrganizationMember(
+        organization_id=organization.id,
+        user_id=user.id,
+        membership_role="Owner",
+        status="Active",
+    ))
+    db.flush()
+    return organization
+
+
+def _ensure_organization_subscription(db: Session, user: User) -> OrganizationSubscription:
+    organization = _ensure_user_organization(db, user)
+    subscription = db.scalar(
+        select(OrganizationSubscription).where(OrganizationSubscription.organization_id == organization.id)
+    )
+    if subscription is not None:
+        return subscription
+
+    legacy = db.scalar(select(Subscription).where(Subscription.user_id == user.id))
+    plan = db.get(Plan, legacy.plan_id) if legacy else None
+    plan = plan or _default_plan(db)
+    now = datetime.utcnow()
+    subscription = OrganizationSubscription(
+        organization_id=organization.id,
+        plan_id=plan.id,
+        status=(legacy.status if legacy else "Active"),
+        started_at=(legacy.started_at if legacy else now),
+        trial_ends_at=(legacy.trial_ends_at if legacy else None),
+        current_period_start=(legacy.current_period_start if legacy else now),
+        current_period_end=(legacy.current_period_end if legacy else None),
+        cancel_at_period_end=(legacy.cancel_at_period_end if legacy else False),
+        provider=(legacy.provider if legacy else None),
+        provider_customer_id=(legacy.provider_customer_id if legacy else None),
+        provider_subscription_id=(legacy.provider_subscription_id if legacy else None),
+    )
+    db.add(subscription)
+    db.flush()
     return subscription
 
 
+def _ensure_user_subscription(db: Session, user: User) -> OrganizationSubscription:
+    """Compatibility wrapper: subscriptions are organization-owned from Tier 0 onward."""
+    return _ensure_organization_subscription(db, user)
+
+
 def _subscription_payload(db: Session, user_id: int) -> dict[str, Any]:
-    subscription = db.scalar(select(Subscription).where(Subscription.user_id == user_id))
-    if subscription is None:
-        user = db.get(User, user_id)
-        if user is None:
-            return {"plan_code":"free","plan_name":"Free","status":"Unknown"}
-        subscription = _ensure_user_subscription(db, user)
-        db.commit()
+    user = db.get(User, user_id)
+    if user is None:
+        return {"plan_code": "free", "plan_name": "Free", "status": "Unknown"}
+    subscription = _ensure_organization_subscription(db, user)
+    organization = db.get(Organization, subscription.organization_id)
     plan = db.get(Plan, subscription.plan_id)
     return {
         "id": subscription.id,
+        "organization_id": subscription.organization_id,
+        "organization_name": organization.name if organization else None,
         "status": subscription.status,
         "plan_id": subscription.plan_id,
         "plan_code": plan.code if plan else None,
         "plan_name": plan.name if plan else "Unknown",
         "price_monthly": float(plan.price_monthly or 0) if plan else 0,
-        "currency": plan.currency if plan else "USD",
+        "currency": plan.currency if plan else "INR",
         "started_at": subscription.started_at.isoformat() if subscription.started_at else None,
         "trial_ends_at": subscription.trial_ends_at.isoformat() if subscription.trial_ends_at else None,
         "current_period_start": subscription.current_period_start.isoformat() if subscription.current_period_start else None,
@@ -2341,14 +2447,15 @@ def _subscription_payload(db: Session, user_id: int) -> dict[str, Any]:
 
 
 def _active_plan(db: Session, actor: User) -> Plan | None:
-    if str(actor.role or "").lower() == "administrator":
+    # Only the deployment-provisioned platform owner bypasses customer plan limits.
+    if _is_platform_owner(actor):
         return None
-    subscription = _ensure_user_subscription(db, actor)
+    subscription = _ensure_organization_subscription(db, actor)
     if str(subscription.status or "").lower() not in {"active", "trialing", "trial"}:
-        raise HTTPException(403, detail={"code": "SUBSCRIPTION_INACTIVE", "message": "Your subscription is not active."})
+        raise HTTPException(403, detail={"code": "SUBSCRIPTION_INACTIVE", "message": "Your organization subscription is not active."})
     plan = db.get(Plan, subscription.plan_id)
     if plan is None or not plan.active:
-        raise HTTPException(403, detail={"code": "PLAN_UNAVAILABLE", "message": "Your subscription plan is unavailable."})
+        raise HTTPException(403, detail={"code": "PLAN_UNAVAILABLE", "message": "Your organization subscription plan is unavailable."})
     return plan
 
 
@@ -2939,6 +3046,7 @@ def auth_session(request: Request, db: Session = Depends(get_db)) -> dict[str, A
         raise HTTPException(401, "No active session")
     payload = serialize(user, db)
     payload["owner_console_access"] = _is_platform_owner(user)
+    payload["subscription"] = _subscription_payload(db, user.id)
     return {"authenticated": True, "user": payload}
 
 
@@ -4868,8 +4976,8 @@ def owner_overview(db: Session = Depends(get_db), _: User = Depends(require_owne
     active_sessions = int(db.scalar(select(func.count()).select_from(AuthSession).where(AuthSession.revoked_at.is_(None), AuthSession.expires_at > now)) or 0)
 
     plan_rows = db.execute(
-        select(Plan.name, func.count(Subscription.id))
-        .outerjoin(Subscription, Subscription.plan_id == Plan.id)
+        select(Plan.name, func.count(OrganizationSubscription.id))
+        .outerjoin(OrganizationSubscription, OrganizationSubscription.plan_id == Plan.id)
         .group_by(Plan.id, Plan.name)
         .order_by(Plan.id)
     ).all()
@@ -5047,26 +5155,63 @@ def update_my_subscription(
     if plan is None:
         raise HTTPException(404, "Selected plan is unavailable")
 
-    subscription = _ensure_user_subscription(db, actor)
+    subscription = _ensure_organization_subscription(db, actor)
     previous_plan = db.get(Plan, subscription.plan_id)
     if subscription.plan_id == plan.id:
         return {"ok": True, "subscription": _subscription_payload(db, actor.id), "changed": False}
 
-    before = {
-        "plan_code": previous_plan.code if previous_plan else None,
-        "plan_name": previous_plan.name if previous_plan else None,
-    }
+    # Free plans can be activated without a payment provider. Paid plans are never
+    # granted from a browser request: selecting one creates a pending request only.
+    if float(plan.price_monthly or 0) > 0:
+        existing = db.scalar(
+            select(SubscriptionChangeRequest).where(
+                SubscriptionChangeRequest.organization_id == subscription.organization_id,
+                SubscriptionChangeRequest.to_plan_id == plan.id,
+                SubscriptionChangeRequest.status == "Pending Payment",
+            ).order_by(SubscriptionChangeRequest.id.desc())
+        )
+        if existing is None:
+            existing = SubscriptionChangeRequest(
+                organization_id=subscription.organization_id,
+                requested_by=actor.id,
+                from_plan_id=subscription.plan_id,
+                to_plan_id=plan.id,
+                status="Pending Payment",
+            )
+            db.add(existing)
+            db.flush()
+            add_audit(
+                db,
+                "subscription_upgrade_requested",
+                "organization_subscriptions",
+                subscription.id,
+                f"Requested upgrade from {previous_plan.name if previous_plan else 'Unknown'} to {plan.name}",
+                before={"plan_code": previous_plan.code if previous_plan else None},
+                after={"requested_plan_code": plan.code, "status": existing.status},
+                actor_id=actor.id,
+            )
+            db.commit()
+        return {
+            "ok": True,
+            "changed": False,
+            "requires_payment": True,
+            "request_id": existing.id,
+            "requested_plan": {"code": plan.code, "name": plan.name, "price_monthly": float(plan.price_monthly or 0), "currency": plan.currency},
+            "subscription": _subscription_payload(db, actor.id),
+            "message": "Upgrade request recorded. The paid plan will activate only after verified payment.",
+        }
+
+    before = {"plan_code": previous_plan.code if previous_plan else None, "plan_name": previous_plan.name if previous_plan else None}
     subscription.plan_id = plan.id
     subscription.status = "Active"
     subscription.current_period_start = datetime.utcnow()
     subscription.current_period_end = None
     subscription.cancel_at_period_end = False
     subscription.updated_at = datetime.utcnow()
-
     add_audit(
         db,
         "subscription_plan_changed",
-        "subscriptions",
+        "organization_subscriptions",
         subscription.id,
         f"Changed subscription from {before['plan_name'] or 'Unknown'} to {plan.name}",
         before=before,
@@ -5074,7 +5219,7 @@ def update_my_subscription(
         actor_id=actor.id,
     )
     db.commit()
-    return {"ok": True, "subscription": _subscription_payload(db, actor.id), "changed": True}
+    return {"ok": True, "subscription": _subscription_payload(db, actor.id), "changed": True, "requires_payment": False}
 
 
 @app.get("/api/owner/plans")
