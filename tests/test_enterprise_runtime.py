@@ -64,12 +64,12 @@ def test_due_workflow_runner_executes_scheduled_action():
         before = c.get('/api/activities?activity_type=Task&search=Scheduled%20follow%20up&limit=100', headers=auth).json()['total']
         run = c.post('/api/automation/workflows/run-due', headers=auth)
         after = c.get('/api/activities?activity_type=Task&search=Scheduled%20follow%20up&limit=100', headers=auth).json()['total']
-        out.update({'lead':lead.status_code,'before':before,'run':run.status_code,'completed':run.json().get('completed'),'after':after})
+        out.update({'lead':lead.status_code,'before':before,'run':run.status_code,'completed':run.json().get('completed'),'after':after,'run_body':run.json(),'executions':c.get('/api/automation/executions', headers=auth).json()})
     """)
     assert out['lead'] == 200
     assert out['before'] == 0
     assert out['run'] == 200
-    assert out['completed'] == 1
+    assert out['completed'] == 1, out
     assert out['after'] == 1
 
 
