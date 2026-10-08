@@ -4644,24 +4644,6 @@ def marketplace_action(item_id: int, action: str, db: Session = Depends(get_db),
     db.commit(); db.refresh(record)
     return serialize_platform(record, db, actor)
 
-def validate_custom_function_payload(resource: str, values: dict[str, Any]) -> None:
-    """Validate Python drafts on both creation and update.
-
-    Validation is not authorization to execute the submitted code.
-    """
-    if resource != "functions":
-        return
-    if str(values.get("runtime") or "").lower() != "python":
-        return
-    source = values.get("source")
-    if not isinstance(source, dict) or not isinstance(source.get("code"), str):
-        raise HTTPException(422, "Python functions require source.code text")
-    try:
-        validate_python_source(source["code"])
-    except FunctionValidationError as exc:
-        raise HTTPException(422, str(exc)) from exc
-
-
 @app.get("/api/platform/{resource}")
 def list_platform_records(
     resource: str,
@@ -4709,7 +4691,11 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
     if isinstance(actor, User):
         values["owner_id"] = actor.id
     normalize_platform_links(db, resource, values)
-    validate_custom_function_payload(resource, values)
+    if resource == "functions" and str(values.get("runtime", "")).lower() == "python" and isinstance(values.get("source"), dict):
+        try:
+            validate_python_source(values["source"].get("code"))
+        except FunctionValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
     validate_platform_values(resource, values)
     if config.get("singleton") and db.scalar(select(PlatformRecord.id).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)):
         raise HTTPException(409, f"{config['label']} already has an active record")
@@ -4772,7 +4758,11 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
     values = dict(record.data or {})
     values.update(changes)
     normalize_platform_links(db, resource, values)
-    validate_custom_function_payload(resource, values)
+    if resource == "functions" and str(values.get("runtime", "")).lower() == "python" and isinstance(values.get("source"), dict):
+        try:
+            validate_python_source(values["source"].get("code"))
+        except FunctionValidationError as exc:
+            raise HTTPException(422, str(exc)) from exc
     validate_platform_values(resource, values)
     sync_platform_columns(record, values)
     record.version = int(record.version or 1) + 1
