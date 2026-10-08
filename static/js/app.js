@@ -295,8 +295,9 @@ async function renderRoute() {
       const resource = parts[1] || "index";
       if (resource === "workflow_rules") {
         setBreadcrumb("Workflow Rules", "Setup");
-        content.innerHTML = await workflowRulesUI.view();
-        workflowRulesUI.bind(content);
+        content.innerHTML = `<section class="setup-page-shell"><div class="setup-toolbar setup-toolbar-search-only"><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" /></label></div><div class="setup-workspace">${setupDirectory("workflow_rules")}<div class="settings-content" id="workflow-rules-container">${await workflowRulesUI.view()}</div></div></section>`;
+        bindSettings();
+        workflowRulesUI.bind($("#workflow-rules-container"));
         return;
       }
       setBreadcrumb(resource === "index" ? "Setup" : titleCase(resource), "Setup");
