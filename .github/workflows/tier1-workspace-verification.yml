@@ -3,8 +3,6 @@ name: Tier 1 Workspace Verification
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/tier1-workspace-verification.yml"
   workflow_dispatch:
 
 permissions:
