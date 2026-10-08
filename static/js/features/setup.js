@@ -32,7 +32,7 @@ export function createSetupFeature(ctx) {
   
   async function recycleBinView() {
     const data = await api("/api/administration/recycle-bin");
-    return `<section class="card settings-section"><div class="settings-section-head"><h2>Recycle Bin</h2><p>Restore archived CRM and setup records.</p></div>${data.items.length ? data.items.map((item) => `<div class="rule-row"><div class="rule-info"><strong>${esc(item.name)}</strong><small>${esc(titleCase(item.resource))} · #${item.id}</small></div><button class="button button-small button-ghost" data-restore-resource="${item.resource}" data-id="${item.id}">Restore</button></div>`).join("") : emptyState("R", "Recycle bin is empty", "Archived records will appear here.")}</section>`;
+    return `<section class="card settings-section"><div class="settings-section-head"><h2>Recycle Bin</h2><p>Deleted records are retained for 30 days. Restore them before they expire; expired records are permanently purged when cleanup runs.</p></div>${data.items.length ? data.items.map((item) => `<div class="rule-row"><div class="rule-info"><strong>${esc(item.name)}</strong><small>${esc(titleCase(item.resource))} · #${item.id} · Deleted: ${esc(item.archived_at || "—")} · Expires after 30 days</small></div><button class="button button-small button-ghost" data-restore-resource="${item.resource}" data-id="${item.id}">Restore</button></div>`).join("") : emptyState("R", "Recycle bin is empty", "Archived records will appear here.")}</section>`;
   }
   
   function importView() {
