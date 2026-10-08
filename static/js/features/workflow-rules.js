@@ -38,6 +38,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let functionPicker = false;
   let functionSearch = "";
   let functionConfiguration = false;
+  let functionGallery = false;
   let functionEditor = false;
   let functionEditingId = null;
   let functionDraft = null;
@@ -100,7 +101,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <select class="field-select" data-wf-action-type="${index}">${opts(actions,item.type,esc)}</select>
     ${item.type === "field_update" ? `<select class="field-select" data-wf-action-field="${index}">${opts([["","Select field"],...fieldsFor()],item.field || "",esc)}</select>` : ""}
     ${item.type === "email" ? `<input class="field-input" data-wf-action-to="${index}" type="email" aria-label="Recipient email" placeholder="Approved recipient email" value="${esc(item.to || "")}"/><input class="field-input" data-wf-action-subject="${index}" aria-label="Email subject" placeholder="Email subject" value="${esc(item.subject || "")}"/>` : ""}
-    ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.filter(fn=>fn.status === "Active").map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
+    ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.filter(fn=>fn.status === "Active" && (!Array.isArray(fn.associations?.modules) || !fn.associations.modules.length || fn.associations.modules.includes(draft.module))).map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
   const functionEditorDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Edit Python Function" style="max-width:900px;width:min(94vw,900px)">
@@ -111,6 +112,17 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <div class="field full"><label>Python source</label><textarea class="field-input" data-wf-new-function-source rows="13" spellcheck="false" placeholder="def main(record):&#10;    return {&quot;record_id&quot;: record.get(&quot;id&quot;)}">${esc(functionDraft?.code || "")}</textarea></div>
     </div>
     <footer class="wf-editor-footer"><button type="button" class="button" data-wf-editor-close>Cancel</button><button type="button" class="button button-primary" data-wf-editor-save>Save Draft</button></footer>
+  </div></div>`;
+  const galleryTemplates = [
+    {name:"Add Follow-up Task",description:"Create a follow-up activity for the matched record.",steps:[{type:"create_task",subject:"Follow up with CRM record"}]},
+    {name:"Add Reviewed Tag",description:"Mark the matched record as reviewed.",steps:[{type:"tag",value:"Reviewed"}]},
+    {name:"Audit Record",description:"Write an audit entry when the workflow matches.",steps:[{type:"audit"}]}
+  ];
+  const functionGalleryDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Function Gallery" style="max-width:760px;width:min(94vw,760px)">
+    <header><h2>Function Gallery</h2><p>Choose an approved CRM function for ${esc(draft.module)}. Gallery functions can run without arbitrary script execution.</p></header>
+    <div style="display:grid;gap:12px;padding:16px">
+      ${galleryTemplates.map((item,index)=>`<div class="wf-details-card"><h3>${esc(item.name)}</h3><p>${esc(item.description)}</p><button type="button" class="button button-primary" data-wf-gallery-create="${index}">Create and associate</button></div>`).join("")}
+    </div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-gallery-close>Back</button></footer>
   </div></div>`;
   const configureFunctionDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Configure Function" style="max-width:680px;width:min(92vw,680px)">
     <header><h2>Configure Function</h2><p>Choose how to configure your workflow function.</p></header>
@@ -127,7 +139,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <header><h2>Functions - ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</h2></header>
       <div class="wf-list-actions"><label>Search <input class="field-input" data-wf-function-search placeholder="Search functions" value="${esc(functionSearch)}"/></label><button type="button" class="button" data-wf-configure-function>Configure Function</button></div>
       <div style="max-height:45vh;overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Description</th><th>Language</th><th>Modified On</th></tr></thead><tbody>
-      ${filtered.map(fn=>`<tr><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${fn.status !== "Active" ? "disabled" : ""} ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")} (${esc(fn.status || "Draft")})</label> <button type="button" class="button button-small" data-wf-edit-function="${esc(String(fn.id))}">Edit</button></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4">No functions found. Choose Configure Function to create a draft.</td></tr>'}
+      ${filtered.map(fn=>`<tr><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${fn.status !== "Active" ? "disabled" : ""} ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")} (${esc(fn.status || "Draft")})</label> <button type="button" class="button button-small" data-wf-edit-function="${esc(String(fn.id))}">Edit</button></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4">No functions found for this module. Choose Configure Function → Gallery to create an active function.</td></tr>'}
       </tbody></table></div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-close-function>Cancel</button><button type="button" class="button button-primary" data-wf-associate-function>Associate</button></footer>
     </div></div>`;
   };
@@ -151,7 +163,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
       ${actionRows()}<button type="button" class="button button-small" data-wf-open-function>Browse Functions</button><button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
-    return `${functionEditor ? functionEditorDialog() : functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
+    return `${functionEditor ? functionEditorDialog() : functionGallery ? functionGalleryDialog() : functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
@@ -162,7 +174,11 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     </tbody></table></div></section>
     <section class="card settings-section"><h3>Execution history</h3>${activity.length ? activity.map(x=>`<div class="rule-row"><div class="rule-info"><strong>${esc(x.resource)} #${x.record_id}</strong><small>${esc(x.event)} · ${esc(x.status)} · Attempts: ${Number(x.attempts || 0)}${x.next_attempt_at ? " · Retry: "+esc(x.next_attempt_at) : ""}</small>${x.error ? `<small title="${esc(x.error)}">Error: ${esc(x.error)}</small>` : ""}</div>${x.status === "failed" ? `<button class="button button-small" data-wf-retry="${x.id}">Retry</button>` : ""}</div>`).join("") : "<p>No workflow executions yet.</p>"}</section>`;
   async function view() {
-    if (draft) return editor();
+    if (draft) {
+      const functionRecords = await api("/api/platform/functions?limit=100");
+      customFunctions = functionRecords.items || [];
+      return editor();
+    }
     const [records, executions, functionRecords] = await Promise.all([
       api("/api/platform/workflow_rules?limit=100"),
       api("/api/automation/executions?limit=100"),
@@ -244,29 +260,31 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       const method=button.dataset.wfFunctionMethod;
       functionConfiguration=false;
       if(method==="existing"){functionPicker=true;await refresh(root);return;}
-      if(method==="gallery"){
-        const templates=[
-          {name:"Add Follow-up Task",steps:[{type:"create_task",subject:"Follow up with CRM record"}]},
-          {name:"Add Reviewed Tag",steps:[{type:"tag",value:"Reviewed"}]},
-          {name:"Audit Record",steps:[{type:"audit"}]}
-        ];
-        const choice=prompt("Function gallery: enter 1 for Follow-up Task, 2 for Reviewed Tag, or 3 for Audit Record.");
-        if(choice===null){await refresh(root);return;}
-        const selected=templates[Number(choice)-1];
-        if(!selected){toast("Invalid selection","Choose 1, 2, or 3.","error");await refresh(root);return;}
-        try{
-          await api("/api/platform/functions",{method:"POST",body:JSON.stringify({
-            name:selected.name,runtime:"Python",entrypoint:"steps",source:selected.steps,
-            associations:{modules:[draft.module]},status:"Active"
-          })});
-          toast("Gallery function created",selected.name);
-          functionPicker=true;
-        }catch(error){toast("Gallery function failed",error.message,"error");}
-        await refresh(root);return;
-      }
+      if(method==="gallery"){functionGallery=true;functionPicker=false;await refresh(root);return;}
       functionPicker=false;
       functionEditingId=null;functionDraft=null;functionEditor=true;
       await refresh(root);
+    }));
+    el(root,"[data-wf-gallery-close]")?.addEventListener("click",async()=>{
+      functionGallery=false;functionConfiguration=true;await refresh(root);
+    });
+    els(root,"[data-wf-gallery-create]").forEach(button=>button.addEventListener("click",async()=>{
+      const selected=galleryTemplates[Number(button.dataset.wfGalleryCreate)];
+      if(!selected || !draft.module){toast("Choose a module","Select a CRM module first.","error");return;}
+      button.disabled=true;
+      try{
+        const created=await api("/api/platform/functions",{method:"POST",body:JSON.stringify({
+          name:selected.name,runtime:"Python",entrypoint:"steps",source:selected.steps,
+          associations:{modules:[draft.module]},status:"Active"
+        })});
+        if(!created?.id)throw new Error("Function creation returned no identifier");
+        const action=draft.actions.find(item=>item.type==="function");
+        if(action)action.value=String(created.id);
+        else draft.actions.push({type:"function",value:String(created.id)});
+        functionGallery=false;functionPicker=false;functionConfiguration=false;
+        toast("Function ready",selected.name+" was created and associated.");
+        await refresh(root);
+      }catch(error){button.disabled=false;toast("Gallery function failed",error.message,"error");}
     }));
     el(root,"[data-wf-associate-function]")?.addEventListener("click",async()=>{
       const selected=el(root,'input[name="wf-function-choice"]:checked')?.value;
