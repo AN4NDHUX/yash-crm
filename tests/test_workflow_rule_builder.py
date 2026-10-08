@@ -147,3 +147,51 @@ def test_workflow_field_update_cannot_change_tenant_identity():
     assert out["lead_status"] in (200, 201)
     assert out["tenant_unchanged"]
     assert out["blocked"]
+
+
+
+def test_custom_function_executes_field_update_and_blocks_unapproved_steps():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Function Owner', 'organization_name':'Function Test Org',
+            'username':'function.owner', 'email':'function.owner@example.com',
+            'password':'strong-password-123'
+        })
+        function = c.post('/api/platform/functions', json={
+            'name':'Normalize Lead','runtime':'Python','entrypoint':'steps',
+            'source':[{'type':'field_update','field':'company','value':'Normalized Company'}],
+            'status':'Active'
+        })
+        out['function_created'] = function.status_code
+        fn_id = function.json().get('id')
+        rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Apply Normalization','module':'leads','event':'create',
+            'actions':[{'type':'function','value':str(fn_id)}],'status':'Active'
+        })
+        out['rule_created'] = rule.status_code
+        lead = c.post('/api/leads', json={'name':'Example Lead','company':'Original'})
+        out['lead_created'] = lead.status_code
+        out['company'] = c.get('/api/leads/' + str(lead.json()['id'])).json().get('company')
+        executions = c.get('/api/automation/executions').json()['items']
+        out['executed'] = any(e['rule_id'] == rule.json()['id'] and e['status'] == 'completed' for e in executions)
+        bad = c.post('/api/platform/functions', json={
+            'name':'Unsafe Function','runtime':'Python','entrypoint':'steps',
+            'source':[{'type':'function','value':str(fn_id)}], 'status':'Active'
+        })
+        out['bad_created'] = bad.status_code
+        bad_rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Reject Nested','module':'leads','event':'create',
+            'actions':[{'type':'function','value':str(bad.json()['id'])}],'status':'Active'
+        })
+        c.post('/api/leads', json={'name':'Blocked Lead','company':'Original'})
+        statuses = c.get('/api/automation/executions').json()['items']
+        out['rejected'] = any(e['rule_id'] == bad_rule.json()['id'] and e['status'] == 'failed' for e in statuses)
+    """)
+    assert out["function_created"] == 201
+    assert out["rule_created"] == 201
+    assert out["lead_created"] in (200, 201)
+    assert out["company"] == "Normalized Company"
+    assert out["executed"]
+    assert out["bad_created"] == 201
+    assert out["rejected"]
