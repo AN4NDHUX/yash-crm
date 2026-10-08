@@ -1,4 +1,4 @@
-"""Contract checks for a running Yash CRM instance.
+"""Contract checks for a running CONVOSIS CRM instance.
 
 Usage:  YASH_CRM_URL=http://127.0.0.1:8000 python scripts/check_contracts.py
 
@@ -38,7 +38,7 @@ def authenticate() -> None:
     )
     with OPENER.open(request) as response:
         if response.status != 200:
-            raise RuntimeError(f"Yash CRM login failed with HTTP {response.status}")
+            raise RuntimeError(f"CONVOSIS CRM login failed with HTTP {response.status}")
 
 
 def call(method: str, path: str, body: dict | None = None) -> dict:
@@ -199,7 +199,7 @@ def main() -> None:
     authenticate()
     read_checks()
     write_checks()
-    print("Yash CRM contract checks passed")
+    print("CONVOSIS CRM contract checks passed")
 
 
 if __name__ == "__main__":
