@@ -179,12 +179,43 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
     return processed
 
 
+def purge_recycle_bin(limit_per_module: int = 50) -> int:
+    """Periodically remove expired archived CRM records without crossing tenants.
+
+    Database FK-protected records are skipped rather than cascading into live data.
+    """
+    from app.models import PlatformRecord
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    removed = 0
+    models = list(dict.fromkeys(
+        [model for model in RESOURCE_MAP.values()
+         if hasattr(model, "archived") and hasattr(model, "updated_at")] + [PlatformRecord]
+    ))
+    with SessionLocal() as db:
+        for model in models:
+            rows = db.scalars(select(model).where(
+                model.archived == True, model.updated_at < cutoff
+            ).limit(limit_per_module)).all()
+            for row in rows:
+                try:
+                    with db.begin_nested():
+                        db.delete(row)
+                        db.flush()
+                    removed += 1
+                except Exception:
+                    log.warning("Recycle-bin purge skipped FK-protected %s #%s",
+                                model.__tablename__, row.id)
+        db.commit()
+    return removed
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     interval = max(5, min(300, int(os.getenv("WORKFLOW_POLL_SECONDS", "15"))))
     while True:
         try:
             process_due()
+            purge_recycle_bin()
         except Exception:
             log.exception("Workflow poll failed")
         time.sleep(interval)
