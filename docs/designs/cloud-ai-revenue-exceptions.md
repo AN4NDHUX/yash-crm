@@ -8,7 +8,7 @@ Mode: Startup
 
 ## Problem Statement
 
-Yash CRM should replace manual sales reporting with one auditable view of the complete Lead -> Visit -> Quotation -> Invoice -> Payment -> Incentive journey. Management must be able to see who is performing, who is close to target, where leads are stuck, which quotations need follow-up, which invoices remain unpaid, and who has earned an incentive. The AI layer must make this information easier to understand and act on without becoming the source of financial truth.
+CONVOSIS CRM should replace manual sales reporting with one auditable view of the complete Lead -> Visit -> Quotation -> Invoice -> Payment -> Incentive journey. Management must be able to see who is performing, who is close to target, where leads are stuck, which quotations need follow-up, which invoices remain unpaid, and who has earned an incentive. The AI layer must make this information easier to understand and act on without becoming the source of financial truth.
 
 ## Demand Evidence
 
