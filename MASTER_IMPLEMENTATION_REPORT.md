@@ -1,4 +1,4 @@
-# Yash CRM Master Prompt Implementation Report
+# CONVOSIS CRM Master Prompt Implementation Report
 
 Version: 0.2.0.0
 Date: 2026-10-05
