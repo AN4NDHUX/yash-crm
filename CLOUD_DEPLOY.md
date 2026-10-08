@@ -1,6 +1,6 @@
-# Deploy Yash CRM on Railway
+# Deploy CONVOSIS CRM on Railway
 
-Yash CRM is deployed as a Dockerized FastAPI service backed by PostgreSQL. The browser uses database-backed user sessions; production HTTP Basic authentication is disabled.
+CONVOSIS CRM is deployed as a Dockerized FastAPI service backed by PostgreSQL. The browser uses database-backed user sessions; production HTTP Basic authentication is disabled.
 
 ## 1. Railway services
 
