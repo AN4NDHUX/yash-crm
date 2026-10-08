@@ -69,6 +69,7 @@ def test_browser_signup_login_and_module_navigation():
 
                 page.goto(base + "/signup")
                 page.fill("#name", "Browser User")
+                page.fill("#organization-name", "Browser Test Organization")
                 page.fill("#username", "browser.user")
                 page.fill("#signup-email", "browser.user@example.com")
                 page.fill("#password", "browser-password-123")
