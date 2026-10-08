@@ -232,3 +232,59 @@ def test_workflow_rule_edit_preserves_conditions_and_updates_trigger():
     assert out['criteria']['logic'] == 'OR'
     assert len(out['criteria']['conditions']) == 2
     assert out['action'] == 'Edited'
+
+
+def test_field_change_trigger_only_runs_when_monitored_field_changes():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Field Change Owner','organization_name':'Changed Field Org',
+            'username':'field.change.owner','email':'field.change@example.com',
+            'password':'strong-password-123'
+        })
+        rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Company Change','module':'leads','event':'field_change',
+            'trigger_field':'company', 'actions':[{'type':'audit','value':'Company changed'}],
+            'status':'Active'
+        })
+        out['rule_created'] = rule.status_code
+        lead = c.post('/api/leads', json={'name':'Trigger Lead','company':'One'})
+        lead_id = lead.json()['id']
+        c.patch('/api/leads/' + str(lead_id), json={'phone':'12345'})
+        before = c.get('/api/automation/executions').json()['items']
+        out['before_count'] = len([x for x in before if x['rule_id'] == rule.json()['id']])
+        c.patch('/api/leads/' + str(lead_id), json={'company':'Two'})
+        after = c.get('/api/automation/executions').json()['items']
+        out['after_count'] = len([x for x in after if x['rule_id'] == rule.json()['id']])
+    """)
+    assert out['rule_created'] == 201
+    assert out['before_count'] == 0
+    assert out['after_count'] == 1
+
+
+def test_scheduled_lead_workflow_blocks_early_execution():
+    out = app_scenario("""
+    from datetime import datetime, timedelta
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Scheduled Owner','organization_name':'Scheduled Org',
+            'username':'scheduled.owner','email':'scheduled.owner@example.com',
+            'password':'strong-password-123'
+        })
+        future = (datetime.utcnow() + timedelta(days=1)).isoformat()
+        rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Follow-up Tomorrow','module':'leads','event':'create',
+            'scheduled_for':future,
+            'actions':[{'type':'create_task','value':'Scheduled follow-up'}],
+            'status':'Active'
+        })
+        lead = c.post('/api/leads', json={'name':'Scheduled Lead','company':'Scheduled Co'})
+        executions = c.get('/api/automation/executions').json()['items']
+        selected = [x for x in executions if x['rule_id'] == rule.json()['id']]
+        out['queued'] = len(selected) == 1 and selected[0]['status'] == 'queued'
+        out['early_status'] = c.post('/api/automation/executions/' + str(selected[0]['id']) + '/run').status_code
+        out['lead_status'] = lead.status_code
+    """)
+    assert out['lead_status'] in (200, 201)
+    assert out['queued']
+    assert out['early_status'] == 409
