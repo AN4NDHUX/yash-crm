@@ -4854,9 +4854,39 @@ def export_audit_csv(resource: str | None = None, action: str | None = None, act
     return StreamingResponse(iter([content]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="yash-crm-audit-log.csv"'})
 
 
+def _purge_expired_recycle_records(db: Session) -> int:
+    """Purge archived records after 30 days; leave FK-protected records for safe review."""
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    removed = 0
+    models = [(resource, model) for resource, model in RESOURCE_MAP.items() if hasattr(model, "archived") and hasattr(model, "updated_at")]
+    models.append(("platform", PlatformRecord))
+    for _, model in models:
+        rows = db.scalars(select(model).where(model.archived == True, model.updated_at < cutoff).limit(100)).all()
+        for row in rows:
+            try:
+                with db.begin_nested():
+                    db.delete(row)
+                    db.flush()
+                removed += 1
+            except Exception:
+                # Dependency-linked records must never be corrupted by garbage collection.
+                continue
+    return removed
+
+
+@app.post("/api/administration/recycle-bin/purge-expired")
+def purge_expired_recycle_records(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
+    count = _purge_expired_recycle_records(db)
+    db.commit()
+    return {"purged": count, "retention_days": 30}
+
+
 @app.get("/api/administration/recycle-bin")
 def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     _require_organization_admin(db, actor)
+    _purge_expired_recycle_records(db)
+    db.commit()
     items: list[dict[str, Any]] = []
     for resource, model in RESOURCE_MAP.items():
         if not hasattr(model, "archived"):
