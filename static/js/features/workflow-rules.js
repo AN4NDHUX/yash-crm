@@ -46,8 +46,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let listQuery = "";
   let moduleFilter = "all";
   const selectedRuleIds = new Set();
-  const el = (root, selector) => root.querySelector(selector);
-  const els = (root, selector) => [...root.querySelectorAll(selector)];
+  const el = (root, selector) => root.querySelector(selector) || document.querySelector("[data-wf-code-portal] "+selector);
+  const els = (root, selector) => [...root.querySelectorAll(selector), ...document.querySelectorAll("[data-wf-code-portal] "+selector)];
   const moduleOptions = () => {
     // Restrict workflow creation to the primary CRM business modules.
     // Do not expose administration, billing, or platform configuration resources.
@@ -105,7 +105,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.filter(fn=>fn.status === "Active" && (!Array.isArray(fn.associations?.modules) || !fn.associations.modules.length || fn.associations.modules.includes(draft.module))).map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
-  const functionEditorDialog = () => `<div class="wf-rule-overlay" style="position:fixed;inset:0;z-index:9999;padding:0;background:#080e1b">
+  const functionEditorDialog = () => `<div class="wf-rule-overlay" data-wf-code-portal style="position:fixed;inset:0;z-index:9999;padding:0;background:#080e1b">
     <div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Python function editor" style="position:absolute;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border-radius:0;display:flex;flex-direction:column;overflow:hidden;background:#101827;color:#e2e8f0">
       <header style="padding:18px 24px;background:#172338;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:16px">
         <div><h2 style="color:#f8fafc;margin:0">${functionEditingId ? "Edit" : "Create"} Python Function</h2><p style="color:#94a3b8;margin:6px 0 0">Python draft editor · Script execution is not enabled</p></div>
