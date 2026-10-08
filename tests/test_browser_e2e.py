@@ -116,6 +116,7 @@ def test_browser_signup_login_and_module_navigation():
                     row => row.name === 'Browser Lead Workflow' && row.event === 'create_or_edit'
                   );
                 }""")
+                page.locator("[data-wf-edit]").first.wait_for(state="visible", timeout=15000)
                 assert page.locator("[data-wf-edit]").count() >= 1
 
                 for href in ("/leads", "/deals", "/quotes", "/reports", "/setup"):
