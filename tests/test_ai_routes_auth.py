@@ -264,7 +264,7 @@ class AccountSessionTests(unittest.TestCase):
             """
             with TestClient(main.app, follow_redirects=False) as c:
                 password = 'account-' + 'safe-' + '12345'
-                created = c.post('/api/auth/signup', json={'name':'Account User','email':'account.user@example.com','password':password})
+                created = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 'name':'Account User','email':'account.user@example.com','password':password})
                 out['created'] = created.status_code
                 out['secret_exposed'] = 'password_hash' in created.json().get('user', {})
                 out['session'] = c.get('/api/auth/session').status_code
