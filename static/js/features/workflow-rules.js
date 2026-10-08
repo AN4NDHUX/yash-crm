@@ -29,6 +29,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let rules = [];
   let activity = [];
   let customFunctions = [];
+  let listQuery = "";
+  let moduleFilter = "all";
   const el = (root, selector) => root.querySelector(selector);
   const els = (root, selector) => [...root.querySelectorAll(selector)];
   const moduleOptions = () => {
@@ -72,7 +74,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     };
   };
   const stepLabels = ["Rule details","WHEN","CONDITION","ACTIONS"];
-  const conditionRows = () => draft.conditions.map((item,index) => `<div class="wf-condition-row" data-condition-row="${index}">
+  const conditionRows = () => draft.conditions.map((item,index) => `<div class="wf-condition-row" data-condition-row="${index}"><input class="field-input wf-field-search" data-wf-field-search="${index}" aria-label="Search condition fields" placeholder="Search fields…" autocomplete="off" />
     <span class="wf-condition-number">${index+1}</span>
     <select class="field-select" data-wf-field="${index}" aria-label="Condition field">${opts([["","Select field"],...fieldsFor()],item.field,esc)}</select>
     <select class="field-select" data-wf-operator="${index}" aria-label="Condition operator">${opts(operators,item.operator,esc)}</select>
@@ -110,9 +112,9 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
   const list = () => `<section class="card settings-section wf-list"><div class="settings-section-head"><h2>Workflow Rules</h2><p>Automate CRM records based on event triggers, conditions and actions.</p></div>
-    <div class="wf-list-actions"><button class="button button-primary" data-wf-create>Create Rule</button></div>
+    <div class="wf-list-actions"><label class="wf-list-search"><span>Search rules</span><input class="field-input" data-wf-search placeholder="Search workflow rules" value="${esc(listQuery)}"/></label><label class="wf-list-filter"><span>Module</span><select class="field-select" data-wf-module-filter>${opts([["all","All modules"],...moduleOptions()],moduleFilter,esc)}</select></label><button class="button button-primary" data-wf-create>Create Rule</button></div>
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Rule Name</th><th>Module</th><th>Execute On</th><th>Actions</th><th>Modified On</th><th>Status</th></tr></thead><tbody>
-    ${rules.map(rule=>`<tr><td><button class="wf-rule-link" data-wf-edit="${rule.id}">${esc(rule.name || rule.title)}</button></td><td>${esc(rule.module || "")}</td><td>${esc(rule.event === "create" ? "Create" : rule.event === "edit" || rule.event === "update" ? "Edit" : "Create or Edit")}</td><td>${Array.isArray(rule.actions) ? rule.actions.length : 1}</td><td>${esc(rule.updated_at || rule.created_at || "—")}</td><td><label class="wf-status"><input type="checkbox" data-wf-toggle="${rule.id}" ${rule.status === "Active" ? "checked" : ""} aria-label="Enable ${esc(rule.name || rule.title)}"/><span>${rule.status === "Active" ? "Active" : "Inactive"}</span></label></td></tr>`).join("") || '<tr><td colspan="6">No workflow rules have been created.</td></tr>'}
+    ${rules.filter(rule=>(moduleFilter === "all" || rule.module === moduleFilter) && (!listQuery || String(rule.name || rule.title || "").toLowerCase().includes(listQuery.toLowerCase()))).map(rule=>`<tr><td><button class="wf-rule-link" data-wf-edit="${rule.id}">${esc(rule.name || rule.title)}</button></td><td>${esc(rule.module || "")}</td><td>${esc(rule.event === "create" ? "Create" : rule.event === "edit" || rule.event === "update" ? "Edit" : "Create or Edit")}</td><td>${Array.isArray(rule.actions) ? rule.actions.length : 1}</td><td>${esc(rule.updated_at || rule.created_at || "—")}</td><td><label class="wf-status"><input type="checkbox" data-wf-toggle="${rule.id}" ${rule.status === "Active" ? "checked" : ""} aria-label="Enable ${esc(rule.name || rule.title)}"/><span>${rule.status === "Active" ? "Active" : "Inactive"}</span></label></td></tr>`).join("") || '<tr><td colspan="6">No workflow rules have been created.</td></tr>'}
     </tbody></table></div></section>
     <section class="card settings-section"><h3>Execution history</h3>${activity.length ? activity.map(x=>`<div class="rule-row"><div class="rule-info"><strong>${esc(x.resource)} #${x.record_id}</strong><small>${esc(x.event)} · ${esc(x.status)}</small></div></div>`).join("") : "<p>No workflow executions yet.</p>"}</section>`;
   async function view() {
@@ -158,6 +160,20 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     return "";
   }
   function bind(root) {
+    el(root,"[data-wf-search]")?.addEventListener("input",event=>{
+      listQuery=event.target.value;
+      els(root,"[data-wf-edit]").forEach(button=>{
+        const row=button.closest("tr");
+        if(row) row.hidden=!(String(button.textContent || "").toLowerCase().includes(listQuery.toLowerCase()) &&
+          (moduleFilter==="all" || rules.find(rule=>String(rule.id)===button.dataset.wfEdit)?.module===moduleFilter));
+      });
+    });
+    el(root,"[data-wf-module-filter]")?.addEventListener("change",async event=>{moduleFilter=event.target.value;await refresh(root);});
+    els(root,"[data-wf-field-search]").forEach(input=>input.addEventListener("input",event=>{
+      const select=el(root,'[data-wf-field="'+input.dataset.wfFieldSearch+'"]');
+      const query=event.target.value.toLowerCase();
+      [...(select?.options || [])].forEach(option=>{option.hidden=!!query && !option.textContent.toLowerCase().includes(query) && option.value!==select.value;});
+    }));
     el(root,"[data-wf-create]")?.addEventListener("click",async()=>{draft=draftRule();editingId=null;step=0;await refresh(root);});
     els(root,"[data-wf-edit]").forEach(b=>b.addEventListener("click",async()=>{const found=rules.find(r=>String(r.id)===b.dataset.wfEdit);if(!found)return;draft=asDraft(found);editingId=found.id;step=0;await refresh(root);}));
     els(root,"[data-wf-toggle]").forEach(b=>b.addEventListener("change",async()=>{try{await api("/api/platform/workflow_rules/"+b.dataset.wfToggle,{method:"PATCH",body:JSON.stringify({status:b.checked?"Active":"Inactive"})});toast("Workflow updated","Rule status saved.");await refresh(root);}catch(error){toast("Workflow update failed",error.message,"error");b.checked=!b.checked;}}));
