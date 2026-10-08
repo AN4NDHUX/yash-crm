@@ -105,15 +105,27 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.filter(fn=>fn.status === "Active" && (!Array.isArray(fn.associations?.modules) || !fn.associations.modules.length || fn.associations.modules.includes(draft.module))).map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
-  const functionEditorDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Edit Python Function" style="max-width:900px;width:min(94vw,900px)">
-    <header><h2>${functionEditingId ? "Edit" : "Create"} Python Function</h2><p>Save a function definition for this organization. Script execution is not enabled.</p></header>
-    <div class="form-grid" style="padding:16px">
-      <div class="field"><label>Function name</label><input class="field-input" data-wf-new-function-name maxlength="160" required value="${esc(functionDraft?.name || "")}"/></div>
-      <div class="field"><label>Entrypoint</label><input class="field-input" data-wf-new-function-entry value="${esc(functionDraft?.entrypoint || "main")}" maxlength="80"/></div>
-      <div class="field full"><label>Python source</label><textarea class="field-input" data-wf-new-function-source rows="13" spellcheck="false" placeholder="def main(record):&#10;    return {&quot;record_id&quot;: record.get(&quot;id&quot;)}">${esc(functionDraft?.code || "")}</textarea></div>
-    </div>
-    <footer class="wf-editor-footer"><button type="button" class="button" data-wf-editor-close>Cancel</button><button type="button" class="button button-primary" data-wf-editor-save>Save Draft</button></footer>
-  </div></div>`;
+  const functionEditorDialog = () => `<div class="wf-rule-overlay" style="position:fixed;inset:0;z-index:9999;padding:0;background:#080e1b">
+    <div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Python function editor" style="position:absolute;inset:0;width:100vw;max-width:none;height:100dvh;max-height:none;margin:0;border-radius:0;display:flex;flex-direction:column;overflow:hidden;background:#101827;color:#e2e8f0">
+      <header style="padding:18px 24px;background:#172338;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:16px">
+        <div><h2 style="color:#f8fafc;margin:0">${functionEditingId ? "Edit" : "Create"} Python Function</h2><p style="color:#94a3b8;margin:6px 0 0">Python draft editor · Script execution is not enabled</p></div>
+        <button type="button" class="button" data-wf-editor-close aria-label="Close editor">Close</button>
+      </header>
+      <div style="display:grid;grid-template-columns:minmax(180px,2fr) minmax(140px,1fr);gap:16px;padding:16px 24px;background:#101827">
+        <label style="color:#cbd5e1">Function name<input class="field-input" data-wf-new-function-name maxlength="160" required value="${esc(functionDraft?.name || "")}" style="margin-top:6px;background:#1e293b;color:#f8fafc;border:1px solid #475569"/></label>
+        <label style="color:#cbd5e1">Entrypoint<input class="field-input" data-wf-new-function-entry value="${esc(functionDraft?.entrypoint || "main")}" maxlength="80" style="margin-top:6px;background:#1e293b;color:#f8fafc;border:1px solid #475569"/></label>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 24px;background:#1e293b;border-top:1px solid #334155;border-bottom:1px solid #334155;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px">
+        <span>function.py <span style="color:#64748b">· Python 3 · Draft only</span></span><span data-wf-editor-position>Ln 1, Col 1</span>
+      </div>
+      <div style="flex:1;min-height:0;display:flex;background:#0b1220;overflow:hidden">
+        <pre aria-hidden="true" data-wf-editor-lines style="margin:0;padding:18px 12px 18px 20px;min-width:55px;overflow:hidden;text-align:right;line-height:1.6;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;color:#64748b;user-select:none;border-right:1px solid #253247">1</pre>
+        <textarea data-wf-new-function-source aria-label="Python source code" spellcheck="false" wrap="off" placeholder="def main(record):&#10;    return {&quot;record_id&quot;: record.get(&quot;id&quot;)}" style="flex:1;width:100%;height:100%;resize:none;border:0;outline:none;border-radius:0;background:#0b1220;color:#dbeafe;padding:18px 16px;line-height:1.6;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4;white-space:pre;overflow:auto">${esc(functionDraft?.code || "")}</textarea>
+      </div>
+      <footer class="wf-editor-footer" style="margin:0;padding:14px 24px;background:#172338;border-top:1px solid #334155;display:flex;justify-content:flex-end;gap:12px">
+        <button type="button" class="button" data-wf-editor-close>Cancel</button><button type="button" class="button button-primary" data-wf-editor-save>Save Draft</button>
+      </footer>
+    </div></div>`;
   const galleryTemplates = [
     {name:"Add Follow-up Task",description:"Create a follow-up activity for the matched record.",steps:[{type:"create_task",subject:"Follow up with CRM record"}]},
     {name:"Add Reviewed Tag",description:"Mark the matched record as reviewed.",steps:[{type:"tag",value:"Reviewed"}]},
@@ -279,6 +291,32 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       }catch(error){toast("Function update failed",error.message,"error");}
     });
     el(root,"[data-wf-editor-close]")?.addEventListener("click",async()=>{functionEditor=false;functionPicker=true;await refresh(root);});
+    const codeInput=el(root,"[data-wf-new-function-source]");
+    if(codeInput){
+      const gutter=el(root,"[data-wf-editor-lines]");
+      const position=el(root,"[data-wf-editor-position]");
+      const updateCodeUI=()=>{
+        const text=codeInput.value;
+        const count=Math.max(1,text.split("\n").length);
+        gutter.textContent=Array.from({length:count},(_,i)=>i+1).join("\n");
+        gutter.scrollTop=codeInput.scrollTop;
+        const before=text.slice(0,codeInput.selectionStart).split("\n");
+        position.textContent="Ln "+before.length+", Col "+(before[before.length-1].length+1);
+      };
+      codeInput.addEventListener("input",updateCodeUI);
+      codeInput.addEventListener("click",updateCodeUI);
+      codeInput.addEventListener("keyup",updateCodeUI);
+      codeInput.addEventListener("scroll",()=>{gutter.scrollTop=codeInput.scrollTop;});
+      codeInput.addEventListener("keydown",event=>{
+        if(event.key==="Tab"){
+          event.preventDefault();
+          const start=codeInput.selectionStart,end=codeInput.selectionEnd;
+          codeInput.setRangeText("    ",start,end,"end");
+          updateCodeUI();
+        }
+      });
+      updateCodeUI();
+    }
     el(root,"[data-wf-editor-save]")?.addEventListener("click",async()=>{
       const name=el(root,"[data-wf-new-function-name]")?.value.trim();
       const entrypoint=el(root,"[data-wf-new-function-entry]")?.value.trim();
