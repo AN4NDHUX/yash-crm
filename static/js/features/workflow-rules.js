@@ -106,12 +106,12 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
   const functionEditorDialog = () => `<div class="wf-rule-overlay" style="position:fixed;inset:0;z-index:9999;padding:0;background:#080e1b">
-    <div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Python function editor" style="position:absolute;inset:0;width:100vw;max-width:none;height:100dvh;max-height:none;margin:0;border-radius:0;display:flex;flex-direction:column;overflow:hidden;background:#101827;color:#e2e8f0">
+    <div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Python function editor" style="position:absolute;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border-radius:0;display:flex;flex-direction:column;overflow:hidden;background:#101827;color:#e2e8f0">
       <header style="padding:18px 24px;background:#172338;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:16px">
         <div><h2 style="color:#f8fafc;margin:0">${functionEditingId ? "Edit" : "Create"} Python Function</h2><p style="color:#94a3b8;margin:6px 0 0">Python draft editor · Script execution is not enabled</p></div>
         <button type="button" class="button" data-wf-editor-close aria-label="Close editor">Close</button>
       </header>
-      <div style="display:grid;grid-template-columns:minmax(180px,2fr) minmax(140px,1fr);gap:16px;padding:16px 24px;background:#101827">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;padding:16px 24px;background:#101827">
         <label style="color:#cbd5e1">Function name<input class="field-input" data-wf-new-function-name maxlength="160" required value="${esc(functionDraft?.name || "")}" style="margin-top:6px;background:#1e293b;color:#f8fafc;border:1px solid #475569"/></label>
         <label style="color:#cbd5e1">Entrypoint<input class="field-input" data-wf-new-function-entry value="${esc(functionDraft?.entrypoint || "main")}" maxlength="80" style="margin-top:6px;background:#1e293b;color:#f8fafc;border:1px solid #475569"/></label>
       </div>
