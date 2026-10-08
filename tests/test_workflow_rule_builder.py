@@ -50,10 +50,10 @@ def app_scenario(body: str) -> dict:
 
 def test_zoho_style_nested_condition_operators():
     out = app_scenario("""
-    source = {'company':'example Acme','amount':1500,'email':'sales@example.com'}
+    source = {'website':'https://example.com','amount':1500,'email':'sales@example.com'}
     out['matching'] = workflow_criteria_match(source, {
         'logic':'AND','conditions':[
-            {'field':'company','operator':'contains','value':'example'},
+            {'field':'website','operator':'contains','value':'example'},
             {'field':'website','operator':'starts_with','value':'https://'},
             {'field':'website','operator':'ends_with','value':'.com'},
             {'field':'email','operator':'does_not_contain','value':'other'},
@@ -85,7 +85,7 @@ def test_workflow_rule_builder_persists_trigger_and_runs_on_create_and_edit():
             'description':'Notify CRM on matching website',
             'module':'leads',
             'event':'create_or_edit',
-            'criteria':{'logic':'AND','conditions':[{'field':'website','operator':'contains','value':'example'}]},
+            'criteria':{'logic':'AND','conditions':[{'field':'company','operator':'contains','value':'example'}]},
             'actions':[{'type':'audit','value':'Website qualified'}],
             'status':'Active'
         }
@@ -95,8 +95,7 @@ def test_workflow_rule_builder_persists_trigger_and_runs_on_create_and_edit():
         out['saved_description'] = added.json().get('description')
         out['stored_actions'] = added.json().get('actions')
         created = c.post('/api/leads', json={
-            'name':'Workflow Lead', 'company':'Acme',
-            'website':'https://example.com'
+            'name':'Workflow Lead', 'company':'example Acme'
         })
         out['lead_create'] = created.status_code
         lead_id = created.json().get('id')
