@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#071a4a" />
-  <title>Yash CRM — Sign in</title>
+  <title>CONVOSIS CRM — Sign in</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -203,14 +203,14 @@
 </head>
 <body>
   <main class="auth-shell">
-    <section class="hero" aria-label="Yash CRM introduction">
+    <section class="hero" aria-label="CONVOSIS CRM introduction">
       <div class="hero-gloss" aria-hidden="true"></div>
       <div class="wave one" aria-hidden="true"></div>
       <div class="wave two" aria-hidden="true"></div>
       <div class="wave three" aria-hidden="true"></div>
 
       <div class="brand-row">
-        <div class="brand"><span class="mark" aria-hidden="true"></span><span>Yash CRM</span></div>
+        <div class="brand"><span class="mark" aria-hidden="true"></span><span>CONVOSIS CRM</span></div>
       </div>
 
       <div class="hero-copy">
@@ -238,7 +238,7 @@
         <h2 class="forgot-only">Reset password</h2>
         <h2 class="reset-only">Choose a new password</h2>
 
-        <p class="sub signin-only">Continue to your private Yash CRM workspace using your username, email, or phone number.</p>
+        <p class="sub signin-only">Continue to your private CONVOSIS CRM workspace using your username, email, or phone number.</p>
         <p class="sub signup-only">Every account starts with a private, empty CRM workspace. Existing data is restored only when you sign back into the same account.</p>
         <p class="sub forgot-only">Enter your username, email, or phone number. If the account exists, reset instructions will be sent to its registered channels.</p>
         <p class="sub reset-only">Use a new password with at least 8 characters.</p>
@@ -279,14 +279,14 @@
 
           <div class="row signin-only"><a href="/forgot-password">Forgot password?</a><a href="/signup">Create an account</a></div>
           <button class="submit" type="submit" id="submit-button">
-            <span class="signin-only">Sign in to Yash CRM</span>
+            <span class="signin-only">Sign in to CONVOSIS CRM</span>
             <span class="signup-only">Create my account</span>
             <span class="forgot-only">Send reset instructions</span>
             <span class="reset-only">Save new password</span>
           </button>
         </form>
 
-        <div class="switch signin-only">New to Yash CRM? <a href="/signup">Sign up</a></div>
+        <div class="switch signin-only">New to CONVOSIS CRM? <a href="/signup">Sign up</a></div>
         <div class="switch signup-only">Already have an account? <a href="/login">Sign in</a></div>
         <div class="switch forgot-only"><a href="/login">Back to sign in</a></div>
         <div class="switch reset-only"><a href="/login">Back to sign in</a></div>
@@ -305,10 +305,10 @@
 
   if (mode !== "signin") document.body.classList.add(mode);
   document.title = ({
-    signin:"Yash CRM — Sign in",
-    signup:"Yash CRM — Create account",
-    forgot:"Yash CRM — Reset password",
-    reset:"Yash CRM — Choose new password"
+    signin:"CONVOSIS CRM — Sign in",
+    signup:"CONVOSIS CRM — Create account",
+    forgot:"CONVOSIS CRM — Reset password",
+    reset:"CONVOSIS CRM — Choose new password"
   })[mode];
 
   const form = document.getElementById("auth-form");
