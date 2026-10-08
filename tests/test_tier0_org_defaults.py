@@ -136,3 +136,54 @@ def test_organization_rename_requires_membership_and_preserves_tenant_identity()
     assert out['other_org_name'] == 'Original Workspace B'
     assert out['other_org_id'] != out['original_id']
     assert out['unauthorized_status'] == 401
+
+
+def test_ownership_transfer_requires_current_owner_and_same_tenant_member():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Transfer Owner', 'organization_name':'Transfer Workspace',
+            'username':'transfer.owner', 'email':'transfer.owner@example.com',
+            'password':'strong-password-123'
+        })
+        original_org = c.get('/api/organization').json()['id']
+        with main.SessionLocal() as db:
+            original_user = db.scalar(main.select(main.User).where(main.User.email == 'transfer.owner@example.com'))
+            original_id = original_user.id
+        invite = c.post('/api/organization/invitations', json={
+            'email':'transfer.member@example.com', 'membership_role':'Member'
+        })
+        token = invite.json()['invitation_token']
+        out['missing_target'] = c.post('/api/organization/transfer-ownership', json={'user_id':999999}).status_code
+        c.post('/api/auth/logout')
+        c.post('/api/auth/signup', json={
+            'name':'Transfer Member', 'username':'transfer.member',
+            'email':'transfer.member@example.com',
+            'password':'strong-password-123', 'invitation_token':token
+        })
+        with main.SessionLocal() as db:
+            member = db.scalar(main.select(main.User).where(main.User.email == 'transfer.member@example.com'))
+            member_id = member.id
+        out['member_forbidden'] = c.post('/api/organization/transfer-ownership', json={'user_id':original_id}).status_code
+        c.post('/api/auth/logout')
+        c.post('/api/auth/login', json={'identifier':'transfer.owner','password':'strong-password-123'})
+        changed = c.post('/api/organization/transfer-ownership', json={'user_id':member_id})
+        out['transfer_status'] = changed.status_code
+        out['new_owner_id'] = changed.json().get('owner_user_id')
+        out['old_owner_role'] = c.get('/api/organization').json()['membership_role']
+        out['repeat_forbidden'] = c.post('/api/organization/transfer-ownership', json={'user_id':member_id}).status_code
+        with main.SessionLocal() as db:
+            out['persisted_owner'] = db.get(main.Organization, original_org).owner_user_id
+        c.post('/api/auth/logout')
+        c.post('/api/auth/login', json={'identifier':'transfer.member','password':'strong-password-123'})
+        out['new_owner_role'] = c.get('/api/organization').json()['membership_role']
+        out['organization_unchanged'] = c.get('/api/organization').json()['id'] == original_org
+    """)
+    assert out['missing_target'] == 404
+    assert out['member_forbidden'] == 403
+    assert out['transfer_status'] == 200
+    assert out['new_owner_id'] == out['persisted_owner']
+    assert out['old_owner_role'] == 'Admin'
+    assert out['new_owner_role'] == 'Owner'
+    assert out['organization_unchanged']
+    assert out['repeat_forbidden'] == 403
