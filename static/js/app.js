@@ -328,7 +328,7 @@ async function renderRoute() {
       const catalogReady = await ensurePlatformCatalog();
       const resource = parts[0];
       if (!catalogReady || !state.platformCatalog.resources[resource]) {
-        content.innerHTML = `<div class="card empty-state"><span class="empty-icon">!</span><h3>${esc(titleCase(resource))} is temporarily unavailable</h3><p>Yash CRM could not load the module catalog. Please retry without leaving this module.</p><div style="margin-top:16px"><button class="button button-primary" data-retry>Retry module</button></div></div>`;
+        content.innerHTML = `<div class="card empty-state"><span class="empty-icon">!</span><h3>${esc(titleCase(resource))} is temporarily unavailable</h3><p>CONVOSIS CRM could not load the module catalog. Please retry without leaving this module.</p><div style="margin-top:16px"><button class="button button-primary" data-retry>Retry module</button></div></div>`;
         return;
       }
       setBreadcrumb(state.platformCatalog.resources[resource].label);
@@ -372,7 +372,7 @@ async function renderRoute() {
 async function teamspacesView() {
   const data = await api("/api/teamspaces");
   const items = data.items || [];
-  return `${pageHeader("Workspace", "Teamspaces", "Organize modules, people, and work around the teams that use Yash CRM.")}
+  return `${pageHeader("Workspace", "Teamspaces", "Organize modules, people, and work around the teams that use CONVOSIS CRM.")}
     <div class="teamspaces-layout">
       <section class="card settings-section"><div class="settings-section-head"><h2>Create a teamspace</h2><p>Give a group a focused workspace without changing the underlying CRM records.</p></div>
         <form data-teamspace-form class="settings-form"><div class="form-grid"><div class="field"><label>Name</label><input class="field-input" name="name" required placeholder="Revenue team" /></div><div class="field"><label>Icon</label><input class="field-input" name="icon" value="◈" maxlength="4" /></div><div class="field field-full"><label>Description</label><textarea class="field-input" name="description" rows="3" placeholder="What this teamspace is for"></textarea></div></div><div class="form-actions"><button class="button button-primary" type="submit">Create teamspace</button></div></form>
