@@ -4448,15 +4448,27 @@ def run_queued_workflow(execution_id: int, db: Session = Depends(get_db), actor:
         return {"id": execution.id, "status": execution.status, "duplicate": True}
     if execution.status not in {"queued", "failed"}:
         raise HTTPException(409, "Workflow execution is already running")
-    record = db.get(PlatformRecord, execution.record_id)
-    if record is None or record.archived:
+    model = RESOURCE_MAP.get(execution.resource)
+    if model is None:
+        record = db.scalar(select(PlatformRecord).where(
+            PlatformRecord.id == execution.record_id,
+            PlatformRecord.resource == execution.resource,
+            PlatformRecord.archived == False,
+        ))
+    else:
+        record = db.get(model, execution.record_id)
+    if record is None or getattr(record, "archived", False):
         execution.status = "failed"
         execution.error = "Source record no longer exists"
         db.commit()
         raise HTTPException(409, "The workflow source record no longer exists")
+    if not can_access_record(db, execution.resource, record, actor, "write"):
+        raise HTTPException(404, "Workflow execution not found")
+    if execution.scheduled_for and execution.scheduled_for > datetime.utcnow():
+        raise HTTPException(409, "Scheduled workflow is not due yet")
     try:
         for action in execution.actions or []:
-            _execute_workflow_action(db, action, execution.resource, record, {**(record.data or {}), "id": record.id, "name": record.title})
+            _execute_workflow_action(db, action, execution.resource, record, ({**(record.data or {}), "id": record.id, "name": record.title} if isinstance(record, PlatformRecord) else serialize(record, db, actor)))
         execution.status = "completed"
         execution.error = None
         execution.completed_at = datetime.utcnow()
