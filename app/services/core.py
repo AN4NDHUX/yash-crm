@@ -534,10 +534,16 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
         if configured not in aliases | {"all", "*"}:
             continue
         trigger = str(config.get("event") or "create_or_edit").lower()
-        allowed_events = {"create", "create_or_edit", "edit", "update"}
+        allowed_events = {"create", "create_or_edit", "edit", "update", "field_change"}
         if trigger not in allowed_events:
             continue
-        if trigger != "create_or_edit" and not (trigger == event or (trigger == "edit" and event == "update")):
+        if trigger == "field_change":
+            watched = str(config.get("trigger_field") or "").strip()
+            if event != "update" or not watched or before_values is None:
+                continue
+            if watched not in values or before_values.get(watched) == values.get(watched):
+                continue
+        elif trigger != "create_or_edit" and not (trigger == event or (trigger == "edit" and event == "update")):
             continue
         criteria = config.get("criteria") or ({"field": config.get("criteria_field"), "operator": "equals", "value": config.get("criteria_value")} if config.get("criteria_field") else None)
         criteria_values = {**(before_values or {}), **values}
