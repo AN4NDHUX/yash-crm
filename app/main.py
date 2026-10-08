@@ -2569,27 +2569,10 @@ def workflow_execution_history(status: str | None = None, limit: int = Query(100
 
 @app.post("/api/automation/workflows/run-due")
 def run_due_workflows(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
-    if str(actor.role or "").lower() != "administrator":
-        raise HTTPException(403, "Administrator access is required")
-    now = datetime.utcnow()
-    rows = db.scalars(select(WorkflowExecution).where(WorkflowExecution.status == "queued", or_(WorkflowExecution.scheduled_for == None, WorkflowExecution.scheduled_for <= now)).order_by(WorkflowExecution.scheduled_for, WorkflowExecution.id).limit(limit)).all()
-    completed = 0; failed = 0; skipped = 0
-    for execution in rows:
-        record = _automation_record(db, execution.resource, execution.record_id)
-        if record is None:
-            execution.status = "failed"; execution.error = "Target record no longer exists"; execution.completed_at = now; failed += 1; continue
-        execution.status = "running"
-        try:
-            values = serialize_platform(record) if isinstance(record, PlatformRecord) else serialize(record, db)
-            for action in execution.actions or []:
-                _execute_workflow_action(db, action, execution.resource, record, values)
-            execution.status = "completed"; execution.completed_at = datetime.utcnow(); execution.error = None; completed += 1
-            add_audit(db, "automation_due", execution.resource, execution.record_id, f"Executed scheduled workflow #{execution.id}", actor_id=actor.id)
-        except Exception as error:
-            execution.status = "failed"; execution.error = str(error)[:2000]; execution.completed_at = datetime.utcnow(); failed += 1
-            add_audit(db, "automation_error", execution.resource, execution.record_id, f"Scheduled workflow #{execution.id} failed: {error}", actor_id=actor.id)
-    db.commit()
-    return {"processed": len(rows), "completed": completed, "failed": failed, "skipped": skipped, "run_at": now.isoformat()}
+    _require_organization_admin(db, actor)
+    # Deliberately never deliver from a web request. Worker delivery uses atomic leases,
+    # bounded retries and the same tenant checks, while this legacy endpoint did not.
+    raise HTTPException(409, "Scheduled workflows are processed by the dedicated workflow worker")
 
 
 def _forecast_rows(db: Session, start: date, end: date, owner_id: int | None, actor: User | None) -> list[Deal]:
