@@ -478,7 +478,7 @@ def _ensure_user_organization(db: Session, user: User) -> Organization:
         return organization
 
     organization = Organization(
-        name=(user.name or user.username or "Yash CRM")[:160],
+        name=(user.name or user.username or "CONVOSIS CRM")[:160],
         slug=_organization_slug_for_user(user),
         status="Active",
         owner_user_id=user.id,
