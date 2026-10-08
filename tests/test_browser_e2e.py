@@ -134,6 +134,15 @@ def test_browser_signup_login_and_module_navigation():
                 page.locator("[data-wf-next]").click()
                 page.locator("[data-wf-edit]").first.wait_for(state="visible", timeout=15000)
                 assert "Edited" in page.locator("[data-wf-edit]").first.inner_text()
+                page.locator("[data-wf-delete]").first.wait_for(state="visible", timeout=15000)
+                page.once("dialog", lambda dialog: dialog.accept())
+                page.locator("[data-wf-delete]").first.click()
+                page.wait_for_function("""async () => {
+                    const response = await fetch('/api/platform/workflow_rules?limit=100');
+                    return response.ok && !(await response.json()).items.some(
+                        row => row.name === 'Browser Lead Workflow Edited'
+                    );
+                }""", timeout=15000)
 
 
                 for href in ("/leads", "/deals", "/quotes", "/reports", "/setup"):
