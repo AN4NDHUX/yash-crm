@@ -304,12 +304,13 @@ async function renderRoute() {
       return;
     }
     if (parts[0] === "settings") {
-      const validTabs = ["general", "profile-users", "approval-process", "blueprint"];
+      const validTabs = ["general", "profile-users", "organization", "approval-process", "blueprint"];
       if (parts[1] && !validTabs.includes(parts[1])) return navigate("/settings/general", true);
       const tab = parts[1] || "general";
       setBreadcrumb("Settings", "Manage");
       content.innerHTML = await settingsView(tab);
       bindSettings();
+      if (tab === 'organization') bindOrganizationManagement();
       return;
     }
     if (parts[0] === "reports") {
@@ -1139,12 +1140,70 @@ function bindAI(...args) { return aiFeature.bindAI(...args); }
 
 async function settingsView(tab) {
   let content = '';
-  if (tab === 'general') content = `${await generalSettingsView()}${await settingsPlatformSummary("company_details", "Company details")}${await settingsPlatformSummary("fiscal_years", "Fiscal years")}`;
+  if (tab === 'general') content = `<section class="card settings-section"><h2>Organization Management</h2><p>Manage your organization profile, members, invitations, and ownership.</p><a class="button button-primary" href="/settings/organization">Open Organization Management</a></section>${await generalSettingsView()}${await settingsPlatformSummary("company_details", "Company details")}${await settingsPlatformSummary("fiscal_years", "Fiscal years")}`;
   if (tab === 'profile-users') content = await profileUsersView();
+  if (tab === 'organization') content = await organizationManagementView();
   if (tab === 'approval-process') content = await approvalSettingsView();
   if (tab === 'blueprint') content = await blueprintSettingsView();
   const labels = { general: 'General settings', 'profile-users': 'Profile & users', 'approval-process': 'Approval process', blueprint: 'Blueprint' };
   return `<section class="setup-page-shell"><div class="setup-toolbar setup-toolbar-search-only"><label class="toolbar-search setup-toolbar-search"><span>⌕</span><input data-setup-search-input placeholder="Search Setup" /></label></div><div class="setup-workspace">${setupDirectory(tab === 'general' ? 'company_details' : tab === 'profile-users' ? 'users' : tab === 'approval-process' ? 'approval_processes' : 'blueprints')}<div class="settings-content">${content}</div></div></section>`;
+}
+
+async function organizationManagementView() {
+  const org = await api("/api/organization");
+  const members = await api("/api/organization/members");
+  const canAdmin = ["owner", "admin", "administrator"].includes(String(org.membership_role || "").toLowerCase());
+  const isOwner = String(org.membership_role || "").toLowerCase() === "owner";
+  let invitations = {items: []};
+  if (canAdmin) invitations = await api("/api/organization/invitations");
+  const roleOptions = (value) => ["Member", "Admin"].map(role => `<option value="${role}" ${value === role ? "selected" : ""}>${role}</option>`).join("");
+  const memberRows = (members.items || []).map(member => {
+    const selfOwner = member.membership_role === "Owner";
+    const actions = canAdmin && !selfOwner ? `<select class="field-select" aria-label="Role for ${esc(member.name)}" data-org-role="${member.user_id}">${roleOptions(member.membership_role)}</select><button class="button button-small" data-org-member-save="${member.user_id}">Save role</button><button class="button button-small" data-org-member-status="${member.user_id}" data-next-status="${member.status === "Active" ? "Inactive" : "Active"}">${member.status === "Active" ? "Deactivate" : "Activate"}</button>` : "";
+    const transfer = isOwner && !selfOwner && member.status === "Active" ? `<button class="button button-small" data-org-transfer="${member.user_id}" data-org-target="${esc(member.name)}">Transfer ownership</button>` : "";
+    return `<tr><td>${esc(member.name)}<br><small>${esc(member.email)}</small></td><td>${esc(member.membership_role)}</td><td>${esc(member.status)}</td><td>${actions} ${transfer}</td></tr>`;
+  }).join("");
+  const invitationRows = (invitations.items || []).map(invite => `<tr><td>${esc(invite.email)}</td><td>${esc(invite.membership_role)}</td><td>${esc(invite.status)}</td><td>${canAdmin && invite.status === "Pending" ? `<button class="button button-small" data-org-invite-revoke="${invite.id}">Revoke</button>` : ""}</td></tr>`).join("");
+  return `<section class="card settings-section"><div class="settings-section-head"><h2>Organization Profile</h2><p>Workspace identity and organization membership.</p></div>
+    <form data-org-profile><div class="form-grid"><div class="field"><label>Organization name</label><input name="name" class="field-input" required minlength="2" maxlength="160" value="${esc(org.name)}" ${canAdmin ? "" : "disabled"} /></div><div class="field"><label>Organization ID</label><input class="field-input" value="${org.id}" disabled /></div><div class="field"><label>Slug</label><input class="field-input" value="${esc(org.slug)}" disabled /></div></div>${canAdmin ? '<div class="form-actions"><button type="submit" class="button button-primary">Save organization</button></div>' : ""}</form></section>
+    <section class="card settings-section"><div class="settings-section-head"><h2>Members</h2><p>Manage organization membership and roles.</p></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>${memberRows}</tbody></table></div></section>
+    ${canAdmin ? `<section class="card settings-section"><div class="settings-section-head"><h2>Invite member</h2><p>Invitations expire after seven days. Delivery requires configured email settings.</p></div><form data-org-invite><div class="form-grid"><div class="field"><label>Email address</label><input name="email" type="email" class="field-input" required /></div><div class="field"><label>Member role</label><select name="membership_role" class="field-select"><option>Member</option><option>Admin</option></select></div></div><div class="form-actions"><button class="button button-primary" type="submit">Send invitation</button></div></form><div class="table-wrap"><table class="data-table"><thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>${invitationRows}</tbody></table></div></section>` : ""}`;
+}
+
+function bindOrganizationManagement() {
+  const perform = async (request, success) => { try { await request(); toast("Organization updated", success); await renderRoute(); } catch (error) { toast("Organization update failed", error.message, "error"); } };
+  $('[data-org-profile]')?.addEventListener('submit', event => {
+    event.preventDefault();
+    perform(() => api("/api/organization", {method:"PATCH", body:JSON.stringify({name: event.currentTarget.elements.name.value.trim()})}), "Organization profile saved.");
+  });
+  $('[data-org-invite]')?.addEventListener('submit', event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    perform(async () => {
+      const result = await api("/api/organization/invitations", {method:"POST", body:JSON.stringify({email:form.elements.email.value.trim(),membership_role:form.elements.membership_role.value})});
+      if (result.delivery === "not_configured") toast("Email delivery unavailable", "Configure SMTP to send invitations.", "error");
+    }, "Invitation created.");
+  });
+  $('[data-org-member-save]').forEach(button => button.addEventListener('click', () => {
+    const id = button.dataset.orgMemberSave;
+    const role = $('[data-org-role="' + id + '"]')?.value;
+    perform(() => api("/api/organization/members/" + id, {method:"PATCH", body:JSON.stringify({membership_role:role})}), "Member role updated.");
+  }));
+  $('[data-org-member-status]').forEach(button => button.addEventListener('click', () => {
+    const id = button.dataset.orgMemberStatus;
+    const status = button.dataset.nextStatus;
+    if (!window.confirm(status + " this member?")) return;
+    perform(() => api("/api/organization/members/" + id, {method:"PATCH", body:JSON.stringify({status})}), "Member status updated.");
+  }));
+  $('[data-org-invite-revoke]').forEach(button => button.addEventListener('click', () => {
+    if (!window.confirm("Revoke this invitation?")) return;
+    perform(() => api("/api/organization/invitations/" + button.dataset.orgInviteRevoke, {method:"DELETE"}), "Invitation revoked.");
+  }));
+  $('[data-org-transfer]').forEach(button => button.addEventListener('click', () => {
+    const target = button.dataset.orgTarget;
+    if (window.prompt("Transfer ownership permanently to " + target + "? Type TRANSFER to confirm.") !== "TRANSFER") return;
+    perform(() => api("/api/organization/transfer-ownership", {method:"POST", body:JSON.stringify({user_id:Number(button.dataset.orgTransfer)})}), "Ownership transferred.");
+  }));
 }
 
 async function settingsPlatformSummary(resource, title) {
