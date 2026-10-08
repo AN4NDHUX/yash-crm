@@ -7,6 +7,7 @@ required before enabling execution.
 from __future__ import annotations
 
 import ast
+from fastapi import HTTPException
 
 MAX_SOURCE_BYTES = 32_768
 MAX_AST_NODES = 2_000
@@ -64,4 +65,7 @@ def validate_function_source(values: dict) -> None:
         return  # Existing declarative workflow executor validates step types.
     if not isinstance(source, dict):
         raise FunctionValidationError("Python source must be a step list or code object")
-    validate_python_source(source.get("code"))
+    try:
+        validate_python_source(source.get("code"))
+    except FunctionValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
