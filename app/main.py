@@ -4945,6 +4945,10 @@ def restore_archived(payload: RestorePayload, db: Session = Depends(get_db), act
         record = db.get(model, payload.record_id) if model and hasattr(model, "archived") else None
     if record is None or getattr(record, "organization_id", None) != organization.id:
         raise HTTPException(404, "Archived record not found")
+    if not record.archived:
+        raise HTTPException(409, "Record is not deleted")
+    if getattr(record, "updated_at", None) and record.updated_at < datetime.utcnow() - timedelta(days=30):
+        raise HTTPException(410, "Deleted record has expired")
     if not can_access_record(db, payload.resource, record, actor, "write"):
         raise HTTPException(403, "You do not have access to restore this record")
     record.archived = False
@@ -4980,6 +4984,9 @@ def bulk_restore_archived(payload: dict[str, Any], db: Session = Depends(get_db)
         raise HTTPException(422, "Select 1 to 100 valid record IDs")
     ids = list(dict.fromkeys(ids))
     rows = _recycle_records(db, resource, ids, organization.id)
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    if any(getattr(row, "updated_at", None) is not None and row.updated_at < cutoff for row in rows):
+        raise HTTPException(410, "One or more deleted records have expired")
     for row in rows:
         if not can_access_record(db, resource, row, actor, "write"):
             raise HTTPException(403, "Restore permission denied")
