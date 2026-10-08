@@ -195,3 +195,40 @@ def test_custom_function_executes_field_update_and_blocks_unapproved_steps():
     assert out["executed"]
     assert out["bad_created"] == 201
     assert out["rejected"]
+
+
+def test_workflow_rule_edit_preserves_conditions_and_updates_trigger():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Rule Editor','organization_name':'Rule Edit Workspace',
+            'username':'rule.editor','email':'rule.editor@example.com',
+            'password':'strong-password-123'
+        })
+        rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Original Lead Rule','module':'leads','event':'create',
+            'criteria':{'logic':'OR','conditions':[
+                {'field':'company','operator':'contains','value':'Example'},
+                {'field':'email','operator':'ends_with','value':'example.org'}
+            ]},
+            'actions':[{'type':'audit','value':'Original'}],'status':'Active'
+        })
+        out['created'] = rule.status_code
+        updated = c.patch('/api/platform/workflow_rules/' + str(rule.json()['id']), json={
+            'name':'Edited Lead Rule','event':'create_or_edit',
+            'actions':[{'type':'audit','value':'Edited'}]
+        })
+        out['updated'] = updated.status_code
+        record = c.get('/api/platform/workflow_rules/' + str(rule.json()['id'])).json()
+        out['name'] = record.get('name')
+        out['event'] = record.get('event')
+        out['criteria'] = record.get('criteria')
+        out['action'] = record.get('actions',[{}])[0].get('value')
+    """)
+    assert out['created'] == 201
+    assert out['updated'] == 200
+    assert out['name'] == 'Edited Lead Rule'
+    assert out['event'] == 'create_or_edit'
+    assert out['criteria']['logic'] == 'OR'
+    assert len(out['criteria']['conditions']) == 2
+    assert out['action'] == 'Edited'
