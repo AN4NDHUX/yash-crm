@@ -168,7 +168,15 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
           (moduleFilter==="all" || rules.find(rule=>String(rule.id)===button.dataset.wfEdit)?.module===moduleFilter));
       });
     });
-    el(root,"[data-wf-module-filter]")?.addEventListener("change",async event=>{moduleFilter=event.target.value;await refresh(root);});
+    el(root,"[data-wf-module-filter]")?.addEventListener("change",event=>{
+      moduleFilter=event.target.value;
+      els(root,"[data-wf-edit]").forEach(button=>{
+        const row=button.closest("tr");
+        const record=rules.find(rule=>String(rule.id)===button.dataset.wfEdit);
+        if(row) row.hidden=!(record && (moduleFilter==="all" || record.module===moduleFilter) &&
+          String(record.name || record.title || "").toLowerCase().includes(listQuery.toLowerCase()));
+      });
+    });
     els(root,"[data-wf-field-search]").forEach(input=>input.addEventListener("input",event=>{
       const select=el(root,'[data-wf-field="'+input.dataset.wfFieldSearch+'"]');
       const query=event.target.value.toLowerCase();
