@@ -52,7 +52,7 @@ def run_app_script(body: str) -> dict:
 def test_new_organizations_receive_isolated_default_configuration():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Defaults Org A','username':'defaults.a','email':'defaults.a@example.com',
             'password':'strong-password-123'
         })
@@ -63,7 +63,7 @@ def test_new_organizations_receive_isolated_default_configuration():
         out['a_company_id'] = company_a['items'][0]['id']
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Defaults Org B','username':'defaults.b','email':'defaults.b@example.com',
             'password':'strong-password-123'
         })
