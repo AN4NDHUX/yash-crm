@@ -611,7 +611,8 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     phone = _normalize_phone(payload.get("phone")) or None
     password = str(payload.get("password") or "")
     organization_name = str(payload.get("organization_name") or "").strip()
-    if not organization_name or not 2 <= len(organization_name) <= 160:
+    invitation_requested = bool(str(payload.get("invitation_token") or payload.get("invite") or "").strip())
+    if not invitation_requested and not 2 <= len(organization_name) <= 160:
         raise HTTPException(422, "Organization name must contain 2 to 160 characters")
     if len(name) < 2 or len(name) > 120:
         raise HTTPException(422, "Enter your full name")
