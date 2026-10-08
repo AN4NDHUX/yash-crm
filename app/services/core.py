@@ -153,6 +153,14 @@ def validate_platform_values(resource: str, values: dict[str, Any], *, partial: 
         for item in config.get("fields", []):
             if item.get("required") and values.get(item["key"]) in (None, "", []):
                 raise HTTPException(422, f"{item['label']} is required")
+    if resource == "workflow_rules":
+        if values.get("event") == "field_change" and not str(values.get("trigger_field") or "").strip() and not partial:
+            raise HTTPException(422, "Select a field for the field-change trigger")
+        if values.get("scheduled_for"):
+            try:
+                datetime.fromisoformat(str(values["scheduled_for"]).replace("Z", "+00:00"))
+            except (ValueError, TypeError) as error:
+                raise HTTPException(422, "Schedule must be a valid ISO datetime") from error
     for key in values:
         if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "storage_key", "paid_amount", "balance_due", "criteria", "actions", "scheduled_for"}:
             raise HTTPException(422, f"Unknown field '{key}' for {config['label']}")
