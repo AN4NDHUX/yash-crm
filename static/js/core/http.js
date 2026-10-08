@@ -12,7 +12,7 @@ export async function requestJson(path, options = {}, csrfToken = null) {
       },
     });
   } catch {
-    const error = new Error("Yash CRM could not reach the server. Check the connection and try again.");
+    const error = new Error("CONVOSIS CRM could not reach the server. Check the connection and try again.");
     error.code = "NETWORK_ERROR";
     throw error;
   }
