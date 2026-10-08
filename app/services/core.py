@@ -421,6 +421,20 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
     action_type = str(action.get("type") or action.get("action_type") or "audit").lower()
     value = action.get("value", action.get("action_value"))
     title = _record_title(record)
+    def validate_target_member(user_id: int) -> int:
+        org_id = getattr(record, "organization_id", None) or TENANT_ORGANIZATION_ID.get()
+        user = db.get(User, user_id)
+        if user is None or user.status != "Active":
+            raise ValueError("Workflow target user must be active")
+        if org_id is not None:
+            member = db.scalar(select(OrganizationMember).where(
+                OrganizationMember.organization_id == org_id,
+                OrganizationMember.user_id == user_id,
+                OrganizationMember.status == "Active",
+            ))
+            if member is None:
+                raise ValueError("Workflow target user is not an active member of this organization")
+        return user_id
     if action_type in {"field_update", "update_field"}:
         field_name = str(action.get("field") or "").strip()
         field_value = action.get("value")
@@ -445,12 +459,12 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
         db.add(Activity(activity_type="Task", subject=str(value or action.get("subject") or f"Follow up: {title}"), owner_id=owner_id, status="Open", priority=str(action.get("priority") or "Normal"), related_type=resource, related_id=record.id))
     elif action_type in {"notification", "notify"}:
         fallback_owner = getattr(record, "owner_id", None)
-        user_id = int(action.get("user_id") or fallback_owner)
+        user_id = validate_target_member(int(action.get("user_id") or fallback_owner))
         db.add(Notification(user_id=user_id, kind=str(action.get("kind") or "workflow"), title=str(action.get("title") or f"Workflow update: {title}"), body=str(value or action.get("body") or "A workflow action was triggered."), resource=resource, record_id=record.id))
     elif action_type in {"owner_change", "assign_owner"}:
         if not hasattr(record, "owner_id"):
             raise ValueError(f"{resource} does not support ownership")
-        record.owner_id = int(action.get("user_id") or value)
+        record.owner_id = validate_target_member(int(action.get("user_id") or value))
     elif action_type in {"start_approval", "approval"}:
         process_id = int(action.get("process_id") or value or 0)
         process = db.get(ApprovalProcess, process_id)
