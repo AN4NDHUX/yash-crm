@@ -1242,3 +1242,14 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .wf-rule-dialog .wf-details-card .field label{font-size:13px;color:#5d7192;text-align:right}
 .wf-rule-dialog .wf-editor-footer{background:white;bottom:0;left:0;right:0;padding:14px 32px 18px;border-radius:0 0 14px 14px}
 @media(max-width:600px){.wf-rule-dialog .wf-details-card .field,.wf-rule-dialog .wf-details-card .field.full{grid-template-columns:1fr}.wf-rule-dialog .wf-details-card .field label{text-align:left}.wf-rule-dialog .wf-details-card{padding:22px}}
+
+/* Workflow rule discovery and searchable condition fields */
+.wf-list-actions{align-items:end;gap:12px;flex-wrap:wrap}
+.wf-list-search,.wf-list-filter{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#5a6a83}
+.wf-list-search{min-width:220px;margin-right:auto}
+.wf-list-filter{min-width:180px}
+.wf-condition-row .wf-field-search{grid-column:2 / 3;min-width:0}
+.wf-condition-row [data-wf-field]{grid-column:2 / 3}
+.wf-condition-row [data-wf-operator]{grid-column:3 / 4}
+.wf-condition-row [data-wf-value]{grid-column:4 / 5}
+@media(max-width:820px){.wf-condition-row .wf-field-search,.wf-condition-row [data-wf-field]{grid-column:2 / 4}.wf-condition-row [data-wf-operator]{grid-column:2 / 3}.wf-condition-row [data-wf-value]{grid-column:2 / 4}}
