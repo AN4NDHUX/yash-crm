@@ -39,9 +39,23 @@ def parse_deluge(source):
     if not isinstance(source, str) or not source.strip() or len(source.encode("utf-8")) > MAX_BYTES:
         raise HTTPException(422, "Deluge source must contain 1 to 32 KiB of text")
     steps = []
+    condition_stack = []
     for line_number, raw in enumerate(source.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("//"):
+            continue
+        if line == "}":
+            if not condition_stack:
+                raise HTTPException(422, f"Line {line_number}: unexpected closing brace")
+            condition_stack.pop()
+            continue
+        conditional = re.fullmatch(r'if\s*\(\s*(\$record\.[A-Za-z][A-Za-z0-9_]{0,79})\s*(==|!=)\s*("(?:[^"\\\\]|\\\\.)*")\s*\)\s*\{', line)
+        if conditional:
+            field_reference, operator, literal = conditional.groups()
+            _argument(field_reference)
+            condition_stack.append({"field": field_reference[8:], "operator": operator, "value": _argument(literal)})
+            if len(condition_stack) > 5:
+                raise HTTPException(422, "Maximum conditional nesting is five")
             continue
         if not line.endswith(";"):
             raise HTTPException(422, f"Line {line_number}: statement must end with a semicolon")
@@ -67,8 +81,12 @@ def parse_deluge(source):
                 steps.append({"type": "create_task", "subject": _argument(arguments)})
             else:
                 steps.append({"type": "notification", "value": _argument(arguments)})
+        if condition_stack:
+            steps[-1]["_conditions"] = [dict(condition) for condition in condition_stack]
         if len(steps) > 20:
             raise HTTPException(422, "Deluge functions support at most 20 statements")
+    if condition_stack:
+        raise HTTPException(422, "Unclosed if block")
     if not steps:
         raise HTTPException(422, "Deluge function requires at least one statement")
     return steps
