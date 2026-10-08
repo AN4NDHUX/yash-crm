@@ -4958,21 +4958,8 @@ def restore_archived(payload: RestorePayload, db: Session = Depends(get_db), act
 
 
 def _recycle_records(db: Session, resource: str, ids: list[int], organization_id: int) -> list[Any]:
-    if resource in PLATFORM_RESOURCES:
-        query = select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id.in_(ids),
-                                             PlatformRecord.organization_id == organization_id,
-                                             PlatformRecord.archived == True)
-    elif resource in RESOURCE_MAP and resource != "users":
-        model = RESOURCE_MAP[resource]
-        if not hasattr(model, "archived") or not hasattr(model, "organization_id"):
-            raise HTTPException(422, "Module does not support recycle-bin operations")
-        query = select(model).where(model.id.in_(ids), model.organization_id == organization_id, model.archived == True)
-    else:
-        raise HTTPException(404, "Module not found")
-    records = db.scalars(query).all()
-    if len(records) != len(ids):
-        raise HTTPException(404, "One or more deleted records were not found")
-    return records
+    from app.services.recycle import recycled_rows
+    return recycled_rows(db, resource, ids, organization_id, PLATFORM_RESOURCES, RESOURCE_MAP)
 
 
 @app.post("/api/administration/recycle-bin/bulk-restore")
