@@ -118,6 +118,19 @@ def test_browser_signup_login_and_module_navigation():
                 }""")
                 page.locator("[data-wf-edit]").first.wait_for(state="visible", timeout=15000)
                 assert page.locator("[data-wf-edit]").count() >= 1
+                page.locator("[data-wf-search]").fill("Browser Lead Workflow")
+                assert page.locator("[data-wf-edit]").count() >= 1
+                page.locator("[data-wf-module-filter]").select_option("leads")
+                assert page.locator("[data-wf-edit]").first.is_visible()
+                page.locator("[data-wf-edit]").first.click()
+                page.locator("[data-wf-name]").fill("Browser Lead Workflow Edited")
+                page.locator("[data-wf-next]").click()
+                page.locator("[data-wf-next]").click()
+                page.locator("[data-wf-next]").click()
+                page.locator("[data-wf-next]").click()
+                page.locator("[data-wf-edit]").first.wait_for(state="visible", timeout=15000)
+                assert "Edited" in page.locator("[data-wf-edit]").first.inner_text()
+
 
                 for href in ("/leads", "/deals", "/quotes", "/reports", "/setup"):
                     page.click(f'a[href="{href}"]')
