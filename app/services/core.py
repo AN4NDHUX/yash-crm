@@ -429,6 +429,8 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
         field_name = field_name.strip()
         if not field_name:
             raise ValueError("field_update requires a field")
+        if field_name.lower() in {"id", "organization_id", "owner_id", "password", "password_hash", "created_at", "updated_at", "version", "is_platform_owner", "membership_role"}:
+            raise ValueError("Workflow actions cannot change system-managed or tenant identity fields")
         if isinstance(record, PlatformRecord):
             changed = dict(record.data or {})
             changed[field_name] = field_value
