@@ -77,6 +77,21 @@ def test_browser_signup_login_and_module_navigation():
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard", timeout=10000)
                 assert "CONVOSIS CRM" in page.title()
+                page.goto(base + "/settings/organization")
+                page.locator("[data-org-profile] input[name=name]").fill("Browser Renamed Workspace")
+                page.locator("[data-org-profile] button[type=submit]").click()
+                page.wait_for_function("""async () => {
+                  const response = await fetch('/api/organization');
+                  return response.ok && (await response.json()).name === 'Browser Renamed Workspace';
+                }""")
+                page.locator("[data-org-invite] input[name=email]").fill("browser.invited@example.com")
+                page.locator("[data-org-invite] button[type=submit]").click()
+                page.wait_for_function("""async () => {
+                  const response = await fetch('/api/organization/invitations');
+                  return response.ok && (await response.json()).items.some(
+                    row => row.email === 'browser.invited@example.com' && row.status === 'Pending'
+                  );
+                }""")
 
                 for href in ("/leads", "/deals", "/quotes", "/reports", "/setup"):
                     page.click(f'a[href="{href}"]')
