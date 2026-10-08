@@ -95,3 +95,44 @@ def test_new_organizations_receive_isolated_default_configuration():
     assert out['settings_org_b'] == out['org_b']
     assert out['company_org_a'] == out['org_a']
     assert out['company_org_b'] == out['org_b']
+
+
+def test_organization_rename_requires_membership_and_preserves_tenant_identity():
+    out = run_app_script("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        a = c.post('/api/auth/signup', json={
+            'name':'Rename Owner A', 'organization_name':'Original Workspace A',
+            'username':'rename.owner.a', 'email':'rename.a@example.com',
+            'password':'strong-password-123'
+        })
+        out['signup_a'] = a.status_code
+        original = c.get('/api/organization').json()
+        out['original_id'] = original['id']
+        out['original_slug'] = original['slug']
+        renamed = c.patch('/api/organization', json={'name':'Renamed Workspace A'})
+        out['rename_status'] = renamed.status_code
+        out['rename_name'] = renamed.json().get('name')
+        out['settings_name'] = c.get('/api/settings/general').json()['org_name']
+        out['same_id'] = c.get('/api/organization').json()['id'] == original['id']
+        out['same_slug'] = c.get('/api/organization').json()['slug'] == original['slug']
+        out['invalid_status'] = c.patch('/api/organization', json={'name':' '}).status_code
+        c.post('/api/auth/logout')
+        b = c.post('/api/auth/signup', json={
+            'name':'Rename Owner B', 'organization_name':'Original Workspace B',
+            'username':'rename.owner.b', 'email':'rename.b@example.com',
+            'password':'strong-password-123'
+        })
+        out['signup_b'] = b.status_code
+        out['other_org_name'] = c.get('/api/organization').json()['name']
+        out['other_org_id'] = c.get('/api/organization').json()['id']
+        c.post('/api/auth/logout')
+        out['unauthorized_status'] = c.patch('/api/organization', json={'name':'Unauthorized'}).status_code
+    """)
+    assert out['signup_a'] == out['signup_b'] == 201
+    assert out['rename_status'] == 200
+    assert out['rename_name'] == out['settings_name'] == 'Renamed Workspace A'
+    assert out['same_id'] and out['same_slug']
+    assert out['invalid_status'] == 422
+    assert out['other_org_name'] == 'Original Workspace B'
+    assert out['other_org_id'] != out['original_id']
+    assert out['unauthorized_status'] == 401
