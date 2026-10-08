@@ -78,6 +78,10 @@ def test_browser_signup_login_and_module_navigation():
                 page.wait_for_url("**/dashboard", timeout=10000)
                 assert "CONVOSIS CRM" in page.title()
                 page.goto(base + "/settings/organization")
+                try:
+                    page.locator("[data-org-profile] input[name=name]").wait_for(timeout=12000)
+                except Exception:
+                    raise AssertionError("Organization UI failed to render: " + page.locator("#app-content").inner_text()[:2000] + " | " + page.url)
                 page.locator("[data-org-profile] input[name=name]").fill("Browser Renamed Workspace")
                 page.locator("[data-org-profile] button[type=submit]").click()
                 page.wait_for_function("""async () => {
