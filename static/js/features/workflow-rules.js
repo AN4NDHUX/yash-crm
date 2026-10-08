@@ -7,11 +7,17 @@ const operators = [
   ["ends_with", "ends with"], ["greater_than", "greater than"],
   ["less_than", "less than"], ["is_empty", "is empty"], ["is_not_empty", "is not empty"]
 ];
+// Group actions by the Zoho-style instant-action categories while preserving
+// the existing backend action identifiers and stored workflow compatibility.
 const actions = [
-  ["audit", "Audit activity"], ["field_update", "Update field"],
-  ["create_task", "Create task"], ["notification", "Notification"],
-  ["tag", "Add tag"], ["webhook_queue", "Queue webhook"],
-  ["email", "Queue email"], ["function", "Custom function"]
+  ["field_update", "Field Update"],
+  ["tag", "Tags"],
+  ["email", "Email Notification"],
+  ["create_task", "Activities — Task"],
+  ["webhook_queue", "Webhook"],
+  ["function", "Function"],
+  ["audit", "Audit activity"],
+  ["notification", "Notification"]
 ];
 const opts = (items, selected, escape) => items.map(([value, label]) =>
   `<option value="${escape(value)}" ${String(selected) === String(value) ? "selected" : ""}>${escape(label)}</option>`).join("");
@@ -35,18 +41,18 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   const el = (root, selector) => root.querySelector(selector);
   const els = (root, selector) => [...root.querySelectorAll(selector)];
   const moduleOptions = () => {
-    const modules = new Map();
-    for (const [key, config] of Object.entries(state.platformCatalog?.resources || {})) {
-      if (config.group === "Automation" || config.group === "Administration") continue;
-      modules.set(key, config.label || key);
-    }
-    for (const [key, config] of Object.entries(MODULES)) {
-      if (!modules.has(key)) modules.set(key, config.label || key);
-    }
-    for (const key of ["quotes","invoices"]) {
-      if (!modules.has(key)) modules.set(key, key[0].toUpperCase() + key.slice(1));
-    }
-    return [...modules].map(([key, label]) => [key, label]);
+    // Restrict workflow creation to the primary CRM business modules.
+    // Do not expose administration, billing, or platform configuration resources.
+    const primary = [
+      ["leads","Leads"],["contacts","Contacts"],["accounts","Accounts"],
+      ["deals","Deals"],["tasks","Tasks"],["meetings","Meetings"],
+      ["calls","Calls"],["products","Products"],["quotes","Quotes"],
+      ["sales_orders","Sales Orders"],["purchase_orders","Purchase Orders"],
+      ["invoices","Invoices"],["vendors","Vendors"],
+      ["campaigns","Campaigns"],["cases","Cases"]
+    ];
+    const available = state.platformCatalog?.resources || {};
+    return primary.filter(([key]) => available[key] || MODULES[key]);
   };
   const fieldsFor = () => {
     const catalog = state.platformCatalog?.resources?.[draft.module];
