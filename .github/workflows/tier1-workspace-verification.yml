@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: tier1-workspace-verification-${{ github.ref }}
@@ -72,4 +73,19 @@ jobs:
       - name: Wait for exact deployed release and migration
         run: python scripts/wait_for_production.py
       - name: Verify production authentication, tenant isolation, and billing signatures
+        id: security
         run: python scripts/verify_production.py
+      - name: Publish production security verification result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          SECURITY_OUTCOME: ${{ steps.security.outcome }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              ...context.repo, sha: context.sha,
+              state: process.env.SECURITY_OUTCOME === 'success' ? 'success' : 'failure',
+              context: 'tier1/production-security',
+              description: process.env.SECURITY_OUTCOME === 'success' ? 'Production security checks passed' : 'Production security failed or skipped',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
