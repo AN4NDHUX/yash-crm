@@ -520,7 +520,11 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             except json.JSONDecodeError as error:
                 raise ValueError("Custom function source must contain valid JSON") from error
         if isinstance(spec, dict):
-            spec = spec.get("steps")
+            if str((function_record.data or {}).get("runtime", "")).lower() == "deluge":
+                from app.deluge_subset import parse_deluge
+                spec = parse_deluge(spec.get("code"))
+            else:
+                spec = spec.get("steps")
         if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
             raise ValueError("Custom function must have 1 to 20 action steps")
         allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit"}
