@@ -232,7 +232,7 @@ def test_malformed_profile_json_cannot_take_down_all_modules():
 def test_every_visible_module_avoids_500_with_legacy_security_records():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        signup = c.post('/api/auth/signup', json={
+        signup = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Module Audit User',
             'username':'module.audit',
             'email':'module.audit@example.com',
@@ -323,7 +323,7 @@ def test_every_visible_module_avoids_500_with_legacy_security_records():
 def test_every_populated_module_lists_for_normal_tenant_user_without_500():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        signup = c.post('/api/auth/signup', json={
+        signup = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Populated Module User',
             'username':'populated.audit',
             'email':'populated.audit@example.com',
@@ -413,7 +413,7 @@ def test_every_populated_module_lists_for_normal_tenant_user_without_500():
 def test_populated_modules_survive_malformed_field_metadata():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Metadata Audit User',
             'username':'metadata.audit',
             'email':'metadata.audit@example.com',
