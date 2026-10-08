@@ -57,3 +57,33 @@ def test_rejects_excessive_ast_complexity():
     source = "\n".join("x = 1" for _ in range(700))
     with pytest.raises(FunctionValidationError, match="too complex"):
         validate_python_source(source)
+
+
+def test_python_script_draft_accepted_and_active_rejected():
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    payload = {"runtime": "Python", "source": {"code": "result = record['id']"}, "status": "Inactive"}
+    assert validate_function_source(payload) is None
+    payload["status"] = "Active"
+    with pytest.raises(HTTPException) as error:
+        validate_function_source(payload)
+    assert error.value.status_code == 422
+
+
+def test_legacy_declarative_steps_remain_compatible():
+    from app.custom_function_validation import validate_function_source
+
+    payload = {"runtime": "Python", "entrypoint": "steps", "status": "Active",
+               "source": [{"type": "field_update", "field": "company", "value": "Normalized"}]}
+    assert validate_function_source(payload) is None
+
+
+def test_malformed_python_source_returns_422():
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    for source in (None, "invalid", {"code": "import os"}, {"code": ""}):
+        with pytest.raises(HTTPException) as error:
+            validate_function_source({"runtime": "Python", "source": source, "status": "Inactive"})
+        assert error.value.status_code == 422
