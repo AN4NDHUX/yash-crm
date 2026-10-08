@@ -26,7 +26,7 @@ These existing files from the uploaded ZIP were modified. They should be copied 
 | `public/manifest.webmanifest` | `/home/ubuntu/yash-crm-main/public/manifest.webmanifest` | Apex app metadata and Apex Helpdesk shortcut retained. |
 | `public/manus-routes.json` | `/home/ubuntu/yash-crm-main/public/manus-routes.json` | Added Apex Helpdesk and journey routes; Apex titles retained. |
 | `README.md` | `/home/ubuntu/yash-crm-main/README.md` | Added Apex AI sales performance documentation and calculation behavior. |
-| `cloud-entrypoint.sh` | `/home/ubuntu/yash-crm-main/cloud-entrypoint.sh` | Updated startup log label from Yash CRM to Apex CRM. |
+| `cloud-entrypoint.sh` | `/home/ubuntu/yash-crm-main/cloud-entrypoint.sh` | Updated startup log label from CONVOSIS CRM to Apex CRM. |
 
 ## Files replaced
 
