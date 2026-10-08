@@ -2896,7 +2896,7 @@ def _require_organization_admin(db: Session, actor: User) -> tuple[Organization,
         organization = db.get(Organization, membership.organization_id)
     if organization is None or membership is None:
         raise HTTPException(404, "Organization not found")
-    if not (_is_platform_owner(actor) or str(membership.membership_role or "").lower() in {"owner", "admin", "administrator"}):
+    if str(membership.membership_role or "").lower() not in {"owner", "admin", "administrator"}:
         raise HTTPException(403, detail={"code": "ORG_ADMIN_REQUIRED", "message": "Organization administrator access is required."})
     return organization, membership
 
@@ -2918,6 +2918,35 @@ def organization_overview(db: Session = Depends(get_db), actor: User = Depends(c
         "member_count": members,
         "subscription": _subscription_payload(db, actor.id),
     }
+
+
+@app.patch("/api/organization")
+def update_organization(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    """Rename the current organization without altering tenant identity or its slug."""
+    organization, _ = _require_organization_admin(db, actor)
+    if set(payload) != {"name"}:
+        raise HTTPException(422, "Only the organization name can be updated")
+    name = str(payload.get("name") or "").strip()
+    if not 2 <= len(name) <= 160:
+        raise HTTPException(422, "Organization name must contain 2 to 160 characters")
+    before_name = organization.name
+    organization.name = name
+    setting = db.scalar(select(OrganizationSetting).where(
+        OrganizationSetting.organization_id == organization.id
+    ).order_by(OrganizationSetting.id))
+    if setting is not None:
+        setting.org_name = name
+    add_audit(
+        db, "organization_renamed", "organizations", organization.id,
+        f"Renamed organization from {before_name!r} to {name!r}",
+        actor_id=actor.id,
+    )
+    db.commit()
+    return {"ok": True, "id": organization.id, "name": organization.name, "slug": organization.slug}
 
 
 @app.get("/api/organization/members")
