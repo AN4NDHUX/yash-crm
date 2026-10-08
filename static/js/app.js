@@ -4,6 +4,7 @@ import { renderPricingView, bindPricingInteractions } from "./features/pricing.j
 import { state, PLATFORM_MODULE_ROUTES, $, $$, esc, titleCase, initials, formatDate, formatDateTime, formatMoney, slug, pathFor, badge, lookupName } from "./core/runtime.js";
 import { MODULES } from "./features/modules.js";
 import { createSetupFeature } from "./features/setup.js";
+import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
 
 async function api(path, options = {}, retried = false) {
@@ -208,6 +209,8 @@ async function refreshNavCount() {
   } catch (error) { /* counts are best effort */ }
 }
 
+const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
+
 async function navigate(path, replace = false) {
   if (replace) history.replaceState({}, "", path); else history.pushState({}, "", path);
   state.route = path;
@@ -290,6 +293,12 @@ async function renderRoute() {
     }
     if (parts[0] === "setup") {
       const resource = parts[1] || "index";
+      if (resource === "workflow_rules") {
+        setBreadcrumb("Workflow Rules", "Setup");
+        content.innerHTML = await workflowRulesUI.view();
+        workflowRulesUI.bind(content);
+        return;
+      }
       setBreadcrumb(resource === "index" ? "Setup" : titleCase(resource), "Setup");
       content.innerHTML = await setupView(resource, parts.slice(2));
       bindSettings();
