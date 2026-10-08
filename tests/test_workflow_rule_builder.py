@@ -50,10 +50,10 @@ def app_scenario(body: str) -> dict:
 
 def test_zoho_style_nested_condition_operators():
     out = app_scenario("""
-    source = {'website':'https://example.com','amount':1500,'email':'sales@example.com'}
+    source = {'company':'example Acme','amount':1500,'email':'sales@example.com'}
     out['matching'] = workflow_criteria_match(source, {
         'logic':'AND','conditions':[
-            {'field':'website','operator':'contains','value':'example'},
+            {'field':'company','operator':'contains','value':'example'},
             {'field':'website','operator':'starts_with','value':'https://'},
             {'field':'website','operator':'ends_with','value':'.com'},
             {'field':'email','operator':'does_not_contain','value':'other'},
@@ -100,7 +100,7 @@ def test_workflow_rule_builder_persists_trigger_and_runs_on_create_and_edit():
         })
         out['lead_create'] = created.status_code
         lead_id = created.json().get('id')
-        modified = c.patch('/api/leads/' + str(lead_id), json={'website':'https://shop.example.com'})
+        modified = c.patch('/api/leads/' + str(lead_id), json={'company':'example Partners'})
         out['lead_edit'] = modified.status_code
         executions = c.get('/api/automation/executions').json()
         out['executions'] = [x['event'] for x in executions.get('items',[]) if x.get('rule_id') == added.json().get('id')]
