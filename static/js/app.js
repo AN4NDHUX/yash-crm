@@ -1,5 +1,5 @@
 import { requestJson } from "./core/http.js";
-import { renderPricingView, bindPricingInteractions } from "./features/pricing.js";
+import { renderPricingView, bindPricingInteractions } from "./features/pricing.js?v=20261008-convosis-ui-v2";
 
 import { state, PLATFORM_MODULE_ROUTES, $, $$, esc, titleCase, initials, formatDate, formatDateTime, formatMoney, slug, pathFor, badge, lookupName } from "./core/runtime.js";
 import { MODULES } from "./features/modules.js";
