@@ -55,3 +55,25 @@ def test_bulk_delete_rejects_invalid_or_mixed_record_ids():
         out['still_visible']=any(r['id']==lead['id'] for r in c.get('/api/leads?limit=100').json()['items'])
     """)
     assert out=={'invalid':422,'missing':404,'still_visible':True}
+
+
+def test_workflow_rule_delete_and_restore_from_recycle_bin():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup',json={
+            'name':'Workflow Delete Admin','organization_name':'Workflow Delete Org',
+            'username':'workflow.delete.admin','email':'workflow.delete@example.com',
+            'password':'strong-password-123'
+        })
+        created=c.post('/api/platform/workflow_rules',json={
+            'name':'Delete Me','module':'leads','event':'create','status':'Active',
+            'actions':[{'type':'audit','value':'test'}]
+        })
+        out['created']=created.status_code
+        rule_id=created.json()['id']
+        out['deleted']=c.delete('/api/platform/workflow_rules/'+str(rule_id)).status_code
+        out['hidden']=all(x['id']!=rule_id for x in c.get('/api/platform/workflow_rules').json()['items'])
+        out['recycled']=any(x['id']==rule_id and x['resource']=='workflow_rules' for x in c.get('/api/administration/recycle-bin').json()['items'])
+        out['restored']=c.post('/api/administration/restore',json={'resource':'workflow_rules','record_id':rule_id}).status_code
+    """)
+    assert out=={'created':201,'deleted':200,'hidden':True,'recycled':True,'restored':200}
