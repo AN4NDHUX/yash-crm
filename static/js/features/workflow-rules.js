@@ -37,6 +37,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let customFunctions = [];
   let functionPicker = false;
   let functionSearch = "";
+  let functionConfiguration = false;
   let listQuery = "";
   let moduleFilter = "all";
   const selectedRuleIds = new Set();
@@ -99,6 +100,15 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
+  const configureFunctionDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Configure Function" style="max-width:680px;width:min(92vw,680px)">
+    <header><h2>Configure Function</h2><p>Choose how to configure your workflow function.</p></header>
+    <div style="display:grid;gap:12px;padding:16px">
+      <button type="button" class="button" data-wf-function-method="gallery"><strong>Gallery</strong> — Browse preconfigured examples</button>
+      <button type="button" class="button" data-wf-function-method="existing"><strong>Functions</strong> — Use an existing organization function</button>
+      <button type="button" class="button" data-wf-function-method="create"><strong>Write your own</strong> — Create a function in Developer Hub</button>
+    </div>
+    <footer class="wf-editor-footer"><button type="button" class="button" data-wf-function-config-close>Cancel</button></footer>
+  </div></div>`;
   const functionDialog = () => {
     const filtered = customFunctions.filter(fn => String(fn.name || fn.title || "").toLowerCase().includes(functionSearch.toLowerCase()));
     return `<div class="wf-rule-overlay" data-wf-function-overlay><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Associate custom function" style="max-width:900px;width:min(92vw,900px)">
@@ -129,7 +139,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
       ${actionRows()}<button type="button" class="button button-small" data-wf-open-function>Browse Functions</button><button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
-    return `${functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
+    return `${functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
@@ -189,7 +199,16 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     el(root,"[data-wf-open-function]")?.addEventListener("click",async()=>{readCurrent(root);functionPicker=true;await refresh(root);});
     el(root,"[data-wf-close-function]")?.addEventListener("click",async()=>{functionPicker=false;await refresh(root);});
     el(root,"[data-wf-function-search]")?.addEventListener("input",async event=>{functionSearch=event.target.value;await refresh(root);el(root,"[data-wf-function-search]")?.focus();});
-    el(root,"[data-wf-configure-function]")?.addEventListener("click",()=>{toast("Configure Function","Create and activate a function in Developer Hub before associating it.");});
+    el(root,"[data-wf-configure-function]")?.addEventListener("click",async()=>{functionConfiguration=true;await refresh(root);});
+    el(root,"[data-wf-function-config-close]")?.addEventListener("click",async()=>{functionConfiguration=false;await refresh(root);});
+    els(root,"[data-wf-function-method]").forEach(button=>button.addEventListener("click",async()=>{
+      const method=button.dataset.wfFunctionMethod;
+      functionConfiguration=false;
+      if(method==="existing"){functionPicker=true;await refresh(root);return;}
+      if(method==="gallery"){toast("Function gallery","No gallery templates are installed yet.");await refresh(root);return;}
+      functionPicker=false;
+      navigate("/setup/developer_hub");
+    }));
     el(root,"[data-wf-associate-function]")?.addEventListener("click",async()=>{
       const selected=el(root,'input[name="wf-function-choice"]:checked')?.value;
       if(!selected){toast("Select a function","Choose an active function to associate.","error");return;}
