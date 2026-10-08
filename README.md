@@ -1,6 +1,6 @@
-# Yash CRM
+# CONVOSIS CRM
 
-Yash CRM is a browser-based FastAPI CRM with core sales, inventory, service, marketing, analytics, customization, security, automation and data-administration foundations. The production deployment is a stateless Docker web service backed by PostgreSQL.
+CONVOSIS CRM is a browser-based FastAPI CRM with core sales, inventory, service, marketing, analytics, customization, security, automation and data-administration foundations. The production deployment is a stateless Docker web service backed by PostgreSQL.
 
 ## Included modules
 
@@ -43,7 +43,7 @@ Browser -> HTTPS/cloud proxy -> FastAPI/Uvicorn -> PostgreSQL
                                       +-> OpenAI-compatible cloud AI provider
 ```
 
-End users need only the HTTPS URL and their own Yash CRM account. Browser authentication is database-backed and accepts username, email, or phone number plus password. Production does not use the legacy shared HTTP Basic gate.
+End users need only the HTTPS URL and their own CONVOSIS CRM account. Browser authentication is database-backed and accepts username, email, or phone number plus password. Production does not use the legacy shared HTTP Basic gate.
 
 ## Deploy on Railway
 
