@@ -574,7 +574,7 @@ class OrganizationSetting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
-    org_name: Mapped[str] = mapped_column(String(160), default="Yash CRM")
+    org_name: Mapped[str] = mapped_column(String(160), default="CONVOSIS CRM")
     timezone: Mapped[str] = mapped_column(String(80), default="Asia/Kolkata")
     currency: Mapped[str] = mapped_column(String(10), default="INR")
     date_format: Mapped[str] = mapped_column(String(30), default="DD MMM YYYY")
