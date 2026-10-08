@@ -209,9 +209,9 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
     assert out['b_leads'] == 0
     assert out['b_direct_a'] == 404
     assert out['b_search_a'] == []
-    assert out['b_settings'] == 'Yash CRM'
+    assert out['b_settings'] == 'CONVOSIS CRM'
     assert out['c_leads'] == 0
-    assert out['c_settings'] == 'Yash CRM'
+    assert out['c_settings'] == 'CONVOSIS CRM'
     for label in ('username', 'email', 'phone'):
         assert out[f'login_{label}'] == 200
         assert out[f'leads_{label}'] == 1
