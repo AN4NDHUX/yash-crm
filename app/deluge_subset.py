@@ -4,6 +4,7 @@ Supported statements (one per line):
     record.put("status", "Qualified");
     crm.addTag("Reviewed");
     crm.createTask("Follow up");
+    crm.notify("Follow-up required");
     info "Audit message";
 Only literal strings and $record.field references are accepted as values.
 """
@@ -13,7 +14,7 @@ from fastapi import HTTPException
 
 MAX_BYTES = 32768
 FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
-STATEMENT = re.compile(r"^(record\.put|crm\.addTag|crm\.createTask)\((.*)\)$")
+STATEMENT = re.compile(r"^(record\.put|crm\.addTag|crm\.createTask|crm\.notify)\((.*)\)$")
 REFERENCE = re.compile(r"^\$record\.([A-Za-z][A-Za-z0-9_]{0,79})$")
 PROTECTED = {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}
 
@@ -62,8 +63,10 @@ def parse_deluge(source):
                 steps.append({"type": "field_update", "field": field, "value": _argument(parts.group(2))})
             elif command == "crm.addTag":
                 steps.append({"type": "tag", "value": _argument(arguments)})
-            else:
+            elif command == "crm.createTask":
                 steps.append({"type": "create_task", "subject": _argument(arguments)})
+            else:
+                steps.append({"type": "notification", "value": _argument(arguments)})
         if len(steps) > 20:
             raise HTTPException(422, "Deluge functions support at most 20 statements")
     if not steps:
