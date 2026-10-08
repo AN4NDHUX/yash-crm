@@ -77,3 +77,30 @@ def test_workflow_rule_delete_and_restore_from_recycle_bin():
         out['restored']=c.post('/api/administration/restore',json={'resource':'workflow_rules','record_id':rule_id}).status_code
     """)
     assert out=={'created':201,'deleted':200,'hidden':True,'recycled':True,'restored':200}
+
+
+def test_recycle_bin_purges_records_older_than_thirty_days():
+    out = app_scenario("""
+    from datetime import datetime, timedelta
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup',json={
+            'name':'Retention Admin','organization_name':'Retention Workspace',
+            'username':'retention.admin','email':'retention.admin@example.com',
+            'password':'strong-password-123'
+        })
+        lead=c.post('/api/leads',json={'name':'Old Deleted Lead','company':'Example'}).json()
+        lid=lead['id']
+        c.delete('/api/leads/'+str(lid))
+        with main.SessionLocal() as db:
+            row=db.get(main.Lead,lid)
+            row.updated_at=datetime.utcnow()-timedelta(days=31)
+            db.commit()
+        purge=c.post('/api/administration/recycle-bin/purge-expired')
+        out['purge_status']=purge.status_code
+        out['purged']=purge.json().get('purged',0)
+        out['absent']=not any(item['resource']=='leads' and item['id']==lid for item in
+                           c.get('/api/administration/recycle-bin').json()['items'])
+    """)
+    assert out['purge_status']==200
+    assert out['purged']>=1
+    assert out['absent']
