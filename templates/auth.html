@@ -250,6 +250,10 @@
             <label for="name">Full name</label>
             <input id="name" name="name" autocomplete="name" placeholder="Your full name" />
           </div>
+          <div class="field signup-only" id="organization-create-field">
+            <label for="organization-name">Organization name</label>
+            <input id="organization-name" name="organization_name" autocomplete="organization" minlength="2" maxlength="160" placeholder="Your company or organization" />
+          </div>
           <div class="field signup-only">
             <label for="username">Username</label>
             <input id="username" name="username" autocomplete="username" minlength="3" maxlength="40" placeholder="your.username" />
@@ -302,6 +306,7 @@
     location.pathname === "/forgot-password" ? "forgot" :
     location.pathname === "/reset-password" ? "reset" : "signin";
   const invitationToken = new URLSearchParams(location.search).get("invite") || "";
+  if (invitationToken) document.getElementById("organization-create-field")?.remove();
 
   if (mode !== "signin") document.body.classList.add(mode);
   document.title = ({
@@ -366,6 +371,7 @@
     } else if (mode === "signup") {
       payload = {
         name: String(data.get("name") || "").trim(),
+        organization_name: String(data.get("organization_name") || "").trim(),
         username: String(data.get("username") || "").trim(),
         email: String(data.get("email") || "").trim(),
         phone: String(data.get("phone") || "").trim(),
@@ -374,6 +380,7 @@
       };
       const confirm = String(data.get("confirm_password") || "");
       if (payload.name.length < 2) return showError("Enter your full name.");
+      if (!payload.invitation_token && payload.organization_name.length < 2) return showError("Enter an organization name (at least 2 characters).");
       if (payload.username.length < 3) return showError("Username must contain at least 3 characters.");
       if (!payload.email) return showError("Email address is required.");
       if (payload.password.length < 8) return showError("Password must contain at least 8 characters.");
