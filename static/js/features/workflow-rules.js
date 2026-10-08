@@ -17,7 +17,7 @@ const opts = (items, selected, escape) => items.map(([value, label]) =>
   `<option value="${escape(value)}" ${String(selected) === String(value) ? "selected" : ""}>${escape(label)}</option>`).join("");
 const newCondition = () => ({field:"",operator:"equals",value:""});
 const draftRule = () => ({
-  name:"", description:"", module:"", event:"create_or_edit",
+  name:"", description:"", module:"", event:"create_or_edit", trigger_field:"",
   criteria_mode:"conditions", logic:"AND", conditions:[newCondition()],
   actions:[{type:"audit",value:""}], status:"Active"
 });
@@ -66,6 +66,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       description:record.description || "",
       module:record.module || "leads",
       event:record.event === "update" ? "edit" : record.event === "create" ? "create" : (record.event || "create_or_edit"),
+      trigger_field:record.trigger_field || "",
       criteria_mode:criteria ? "conditions" : "all",
       logic:criteria?.logic === "OR" ? "OR" : "AND",
       conditions:criteria?.conditions?.length ? criteria.conditions.map(c=>({...newCondition(),...c})) : criteria?.field ? [{...newCondition(),...criteria}] : [newCondition()],
@@ -97,7 +98,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <div class="field full"><label>Description</label><textarea class="field-input" data-wf-description rows="2">${esc(draft.description)}</textarea></div>
       </div></div>`;
     if (step === 1) body = `<section class="wf-stage"><div class="wf-stage-marker">WHEN</div><div class="wf-stage-content"><h3>Execute this workflow rule based on</h3>
-      <select class="field-select" data-wf-event>${opts([["create","Create"],["create_or_edit","Create or Edit"],["edit","Edit"]],draft.event,esc)}</select>
+      <select class="field-select" data-wf-event>${opts([["create","Create"],["create_or_edit","Create or Edit"],["edit","Edit"],["field_change","Specific field changes"]],draft.event,esc)}</select>${draft.event === "field_change" ? `<label>Field to monitor</label><select class="field-select" data-wf-trigger-field>${opts([["","Select a field"],...fieldsFor()],draft.trigger_field,esc)}</select>` : ""}
       <p>This workflow will run ${draft.event === "create" ? "when a record is created" : draft.event === "edit" ? "when a record is edited" : "when a record is created or edited"} and its conditions are met.</p></div></section>`;
     if (step === 2) body = `<section class="wf-stage"><div class="wf-stage-marker">CONDITION 1</div><div class="wf-stage-content"><h3>Which records should this rule apply to?</h3>
       <div class="wf-mode"><label><input type="radio" name="wf-criteria-mode" value="conditions" ${draft.criteria_mode === "conditions" ? "checked" : ""}/> Records matching certain conditions</label>
@@ -137,7 +138,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       draft.module = get("[data-wf-module]") || draft.module;
       draft.name = (get("[data-wf-name]") || "").trim();
       draft.description = get("[data-wf-description]") || "";
-    } else if(step === 1) draft.event = get("[data-wf-event]") || draft.event;
+    } else if(step === 1) { draft.event = get("[data-wf-event]") || draft.event; if (draft.event === "field_change") draft.trigger_field = get("[data-wf-trigger-field]") || draft.trigger_field; }
     else if(step === 2) {
       draft.criteria_mode = el(root,'input[name="wf-criteria-mode"]:checked')?.value || "all";
       draft.logic = get("[data-wf-logic]") || "AND";
@@ -153,6 +154,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     }));
   }
   function validateStep() {
+    if (step === 1 && draft.event === "field_change" && !draft.trigger_field) return "Select the field to monitor.";
     if (step === 0 && (!draft.name || !draft.module)) return "Select a module and enter a rule name.";
     if (step === 2 && draft.criteria_mode === "conditions" && draft.conditions.some(c=>!c.field || (!["is_empty","is_not_empty"].includes(c.operator) && !String(c.value ?? "").trim()))) return "Choose a field, operator and value for each condition.";
     if (step === 3 && draft.actions.some(a=>a.type === "field_update" && !a.field)) return "Select a target field for every field update.";
@@ -191,7 +193,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       readCurrent(root);const error=validateStep();if(error){toast("Complete the rule",error,"error");return;}
       if(step<3){step++;await refresh(root);return;}
       const payload={name:draft.name,description:draft.description,module:draft.module,
-        event:draft.event,status:draft.status,
+        event:draft.event,trigger_field:draft.event==="field_change"?draft.trigger_field:"",status:draft.status,
         criteria:draft.criteria_mode==="all"?null:{logic:draft.logic,conditions:draft.conditions},
         actions:draft.actions};
       try{
@@ -199,6 +201,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
         draft=null;editingId=null;step=0;toast("Workflow saved","The rule is ready to evaluate CRM records.");await refresh(root);
       }catch(e){toast("Could not save workflow",e.message,"error");}
     });
+    el(root,"[data-wf-event]")?.addEventListener("change",async event=>{draft.event=event.target.value;await refresh(root);});
     el(root,"[data-wf-module]")?.addEventListener("change",e=>{draft.module=e.target.value;});
     els(root,'input[name="wf-criteria-mode"]').forEach(b=>b.addEventListener("change",async()=>{readCurrent(root);await refresh(root);}));
     el(root,"[data-wf-add-condition]")?.addEventListener("click",async()=>{readCurrent(root);draft.conditions.push(newCondition());await refresh(root);});
