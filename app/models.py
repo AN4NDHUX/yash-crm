@@ -588,6 +588,7 @@ class OrganizationSetting(Base):
 
 class ApprovalProcess(TimestampMixin, Base):
     __tablename__ = "approval_processes"
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
@@ -662,6 +663,8 @@ class ApexAssistantRun(Base):
 
 class Blueprint(Base):
     __tablename__ = "blueprints"
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     organization_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
