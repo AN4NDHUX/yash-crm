@@ -559,7 +559,7 @@ async function activityTypeView(type) {
 }
 
 function platformState(resource) {
-  if (!state.moduleState[`platform:${resource}`]) state.moduleState[`platform:${resource}`] = { search: "", status: "", owner_id: "", sort: "updated_desc", offset: 0 };
+  if (!state.moduleState[`platform:${resource}`]) state.moduleState[`platform:${resource}`] = { search: "", status: "", owner_id: "", sort: "updated_desc", offset: 0, selectedIds: [] };
   return state.moduleState[`platform:${resource}`];
 }
 
@@ -567,7 +567,7 @@ function platformTable(resource, data) {
   const config = state.platformCatalog.resources[resource];
   if (!data.items.length) return `<section class="card">${emptyState("+", `No ${config.label.toLowerCase()} found`, "Create a record or adjust the current filters.", `<button class="button button-primary" data-platform-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
   const visible = (config.fields || []).filter((item) => !["textarea", "json", "file"].includes(item.type)).slice(0, 4);
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Archive" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th><input type="checkbox" data-platform-select-all="${resource}" aria-label="Select all displayed records"/></th>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-platform-select-record="${resource}" data-id="${row.id}" ${platformState(resource).selectedIds.includes(row.id) ? "checked" : ""}/></td>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function platformDisplay(field, value) {
@@ -590,7 +590,7 @@ async function platformPanel(resource, compact = false) {
   if (current.status) params.set("status", current.status);
   if (current.owner_id) params.set("owner_id", current.owner_id);
   const data = await api(`/api/platform/${resource}?${params}`);
-  const toolbar = `<div class="module-toolbar"><label class="toolbar-search"><span>?</span><input data-platform-search="${resource}" value="${esc(current.search)}" placeholder="Search ${esc(config.label.toLowerCase())}..." /></label><select class="filter-select" data-platform-status="${resource}"><option value="">All statuses</option><option ${current.status === "Active" ? "selected" : ""}>Active</option><option ${current.status === "Inactive" ? "selected" : ""}>Inactive</option></select><select class="filter-select" data-platform-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-platform-sort="${resource}"><option value="updated_desc">Recently updated</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A-Z</option><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently created</option></select><a class="button button-ghost button-small" href="/api/export/${resource}.csv" download>Export CSV</a><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>`;
+  const toolbar = `<div class="module-toolbar"><button class="button button-small" data-platform-bulk-delete ${current.selectedIds?.length ? "" : "disabled"}>Delete selected (${current.selectedIds?.length || 0})</button><label class="toolbar-search"><span>?</span><input data-platform-search="${resource}" value="${esc(current.search)}" placeholder="Search ${esc(config.label.toLowerCase())}..." /></label><select class="filter-select" data-platform-status="${resource}"><option value="">All statuses</option><option ${current.status === "Active" ? "selected" : ""}>Active</option><option ${current.status === "Inactive" ? "selected" : ""}>Inactive</option></select><select class="filter-select" data-platform-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-platform-sort="${resource}"><option value="updated_desc">Recently updated</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A-Z</option><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently created</option></select><a class="button button-ghost button-small" href="/api/export/${resource}.csv" download>Export CSV</a><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>`;
   return `${toolbar}${platformTable(resource, data)}${compact ? "" : pagination(`platform:${resource}`, data)}`;
 }
 
@@ -638,7 +638,7 @@ function tableView(resource, data) {
   const config = MODULES[resource];
   if (!data.items.length) return `<section class="card">${emptyState(config.icon, `No ${config.label.toLowerCase()} found`, "Try changing your filters or create a new record.", `<button class="button button-primary" data-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
   const selectionHeader = `<th><input type="checkbox" data-select-all="${resource}" aria-label="Select all displayed records" /></th>`;
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${selectionHeader}${config.columns.map((column) => `<th>${column.label}</th>`).join("")}<th></th></tr></thead><tbody>${data.items.map((row) => `<tr>${resource === "leads" ? `<td><input type="checkbox" data-select-record="leads" data-id="${row.id}" ${state.moduleState[resource].selectedIds.includes(row.id) ? "checked" : ""} /></td>` : ""}${config.columns.map((column) => `<td class="${column.key === "name" ? "primary-cell" : ""}">${column.cell ? column.cell(row) : esc(row[column.key] ?? "—")}</td>`).join("")}<td><div class="table-actions">${resource === "activities" && row.status !== "Completed" ? `<button class="table-action" title="Mark complete" data-complete-activity="${row.id}">✓</button>` : ""}<button class="table-action" title="Edit" data-edit-record="${resource}" data-id="${row.id}">✎</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-delete-record="${resource}" data-id="${row.id}">⌫</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${selectionHeader}${config.columns.map((column) => `<th>${column.label}</th>`).join("")}<th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-select-record="${resource}" data-id="${row.id}" ${state.moduleState[resource].selectedIds.includes(row.id) ? "checked" : ""} /></td>${config.columns.map((column) => `<td class="${column.key === "name" ? "primary-cell" : ""}">${column.cell ? column.cell(row) : esc(row[column.key] ?? "—")}</td>`).join("")}<td><div class="table-actions">${resource === "activities" && row.status !== "Completed" ? `<button class="table-action" title="Mark complete" data-complete-activity="${row.id}">✓</button>` : ""}<button class="table-action" title="Edit" data-edit-record="${resource}" data-id="${row.id}">✎</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-delete-record="${resource}" data-id="${row.id}">⌫</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function kanbanView(items) {
@@ -1044,6 +1044,25 @@ function bindPlatform(resource) {
   $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
   $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   const current = state.platformCatalog.resources[resource] ? platformState(resource) : null;
+  $('[data-platform-select-record]').forEach(input=>input.addEventListener("change",event=>{
+    const id=Number(input.dataset.id);
+    current.selectedIds=event.target.checked?[...new Set([...current.selectedIds,id])]:current.selectedIds.filter(value=>value!==id);
+    renderRoute();
+  }));
+  $('[data-platform-select-all]')?.addEventListener("change",event=>{
+    const ids=$('[data-platform-select-record]').map(el=>Number(el.dataset.id));
+    current.selectedIds=event.target.checked?[...new Set([...current.selectedIds,...ids])]:current.selectedIds.filter(id=>!ids.includes(id));
+    renderRoute();
+  });
+  $('[data-platform-bulk-delete]')?.addEventListener("click",async()=>{
+    if (!current.selectedIds.length || !confirm("Move selected records to the 30-day Recycle Bin?")) return;
+    try {
+      const result=await api("/api/administration/bulk-delete",{method:"POST",body:JSON.stringify({resource,ids:current.selectedIds})});
+      current.selectedIds=[];
+      toast("Records deleted",result.deleted+" records moved to Recycle Bin.");
+      await renderRoute();
+    } catch(error){toast("Bulk delete failed",error.message,"error");}
+  });
   let timer;
   $('[data-platform-search]')?.addEventListener("input", (event) => { clearTimeout(timer); current.search = event.target.value; current.offset = 0; timer = setTimeout(renderRoute, 250); });
   $('[data-platform-status]')?.addEventListener("change", (event) => { current.status = event.target.value; current.offset = 0; renderRoute(); });
