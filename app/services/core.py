@@ -359,6 +359,12 @@ def _workflow_condition(values: dict[str, Any], condition: dict[str, Any]) -> bo
         return actual not in (None, "", [])
     if operator in {"contains", "includes"}:
         return str(expected).lower() in str(actual or "").lower()
+    if operator in {"does_not_contain", "not_contains"}:
+        return str(expected).lower() not in str(actual or "").lower()
+    if operator in {"starts_with", "starts"}:
+        return str(actual or "").lower().startswith(str(expected or "").lower())
+    if operator in {"ends_with", "ends"}:
+        return str(actual or "").lower().endswith(str(expected or "").lower())
     if operator in {"in", "one_of"}:
         return str(actual) in {str(item) for item in (expected if isinstance(expected, list) else str(expected).split(","))}
     if operator in {"greater_than", ">"}:
@@ -484,7 +490,11 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
         configured = str(config.get("module", "")).lower().replace(" ", "_")
         if configured not in aliases | {"all", "*"}:
             continue
-        if config.get("event") not in (None, "", event):
+        trigger = str(config.get("event") or "create_or_edit").lower()
+        allowed_events = {"create", "create_or_edit", "edit", "update"}
+        if trigger not in allowed_events:
+            continue
+        if trigger != "create_or_edit" and not (trigger == event or (trigger == "edit" and event == "update")):
             continue
         criteria = config.get("criteria") or ({"field": config.get("criteria_field"), "operator": "equals", "value": config.get("criteria_value")} if config.get("criteria_field") else None)
         criteria_values = {**(before_values or {}), **values}
