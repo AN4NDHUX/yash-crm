@@ -115,3 +115,35 @@ def test_workflow_rule_builder_persists_trigger_and_runs_on_create_and_edit():
     assert "create" in out["executions"]
     assert "update" in out["executions"]
     assert all(status == "completed" for status in out["statuses"])
+
+
+def test_workflow_field_update_cannot_change_tenant_identity():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Tenant Workflow Owner', 'organization_name':'Safe Tenant',
+            'username':'tenant.workflow.owner', 'email':'tenant.workflow@example.com',
+            'password':'strong-password-123'
+        })
+        original_org_id = c.get('/api/organization').json()['id']
+        rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Blocked Tenant Update', 'module':'leads', 'event':'create',
+            'actions':[{'type':'field_update','field':'organization_id','value':999999}],
+            'status':'Active'
+        })
+        out['rule_status'] = rule.status_code
+        lead = c.post('/api/leads', json={'name':'Protected Lead','company':'Safety'})
+        out['lead_status'] = lead.status_code
+        with main.SessionLocal() as db:
+            persisted = db.get(main.Lead, lead.json()['id'])
+            out['tenant_unchanged'] = persisted.organization_id == original_org_id
+        executions = c.get('/api/automation/executions').json()
+        out['blocked'] = any(
+            x['rule_id'] == rule.json()['id'] and x['status'] == 'failed'
+            for x in executions['items']
+        )
+    """)
+    assert out["rule_status"] == 201
+    assert out["lead_status"] in (200, 201)
+    assert out["tenant_unchanged"]
+    assert out["blocked"]
