@@ -476,7 +476,48 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             record.tags = tags
         else:
             raise ValueError(f"{resource} does not support tags")
-    elif action_type in {"webhook", "webhook_queue", "function", "email", "call", "meeting"}:
+    elif action_type == "function":
+        # Functions are declarative, tenant-scoped CRM action sequences; never eval user code.
+        identifier = action.get("function_id") or value
+        try:
+            function_id = int(identifier)
+        except (ValueError, TypeError):
+            raise ValueError("Function action requires a valid function ID")
+        function_record = db.scalar(select(PlatformRecord).where(
+            PlatformRecord.id == function_id,
+            PlatformRecord.resource == "functions",
+            PlatformRecord.archived == False,
+            PlatformRecord.status == "Active",
+        ))
+        if function_record is None:
+            raise ValueError("Active custom function not found in this organization")
+        spec = (function_record.data or {}).get("source")
+        if isinstance(spec, str):
+            try:
+                spec = json.loads(spec)
+            except json.JSONDecodeError as error:
+                raise ValueError("Custom function source must contain valid JSON") from error
+        if isinstance(spec, dict):
+            spec = spec.get("steps")
+        if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
+            raise ValueError("Custom function must have 1 to 20 action steps")
+        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit"}
+        def resolve(template):
+            if isinstance(template, str) and template.startswith("$record."):
+                field = template[8:]
+                if not field or field.startswith("_") or "." in field:
+                    raise ValueError("Invalid function record field")
+                if field in {"password", "password_hash", "organization_id"}:
+                    raise ValueError("Protected function record field")
+                return values.get(field, getattr(record, field, None))
+            return template
+        for step in spec:
+            if not isinstance(step, dict) or str(step.get("type", "")).lower() not in allowed:
+                raise ValueError("Unsupported custom function step")
+            resolved_step = {key: resolve(item) for key, item in step.items()}
+            _execute_workflow_action(db, resolved_step, resource, record, values)
+        add_audit(db, "function_executed", resource, record.id, f"Custom function '{function_record.title}' executed")
+    elif action_type in {"webhook", "webhook_queue", "email", "call", "meeting"}:
         add_audit(db, "automation_queued", resource, record.id, f"Queued workflow action '{action_type}' for external worker")
     elif action_type != "audit":
         raise ValueError(f"Unsupported workflow action '{action_type}'")
