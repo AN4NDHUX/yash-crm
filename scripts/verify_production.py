@@ -114,18 +114,45 @@ def verify_tenant_isolation():
     if missing:
         raise AssertionError("Missing tenant-smoke secrets: " + ", ".join(missing))
 
-    tag = "tier0-smoke-" + uuid.uuid4().hex[:12]
     a, _ = login(USER_A_IDENTIFIER, USER_A_PASSWORD)
-    _, lead = call(a, "POST", "/api/leads", {"name": tag, "company": "Tier 0 production smoke"})
-    lead_id = int(lead["id"])
-
     b, _ = login(USER_B_IDENTIFIER, USER_B_PASSWORD)
-    call(b, "GET", f"/api/leads/{lead_id}", expected=(404,))
-    call(b, "GET", "/api/users", expected=(403,))
+    _, session_a = call(a, "GET", "/api/auth/session")
+    _, session_b = call(b, "GET", "/api/auth/session")
+    account_a = session_a.get("user", {})
+    account_b = session_b.get("user", {})
+    assert account_a.get("id") != account_b.get("id"), (
+        "Smoke-test accounts resolve to the same user; configure two distinct accounts."
+    )
+    assert not account_a.get("owner_console_access") and not account_b.get("owner_console_access"), (
+        "Smoke-test accounts must be ordinary users, not the platform owner."
+    )
+    _, org_a = call(a, "GET", "/api/organization")
+    _, org_b = call(b, "GET", "/api/organization")
+    assert org_a.get("id") is not None and org_b.get("id") is not None, (
+        "Smoke-test organizations could not be resolved."
+    )
+    assert org_a["id"] != org_b["id"], (
+        "SMOKE_TEST_CONFIGURATION_ERROR: Users A and B are members of the same organization "
+        f"(organization ID {org_a['id']}). Create two genuinely separate organizations "
+        "and assign one active smoke user to each; do not change tenant isolation expectations."
+    )
 
-    # Clean up the disposable record from Tenant A after proving isolation.
-    call(a, "POST", "/api/leads/bulk-archive", {"related_id": [lead_id]}, expected=(200,))
-    return {"lead_id": lead_id, "cross_tenant_status": 404, "admin_denial": 403}
+    tag = "tier0-smoke-" + uuid.uuid4().hex[:12]
+    lead_id = None
+    try:
+        _, lead = call(a, "POST", "/api/leads", {"name": tag, "company": "Tier 0 production smoke"})
+        lead_id = int(lead["id"])
+        call(b, "GET", f"/api/leads/{lead_id}", expected=(404,))
+        call(b, "GET", "/api/users", expected=(403,))
+        return {"lead_id": lead_id, "cross_tenant_status": 404, "admin_denial": 403,
+                "organizations_distinct": True}
+    finally:
+        if lead_id is not None:
+            # Clean up even if a security assertion fails. Do not mask the original error.
+            try:
+                call(a, "POST", "/api/leads/bulk-archive", {"related_id": [lead_id]}, expected=(200,))
+            except Exception as cleanup_error:
+                print(f"WARNING: Could not archive Tier 0 smoke lead {lead_id}: {cleanup_error}", file=sys.stderr)
 
 
 def verify_billing_rejects_unsigned_events():
