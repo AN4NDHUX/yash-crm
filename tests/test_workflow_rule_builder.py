@@ -324,3 +324,25 @@ def test_workflow_owner_assignment_rejects_user_from_another_organization():
     assert out['rule_status'] == 201
     assert out['tenant_safe']
     assert out['rejected']
+
+
+def test_invalid_workflow_trigger_and_schedule_are_rejected():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Validation Owner','organization_name':'Validation Org',
+            'username':'workflow.validation','email':'workflow.validation@example.com',
+            'password':'strong-password-123'
+        })
+        out['missing_field'] = c.post('/api/platform/workflow_rules', json={
+            'name':'Missing Watched Field','module':'leads','event':'field_change',
+            'actions':[{'type':'audit','value':'test'}],'status':'Active'
+        }).status_code
+        out['invalid_datetime'] = c.post('/api/platform/workflow_rules', json={
+            'name':'Invalid Schedule','module':'leads','event':'create',
+            'scheduled_for':'not-a-date', 'actions':[{'type':'audit','value':'test'}],
+            'status':'Active'
+        }).status_code
+    """)
+    assert out['missing_field'] == 422
+    assert out['invalid_datetime'] == 422
