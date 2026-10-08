@@ -180,21 +180,17 @@ def test_custom_function_executes_field_update_and_blocks_unapproved_steps():
             'source':[{'type':'function','value':str(fn_id)}], 'status':'Active'
         })
         out['bad_created'] = bad.status_code
-        bad_rule = c.post('/api/platform/workflow_rules', json={
-            'name':'Reject Nested','module':'leads','event':'create',
-            'actions':[{'type':'function','value':str(bad.json()['id'])}],'status':'Active'
-        })
-        c.post('/api/leads', json={'name':'Blocked Lead','company':'Original'})
-        statuses = c.get('/api/automation/executions').json()['items']
-        out['rejected'] = any(e['rule_id'] == bad_rule.json()['id'] and e['status'] == 'failed' for e in statuses)
+        out['rejected'] = bad.status_code == 422
+        out['rejection_detail'] = bad.json().get('detail', '')
     """)
     assert out["function_created"] == 201
     assert out["rule_created"] == 201
     assert out["lead_created"] in (200, 201)
     assert out["company"] == "Normalized Company"
     assert out["executed"]
-    assert out["bad_created"] == 201
+    assert out["bad_created"] == 422
     assert out["rejected"]
+    assert "unsupported action" in out["rejection_detail"]
 
 
 def test_workflow_rule_edit_preserves_conditions_and_updates_trigger():
