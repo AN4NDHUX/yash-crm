@@ -4854,14 +4854,17 @@ def export_audit_csv(resource: str | None = None, action: str | None = None, act
     return StreamingResponse(iter([content]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="yash-crm-audit-log.csv"'})
 
 
-def _purge_expired_recycle_records(db: Session) -> int:
+def _purge_expired_recycle_records(db: Session, organization_id: int | None = None) -> int:
     """Purge archived records after 30 days; leave FK-protected records for safe review."""
     cutoff = datetime.utcnow() - timedelta(days=30)
     removed = 0
     models = [(resource, model) for resource, model in RESOURCE_MAP.items() if hasattr(model, "archived") and hasattr(model, "updated_at")]
     models.append(("platform", PlatformRecord))
     for _, model in models:
-        rows = db.scalars(select(model).where(model.archived == True, model.updated_at < cutoff).limit(100)).all()
+        query = select(model).where(model.archived == True, model.updated_at < cutoff)
+        if organization_id is not None:
+            query = query.where(model.organization_id == organization_id)
+        rows = db.scalars(query.limit(100)).all()
         for row in rows:
             try:
                 with db.begin_nested():
@@ -4907,26 +4910,26 @@ def bulk_delete_records(payload: dict[str, Any], db: Session = Depends(get_db), 
 
 @app.post("/api/administration/recycle-bin/purge-expired")
 def purge_expired_recycle_records(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
-    _require_organization_admin(db, actor)
-    count = _purge_expired_recycle_records(db)
+    organization, _ = _require_organization_admin(db, actor)
+    count = _purge_expired_recycle_records(db, organization.id)
     db.commit()
     return {"purged": count, "retention_days": 30}
 
 
 @app.get("/api/administration/recycle-bin")
 def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
-    _require_organization_admin(db, actor)
-    _purge_expired_recycle_records(db)
+    organization, _ = _require_organization_admin(db, actor)
+    _purge_expired_recycle_records(db, organization.id)
     db.commit()
     items: list[dict[str, Any]] = []
     for resource, model in RESOURCE_MAP.items():
         if not hasattr(model, "archived"):
             continue
-        rows = db.scalars(select(model).where(getattr(model, "archived") == True).limit(limit)).all()
+        rows = db.scalars(select(model).where(getattr(model, "archived") == True, model.organization_id == organization.id).limit(limit)).all()
         for row in rows:
             serialized = serialize(row, db, actor)
             items.append({"resource": resource, "id": row.id, "name": serialized.get("name") or serialized.get("full_name") or serialized.get("subject") or serialized.get("title") or f"#{row.id}", "archived_at": serialized.get("updated_at")})
-    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == True).order_by(PlatformRecord.updated_at.desc()).limit(limit)).all()
+    rows = db.scalars(select(PlatformRecord).where(PlatformRecord.archived == True, PlatformRecord.organization_id == organization.id).order_by(PlatformRecord.updated_at.desc()).limit(limit)).all()
     items.extend({"resource": row.resource, "id": row.id, "name": row.title, "archived_at": row.updated_at.isoformat() if row.updated_at else None, "platform": True} for row in rows)
     items.sort(key=lambda item: item.get("archived_at") or "", reverse=True)
     return {"items": items[:limit], "total": len(items)}
@@ -4934,13 +4937,13 @@ def recycle_bin(limit: int = Query(default=100, ge=1, le=500), db: Session = Dep
 
 @app.post("/api/administration/restore")
 def restore_archived(payload: RestorePayload, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
-    _require_organization_admin(db, actor)
+    organization, _ = _require_organization_admin(db, actor)
     if payload.resource in PLATFORM_RESOURCES:
         record = db.scalar(select(PlatformRecord).where(PlatformRecord.resource == payload.resource, PlatformRecord.id == payload.record_id))
     else:
         model = RESOURCE_MAP.get(payload.resource)
         record = db.get(model, payload.record_id) if model and hasattr(model, "archived") else None
-    if record is None:
+    if record is None or getattr(record, "organization_id", None) != organization.id:
         raise HTTPException(404, "Archived record not found")
     if not can_access_record(db, payload.resource, record, actor, "write"):
         raise HTTPException(403, "You do not have access to restore this record")
