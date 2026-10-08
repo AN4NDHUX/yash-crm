@@ -36,6 +36,15 @@ def check() -> tuple[bool, dict]:
         and revision_matches(live_revision, EXPECTED_APP_REVISION)
         and (not EXPECTED_MIGRATION_REVISION or live_migration == EXPECTED_MIGRATION_REVISION)
     )
+    if not ready:
+        payload["verification_diagnostics"] = {
+            "expected_app_revision": EXPECTED_APP_REVISION,
+            "deployed_app_revision_matches": revision_matches(live_revision, EXPECTED_APP_REVISION),
+            "expected_migration_revision": EXPECTED_MIGRATION_REVISION,
+            "deployed_migration_revision_matches": bool(
+                EXPECTED_MIGRATION_REVISION and live_migration == EXPECTED_MIGRATION_REVISION
+            ),
+        }
     return ready, payload
 
 
