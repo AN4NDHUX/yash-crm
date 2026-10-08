@@ -1,3 +1,4 @@
+import { MODULES } from "./modules.js";
 // Zoho-inspired workflow rule list and WHEN / CONDITION / ACTION wizard.
 // Existing /api/platform/workflow_rules endpoints remain the source of truth.
 const operators = [
@@ -16,7 +17,7 @@ const opts = (items, selected, escape) => items.map(([value, label]) =>
   `<option value="${escape(value)}" ${String(selected) === String(value) ? "selected" : ""}>${escape(label)}</option>`).join("");
 const newCondition = () => ({field:"",operator:"equals",value:""});
 const draftRule = () => ({
-  name:"", description:"", module:"leads", event:"create_or_edit",
+  name:"", description:"", module:"", event:"create_or_edit",
   criteria_mode:"conditions", logic:"AND", conditions:[newCondition()],
   actions:[{type:"audit",value:""}], status:"Active"
 });
@@ -35,21 +36,24 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       if (config.group === "Automation" || config.group === "Administration") continue;
       modules.set(key, config.label || key);
     }
-    for (const key of ["leads","contacts","accounts","deals","tasks","quotes","invoices"]) {
+    for (const [key, config] of Object.entries(MODULES)) {
+      if (!modules.has(key)) modules.set(key, config.label || key);
+    }
+    for (const key of ["quotes","invoices"]) {
       if (!modules.has(key)) modules.set(key, key[0].toUpperCase() + key.slice(1));
     }
     return [...modules].map(([key, label]) => [key, label]);
   };
   const fieldsFor = () => {
     const catalog = state.platformCatalog?.resources?.[draft.module];
-    const fields = catalog?.fields || [];
+    const fields = catalog?.fields || MODULES[draft.module]?.fields || [];
     const map = new Map([["name","Record name"],["status","Status"],["owner_id","Owner ID"]]);
     for (const field of fields) {
       const key = field.key || field.name || field.api_name;
       if (key) map.set(key, field.label || key);
     }
     const module = state.platformCatalog?.resources?.[draft.module];
-    if (!module) for (const key of ["website","company","email","phone","amount","stage","lead_status","source"]) map.set(key, key.replaceAll("_"," "));
+    if (!module && !MODULES[draft.module]) for (const key of ["website","company","email","phone","amount","stage","source"]) map.set(key, key.replaceAll("_"," "));
     return [...map].map(([key,label]) => [key,label]);
   };
   const asDraft = (record) => {
@@ -85,7 +89,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     const heading = `<header class="wf-editor-heading">${back}<div><h2>${esc(draft.name || "Create New Rule")}</h2><p>@ ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</p><small>${esc(draft.description)}</small></div></header>`;
     let body = "";
     if (step === 0) body = `<div class="wf-details-card"><h3>${editingId ? "Edit Workflow Rule" : "Create New Rule"}</h3><div class="form-grid">
-      <div class="field"><label>Module</label><select class="field-select" data-wf-module>${opts(moduleOptions(),draft.module,esc)}</select></div>
+      <div class="field"><label>Module</label><select class="field-select" data-wf-module>${opts([["","Select Module"],...moduleOptions()],draft.module,esc)}</select></div>
       <div class="field"><label>Rule Name</label><input class="field-input" data-wf-name maxlength="160" required value="${esc(draft.name)}"/></div>
       <div class="field full"><label>Description</label><textarea class="field-input" data-wf-description rows="2">${esc(draft.description)}</textarea></div>
       </div></div>`;
@@ -99,6 +103,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       </div></section>`;
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
       ${actionRows()}<button class="button button-small" data-wf-add-action>+ Add action</button></div></section>`;
+    if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
     return `<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
