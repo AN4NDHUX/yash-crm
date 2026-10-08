@@ -1,4 +1,4 @@
-"""Declarative catalog for Yash CRM's extensible modules and setup surfaces.
+"""Declarative catalog for CONVOSIS CRM's extensible modules and setup surfaces.
 
 The catalog is intentionally product-neutral.  It supplies field metadata to the
 API and browser client while records are stored by the platform record engine.
