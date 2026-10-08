@@ -219,7 +219,8 @@ async function navigate(path, replace = false) {
 }
 
 async function renderRoute() {
-  const route = window.location.pathname;
+  // Support the legacy /app prefix used by existing CONVOSIS CRM bookmarks.
+  const route = window.location.pathname.replace(/^\/app(?=\/|$)/, "") || "/dashboard";
   state.route = route;
   activeNav(route);
   const content = $("#app-content");
