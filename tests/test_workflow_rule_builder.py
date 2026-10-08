@@ -373,3 +373,18 @@ def test_declarative_function_editor_buttons_are_wired():
     assert 'data-wf-declarative-cancel' in source
     assert 'declarativeEditorDialog()' in source
     assert 'method:"PATCH",body:JSON.stringify({name,source:steps,status:"Active"})' in source
+
+
+def test_workflow_function_picker_empty_state_and_search_buttons():
+    """Function picker controls must navigate and search without replacing focused inputs."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] /
+              "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
+    assert 'data-wf-empty-gallery' in source
+    assert 'data-wf-function-row' in source
+    assert 'row.hidden=' in source
+    assert 'functionPicker=false;functionGallery=true;await refresh(root)' in source
+    assert 'functionPicker=false;functionConfiguration=true;await refresh(root)' in source
+    assert 'functionConfiguration=false;functionPicker=true;await refresh(root)' in source
+    assert 'functionSearch=event.target.value;await refresh(root)' not in source
