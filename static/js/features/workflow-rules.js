@@ -122,7 +122,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <footer class="wf-editor-footer"><button type="button" class="button" data-wf-function-config-close>Cancel</button></footer>
   </div></div>`;
   const functionDialog = () => {
-    const filtered = customFunctions.filter(fn => String(fn.name || fn.title || "").toLowerCase().includes(functionSearch.toLowerCase()));
+    const filtered = customFunctions.filter(fn => { const modules = fn.associations?.modules; return (!Array.isArray(modules) || modules.length === 0 || modules.includes(draft.module)) && String(fn.name || fn.title || "").toLowerCase().includes(functionSearch.toLowerCase()); });
     return `<div class="wf-rule-overlay" data-wf-function-overlay><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Associate custom function" style="max-width:900px;width:min(92vw,900px)">
       <header><h2>Functions - ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</h2></header>
       <div class="wf-list-actions"><label>Search <input class="field-input" data-wf-function-search placeholder="Search functions" value="${esc(functionSearch)}"/></label><button type="button" class="button" data-wf-configure-function>Configure Function</button></div>
@@ -215,6 +215,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     els(root,"[data-wf-edit-function]").forEach(button=>button.addEventListener("click",async()=>{
       const fn=customFunctions.find(item=>String(item.id)===button.dataset.wfEditFunction);
       if(!fn)return;
+      if(Array.isArray(fn.source) || Array.isArray(fn.source?.steps)){toast("Declarative function","This function uses approved CRM actions and cannot be edited in the Python source editor.","error");return;}
       functionEditingId=fn.id;
       functionDraft={name:fn.name || "",entrypoint:fn.entrypoint || "main",code:fn.source?.code || ""};
       functionEditor=true;functionPicker=false;await refresh(root);
