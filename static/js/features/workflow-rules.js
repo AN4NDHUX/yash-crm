@@ -35,6 +35,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let rules = [];
   let activity = [];
   let customFunctions = [];
+  let functionPicker = false;
+  let functionSearch = "";
   let listQuery = "";
   let moduleFilter = "all";
   const selectedRuleIds = new Set();
@@ -97,6 +99,16 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
+  const functionDialog = () => {
+    const filtered = customFunctions.filter(fn => String(fn.name || fn.title || "").toLowerCase().includes(functionSearch.toLowerCase()));
+    return `<div class="wf-rule-overlay" data-wf-function-overlay><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Associate custom function" style="max-width:900px;width:min(92vw,900px)">
+      <header><h2>Functions - ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</h2></header>
+      <div class="wf-list-actions"><label>Search <input class="field-input" data-wf-function-search placeholder="Search functions" value="${esc(functionSearch)}"/></label><button type="button" class="button" data-wf-configure-function>Configure Function</button></div>
+      <div style="max-height:45vh;overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Description</th><th>Language</th><th>Modified On</th></tr></thead><tbody>
+      ${filtered.map(fn=>`<tr><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")}</label></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4">No active functions found. Create one in Developer Hub.</td></tr>'}
+      </tbody></table></div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-close-function>Cancel</button><button type="button" class="button button-primary" data-wf-associate-function>Associate</button></footer>
+    </div></div>`;
+  };
   const editor = () => {
     const back = `<button class="button button-small" data-wf-back type="button">← Workflow Rules</button>`;
     const heading = `<header class="wf-editor-heading">${back}<div><h2>${esc(draft.name || "Create New Rule")}</h2><p>@ ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</p><small>${esc(draft.description)}</small></div></header>`;
@@ -115,9 +127,9 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       ${draft.criteria_mode === "conditions" ? `<div class="wf-conditions"><label>Match <select class="field-select" data-wf-logic>${opts([["AND","All (AND)"],["OR","Any (OR)"]],draft.logic,esc)}</select> conditions</label>${conditionRows()}<button class="button button-small" data-wf-add-condition>+ Add condition</button></div>` : ""}
       </div></section>`;
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
-      ${actionRows()}<button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
+      ${actionRows()}<button type="button" class="button button-small" data-wf-open-function>Browse Functions</button><button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
-    return `<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
+    return `${functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
@@ -174,6 +186,17 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     return "";
   }
   function bind(root) {
+    el(root,"[data-wf-open-function]")?.addEventListener("click",async()=>{readCurrent(root);functionPicker=true;await refresh(root);});
+    el(root,"[data-wf-close-function]")?.addEventListener("click",async()=>{functionPicker=false;await refresh(root);});
+    el(root,"[data-wf-function-search]")?.addEventListener("input",async event=>{functionSearch=event.target.value;await refresh(root);el(root,"[data-wf-function-search]")?.focus();});
+    el(root,"[data-wf-configure-function]")?.addEventListener("click",()=>{toast("Configure Function","Create and activate a function in Developer Hub before associating it.");});
+    el(root,"[data-wf-associate-function]")?.addEventListener("click",async()=>{
+      const selected=el(root,'input[name="wf-function-choice"]:checked')?.value;
+      if(!selected){toast("Select a function","Choose an active function to associate.","error");return;}
+      const action=draft.actions.find(a=>a.type==="function");
+      if(action)action.value=selected;else draft.actions.push({type:"function",value:selected});
+      functionPicker=false;await refresh(root);
+    });
     els(root,"[data-wf-select]").forEach(input=>input.addEventListener("change",()=>{
       const id=Number(input.dataset.wfSelect);
       if(input.checked) selectedRuleIds.add(id); else selectedRuleIds.delete(id);
