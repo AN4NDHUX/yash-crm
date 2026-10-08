@@ -100,7 +100,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <select class="field-select" data-wf-action-type="${index}">${opts(actions,item.type,esc)}</select>
     ${item.type === "field_update" ? `<select class="field-select" data-wf-action-field="${index}">${opts([["","Select field"],...fieldsFor()],item.field || "",esc)}</select>` : ""}
     ${item.type === "email" ? `<input class="field-input" data-wf-action-to="${index}" type="email" aria-label="Recipient email" placeholder="Approved recipient email" value="${esc(item.to || "")}"/><input class="field-input" data-wf-action-subject="${index}" aria-label="Email subject" placeholder="Email subject" value="${esc(item.subject || "")}"/>` : ""}
-    ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
+    ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.filter(fn=>fn.status === "Active").map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
   const functionEditorDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Edit Python Function" style="max-width:900px;width:min(94vw,900px)">
@@ -127,7 +127,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <header><h2>Functions - ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</h2></header>
       <div class="wf-list-actions"><label>Search <input class="field-input" data-wf-function-search placeholder="Search functions" value="${esc(functionSearch)}"/></label><button type="button" class="button" data-wf-configure-function>Configure Function</button></div>
       <div style="max-height:45vh;overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Description</th><th>Language</th><th>Modified On</th></tr></thead><tbody>
-      ${filtered.map(fn=>`<tr><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")}</label> <button type="button" class="button button-small" data-wf-edit-function="${esc(String(fn.id))}">Edit</button></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4">No active functions found. Create one in Developer Hub.</td></tr>'}
+      ${filtered.map(fn=>`<tr><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${fn.status !== "Active" ? "disabled" : ""} ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")} (${esc(fn.status || "Draft")})</label> <button type="button" class="button button-small" data-wf-edit-function="${esc(String(fn.id))}">Edit</button></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4">No functions found. Choose Configure Function to create a draft.</td></tr>'}
       </tbody></table></div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-close-function>Cancel</button><button type="button" class="button button-primary" data-wf-associate-function>Associate</button></footer>
     </div></div>`;
   };
@@ -168,7 +168,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       api("/api/automation/executions?limit=100"),
       api("/api/platform/functions?limit=100")
     ]);
-    customFunctions = (functionRecords.items || []).filter(fn=>fn.status === "Active");
+    customFunctions = (functionRecords.items || []);
     rules = records.items || [];
     activity = executions.items || [];
     return list();
