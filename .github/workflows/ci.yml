@@ -75,6 +75,7 @@ jobs:
           APP_PASSWORD: supersecretpass123
 
       - name: Full regression suite
+        if: success() || failure()
         id: regression
         run: pytest -q --timeout=180
         env:
