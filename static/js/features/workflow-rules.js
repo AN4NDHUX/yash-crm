@@ -118,7 +118,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <div class="table-wrap"><table class="data-table"><thead><tr><th>Rule Name</th><th>Module</th><th>Execute On</th><th>Actions</th><th>Modified On</th><th>Status</th></tr></thead><tbody>
     ${rules.filter(rule=>(moduleFilter === "all" || rule.module === moduleFilter) && (!listQuery || String(rule.name || rule.title || "").toLowerCase().includes(listQuery.toLowerCase()))).map(rule=>`<tr><td><button class="wf-rule-link" data-wf-edit="${rule.id}">${esc(rule.name || rule.title)}</button></td><td>${esc(rule.module || "")}</td><td>${esc(rule.event === "create" ? "Create" : rule.event === "edit" || rule.event === "update" ? "Edit" : "Create or Edit")}</td><td>${Array.isArray(rule.actions) ? rule.actions.length : 1}</td><td>${esc(rule.updated_at || rule.created_at || "—")}</td><td><label class="wf-status"><input type="checkbox" data-wf-toggle="${rule.id}" ${rule.status === "Active" ? "checked" : ""} aria-label="Enable ${esc(rule.name || rule.title)}"/><span>${rule.status === "Active" ? "Active" : "Inactive"}</span></label></td></tr>`).join("") || '<tr><td colspan="6">No workflow rules have been created.</td></tr>'}
     </tbody></table></div></section>
-    <section class="card settings-section"><h3>Execution history</h3>${activity.length ? activity.map(x=>`<div class="rule-row"><div class="rule-info"><strong>${esc(x.resource)} #${x.record_id}</strong><small>${esc(x.event)} · ${esc(x.status)}</small></div></div>`).join("") : "<p>No workflow executions yet.</p>"}</section>`;
+    <section class="card settings-section"><h3>Execution history</h3>${activity.length ? activity.map(x=>`<div class="rule-row"><div class="rule-info"><strong>${esc(x.resource)} #${x.record_id}</strong><small>${esc(x.event)} · ${esc(x.status)} · Attempts: ${Number(x.attempts || 0)}${x.next_attempt_at ? " · Retry: "+esc(x.next_attempt_at) : ""}</small>${x.error ? `<small title="${esc(x.error)}">Error: ${esc(x.error)}</small>` : ""}</div>${x.status === "failed" ? `<button class="button button-small" data-wf-retry="${x.id}">Retry</button>` : ""}</div>`).join("") : "<p>No workflow executions yet.</p>"}</section>`;
   async function view() {
     if (draft) return editor();
     const [records, executions, functionRecords] = await Promise.all([
@@ -163,6 +163,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     return "";
   }
   function bind(root) {
+    els(root,"[data-wf-retry]").forEach(button=>button.addEventListener("click",async()=>{try{await api("/api/automation/executions/"+button.dataset.wfRetry+"/retry",{method:"POST"});toast("Workflow requeued","The worker will retry the execution.");await refresh(root);}catch(error){toast("Retry failed",error.message,"error");}}));
     el(root,"[data-wf-search]")?.addEventListener("input",event=>{
       listQuery=event.target.value;
       els(root,"[data-wf-edit]").forEach(button=>{
