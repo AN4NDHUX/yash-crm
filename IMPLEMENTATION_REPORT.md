@@ -1,8 +1,8 @@
-# Yash CRM 2.0 Implementation Report
+# CONVOSIS CRM 2.0 Implementation Report
 
 ## Delivered
 
-The original Yash CRM branding, responsive theme, core records, related lists, archive behavior, editable administrator email and idempotent Lead to Account + Contact + Deal conversion are preserved.
+The original CONVOSIS CRM branding, responsive theme, core records, related lists, archive behavior, editable administrator email and idempotent Lead to Account + Contact + Deal conversion are preserved.
 
 The main navigation now includes Home; Leads; Contacts; Accounts; Deals; Tasks, Meetings and Calls; Products; Price Books; Vendors; Quotes; Sales Orders; Purchase Orders; Invoices; Campaigns; Cases; Solutions; Documents; Forecasts; Reports; and Dashboards. Each expanded module has persisted create/read/update/archive behavior, search, status/owner filters, sorting, CSV export, ownership/audit timestamps, recycle/restore support and module-specific fields. Account, contact, deal and generic related-record links are supported by the shared platform record model.
 
@@ -18,7 +18,7 @@ Data administration includes UTF-8 CSV import for expanded business modules, CSV
 - `app/platform_catalog.py`: separates module/setup definitions, validation metadata and navigation structure from request handling.
 - `migrations/versions/0002_platform_foundations.py`: creates `platform_records`, `audit_events` and `import_jobs` with relationship and query indexes.
 - `static/js/app.js`: adds dynamic module/setup rendering, Activities submodules, generic CRUD modals, import/export/duplicate/recycle flows and decimal-safe number fields.
-- `templates/index.html` and `static/css/app.css`: expand navigation while preserving the Yash CRM visual language and responsive sidebar behavior.
+- `templates/index.html` and `static/css/app.css`: expand navigation while preserving the CONVOSIS CRM visual language and responsive sidebar behavior.
 - `scripts/check_contracts.py`: covers the expanded platform, relationships, local workflow execution, archive/restore and preserved core behavior.
 - `public/manus-routes.json`: documents the expanded browser routes.
 
@@ -51,4 +51,4 @@ Open `http://127.0.0.1:8000`. Existing databases remain compatible: Alembic appl
 - Schedules and webhook deliveries require a background worker/queue. The web process records configuration and execution/queue audit events only.
 - Reports and Dashboards save definitions; arbitrary query building, scheduled distribution and chart composition are not a full BI engine.
 - Quote, order and invoice records do not include tax engines, stock reservation, accounting synchronization, e-signature or payments.
-- The platform deliberately uses Yash CRM branding and original UI components. It does not copy proprietary code, assets or trade dress from another CRM.
+- The platform deliberately uses CONVOSIS CRM branding and original UI components. It does not copy proprietary code, assets or trade dress from another CRM.
