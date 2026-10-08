@@ -128,3 +128,42 @@ def test_dict_wrapped_declarative_steps_reject_nested_function():
             "source": {"steps": [{"type": "function", "function_id": 1}]},
         })
     assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize("runtime", ["Python", "JavaScript", "HTTP"])
+def test_executable_source_cannot_activate_by_switching_runtime(runtime):
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    with pytest.raises(HTTPException) as error:
+        validate_function_source({
+            "runtime": runtime, "status": "Active",
+            "source": {"code": "result = 1"},
+        })
+    assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize("runtime", ["JavaScript", "HTTP", "unknown"])
+def test_unsupported_runtime_cannot_activate_declarative_steps(runtime):
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    with pytest.raises(HTTPException) as error:
+        validate_function_source({
+            "runtime": runtime, "status": "Active",
+            "source": [{"type": "audit"}],
+        })
+    assert error.value.status_code == 422
+
+
+def test_javascript_and_http_drafts_rejected_until_supported():
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    for runtime in ("JavaScript", "HTTP"):
+        with pytest.raises(HTTPException) as error:
+            validate_function_source({
+                "runtime": runtime, "status": "Inactive",
+                "source": {"code": "result = 1"},
+            })
+        assert error.value.status_code == 422
