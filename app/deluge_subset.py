@@ -35,9 +35,56 @@ def _argument(token):
     return value
 
 
+
+def _expand_literal_loops(source):
+    """Expand small literal-list for-each blocks before parsing CRM statements.
+
+    A loop must have its opening and closing braces on separate lines.
+    Literal list values are JSON strings. Expansion is capped to 20 actions.
+    """
+    lines = source.splitlines()
+    result = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        match = re.fullmatch(
+            r'for each ([A-Za-z][A-Za-z0-9_]{0,39}) in (\[.*\])\s*\{', line
+        )
+        if not match:
+            result.append(lines[index])
+            index += 1
+            continue
+        variable, literal = match.groups()
+        try:
+            values = json.loads(literal)
+        except ValueError as exc:
+            raise HTTPException(422, "Loop collection must be a JSON string list") from exc
+        if not isinstance(values, list) or len(values) > 20 or any(
+            not isinstance(value, str) or len(value) > 1000 for value in values
+        ):
+            raise HTTPException(422, "Loop collection must contain at most 20 strings")
+        body = []
+        index += 1
+        while index < len(lines) and lines[index].strip() != "}":
+            if "{" in lines[index] or "}" in lines[index]:
+                raise HTTPException(422, "Nested loop or condition blocks are not supported inside for each")
+            body.append(lines[index])
+            index += 1
+        if index == len(lines):
+            raise HTTPException(422, "Unclosed for each loop")
+        if len(body) * len(values) + len(result) > 100:
+            raise HTTPException(422, "Loop expansion exceeds execution budget")
+        for value in values:
+            for statement in body:
+                result.append(statement.replace("$" + variable, json.dumps(value)))
+        index += 1
+    return "\n".join(result)
+
+
 def parse_deluge(source):
     if not isinstance(source, str) or not source.strip() or len(source.encode("utf-8")) > MAX_BYTES:
         raise HTTPException(422, "Deluge source must contain 1 to 32 KiB of text")
+    source = _expand_literal_loops(source)
     steps = []
     condition_stack = []
     for line_number, raw in enumerate(source.splitlines(), 1):
