@@ -19,7 +19,7 @@ const newCondition = () => ({field:"",operator:"equals",value:""});
 const draftRule = () => ({
   name:"", description:"", module:"", event:"create_or_edit", trigger_field:"",
   criteria_mode:"conditions", logic:"AND", conditions:[newCondition()],
-  actions:[{type:"audit",value:""}], status:"Active"
+  actions:[{type:"audit",value:""}], scheduled_for:"", status:"Active"
 });
 
 export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state}) {
@@ -71,6 +71,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       logic:criteria?.logic === "OR" ? "OR" : "AND",
       conditions:criteria?.conditions?.length ? criteria.conditions.map(c=>({...newCondition(),...c})) : criteria?.field ? [{...newCondition(),...criteria}] : [newCondition()],
       actions:Array.isArray(record.actions) && record.actions.length ? record.actions.map(a=>({...a})) : [{type:record.action_type || "audit",value:record.action_value || ""}],
+      scheduled_for:record.scheduled_for || "",
       status:record.status || "Active"
     };
   };
@@ -106,7 +107,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       ${draft.criteria_mode === "conditions" ? `<div class="wf-conditions"><label>Match <select class="field-select" data-wf-logic>${opts([["AND","All (AND)"],["OR","Any (OR)"]],draft.logic,esc)}</select> conditions</label>${conditionRows()}<button class="button button-small" data-wf-add-condition>+ Add condition</button></div>` : ""}
       </div></section>`;
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
-      ${actionRows()}<button class="button button-small" data-wf-add-action>+ Add action</button></div></section>`;
+      ${actionRows()}<button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
     return `<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
@@ -147,11 +148,11 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
         operator:el(row,"[data-wf-operator]").value,
         value:el(row,"[data-wf-value]").value
       }));
-    } else if (step === 3) draft.actions = els(root,"[data-action-row]").map(row=>({
+    } else if (step === 3) { draft.scheduled_for = get("[data-wf-scheduled-for]") || ""; draft.actions = els(root,"[data-action-row]").map(row=>({
       type:el(row,"[data-wf-action-type]").value,
       field:el(row,"[data-wf-action-field]")?.value || "",
       value:el(row,"[data-wf-action-value]").value
-    }));
+    })); }
   }
   function validateStep() {
     if (step === 1 && draft.event === "field_change" && !draft.trigger_field) return "Select the field to monitor.";
@@ -193,7 +194,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       readCurrent(root);const error=validateStep();if(error){toast("Complete the rule",error,"error");return;}
       if(step<3){step++;await refresh(root);return;}
       const payload={name:draft.name,description:draft.description,module:draft.module,
-        event:draft.event,trigger_field:draft.event==="field_change"?draft.trigger_field:"",status:draft.status,
+        event:draft.event,trigger_field:draft.event==="field_change"?draft.trigger_field:"",scheduled_for:draft.scheduled_for || null,status:draft.status,
         criteria:draft.criteria_mode==="all"?null:{logic:draft.logic,conditions:draft.conditions},
         actions:draft.actions};
       try{
