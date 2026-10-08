@@ -4435,7 +4435,7 @@ def list_workflow_executions(status: str | None = None, resource: str | None = N
     if resource:
         query = query.where(WorkflowExecution.resource == resource)
     rows = db.scalars(query).all()
-    return {"items": [{"id": row.id, "rule_id": row.rule_id, "resource": row.resource, "record_id": row.record_id, "event": row.event, "status": row.status, "actions": row.actions or [], "error": row.error, "scheduled_for": row.scheduled_for.isoformat() if row.scheduled_for else None, "created_at": row.created_at.isoformat(), "completed_at": row.completed_at.isoformat() if row.completed_at else None} for row in rows], "total": len(rows)}
+    return {"items": [{"id": row.id, "rule_id": row.rule_id, "resource": row.resource, "record_id": row.record_id, "event": row.event, "status": row.status, "actions": row.actions or [], "error": row.error, "scheduled_for": row.scheduled_for.isoformat() if row.scheduled_for else None, "created_at": row.created_at.isoformat(), "completed_at": row.completed_at.isoformat() if row.completed_at else None, "attempts": row.attempts, "next_attempt_at": row.next_attempt_at.isoformat() if row.next_attempt_at else None} for row in rows], "total": len(rows)}
 
 
 @app.post("/api/automation/executions/{execution_id}/run")
@@ -4466,6 +4466,8 @@ def run_queued_workflow(execution_id: int, db: Session = Depends(get_db), actor:
         raise HTTPException(404, "Workflow execution not found")
     if execution.scheduled_for and execution.scheduled_for > datetime.utcnow():
         raise HTTPException(409, "Scheduled workflow is not due yet")
+    if any(str(action.get("type") or "").lower() in {"email", "webhook", "webhook_queue"} for action in execution.actions or []):
+        raise HTTPException(409, "External delivery must run through the workflow worker")
     try:
         for action in execution.actions or []:
             _execute_workflow_action(db, action, execution.resource, record, ({**(record.data or {}), "id": record.id, "name": record.title} if isinstance(record, PlatformRecord) else serialize(record, db, actor)))
@@ -4480,6 +4482,27 @@ def run_queued_workflow(execution_id: int, db: Session = Depends(get_db), actor:
         execution.error = str(error)
         db.commit()
         raise HTTPException(422, f"Workflow action failed: {error}") from error
+
+
+@app.post("/api/automation/executions/{execution_id}/retry")
+def retry_failed_workflow(execution_id: int, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    _require_organization_admin(db, actor)
+    execution = db.get(WorkflowExecution, execution_id)
+    if execution is None:
+        raise HTTPException(404, "Workflow execution not found")
+    if execution.status != "failed":
+        raise HTTPException(409, "Only failed workflows may be retried")
+    rule = db.get(PlatformRecord, execution.rule_id)
+    if rule is None or rule.organization_id != execution.organization_id:
+        raise HTTPException(404, "Workflow rule not found")
+    execution.status = "queued"
+    execution.attempts = 0
+    execution.error = None
+    execution.locked_at = None
+    execution.next_attempt_at = None
+    add_audit(db, "automation_retry", execution.resource, execution.record_id, f"Queued retry for workflow #{execution.id}")
+    db.commit()
+    return {"id": execution.id, "status": "queued"}
 
 
 @app.get("/api/blueprints/{blueprint_id}/transitions")
