@@ -75,7 +75,7 @@ def test_browser_signup_login_and_module_navigation():
                 page.fill("#confirm-password", "browser-password-123")
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard", timeout=10000)
-                assert "Yash CRM" in page.title()
+                assert "CONVOSIS CRM" in page.title()
 
                 for href in ("/leads", "/deals", "/quotes", "/reports", "/setup"):
                     page.click(f'a[href="{href}"]')
