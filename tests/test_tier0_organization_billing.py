@@ -50,7 +50,7 @@ def run_app_script(body: str) -> dict:
 def test_signup_creates_organization_owned_free_subscription():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        response = c.post('/api/auth/signup', json={
+        response = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Tier Zero User',
             'username':'tier.zero',
             'email':'tier.zero@example.com',
@@ -79,7 +79,7 @@ def test_signup_creates_organization_owned_free_subscription():
 def test_paid_plan_selection_creates_pending_request_without_granting_entitlement():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Billing User',
             'username':'billing.user',
             'email':'billing@example.com',
@@ -110,7 +110,7 @@ def test_paid_plan_selection_creates_pending_request_without_granting_entitlemen
 def test_customer_administrator_no_longer_bypasses_plan_entitlements():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Customer Admin',
             'username':'customer.admin',
             'email':'customer.admin@example.com',
@@ -134,7 +134,7 @@ def test_customer_administrator_no_longer_bypasses_plan_entitlements():
 def test_duplicate_paid_selection_reuses_pending_request():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Repeat Request',
             'username':'repeat.request',
             'email':'repeat@example.com',
