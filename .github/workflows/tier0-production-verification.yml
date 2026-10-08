@@ -1,14 +1,9 @@
 name: Tier 0 Production Verification
 
+# Production certification is an explicit release action after CI and Railway converge.
+# Automatic runs for superseded CI commits never certify the currently deployed release.
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - CRM Regression Tests
-    types:
-      - completed
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -19,7 +14,6 @@ concurrency:
 
 jobs:
   verify:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     env:
       PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://yashcrm-production.up.railway.app' }}
@@ -33,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-python@v6
         with:
@@ -46,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          EXPECTED_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          EXPECTED_SHA="${{ github.sha }}"
           HEAD="$(python -m alembic heads | awk 'NR==1 {print $1}')"
           test -n "$EXPECTED_SHA"
           test -n "$HEAD"
