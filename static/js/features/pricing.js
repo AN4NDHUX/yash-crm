@@ -37,7 +37,7 @@ export async function renderPricingView({ api, esc, pageHeader }) {
     </article>`;
   }).join("");
 
-  return `${pageHeader("Account", "Upgrade plan", "Choose the Yash CRM plan that best matches your team and feature requirements.")}
+  return `${pageHeader("Account", "Upgrade plan", "Choose the CONVOSIS CRM plan that best matches your team and feature requirements.")}
     <section class="pricing-grid">${cards}</section>
     <section class="pricing-note card">
       <strong>Subscription</strong>
