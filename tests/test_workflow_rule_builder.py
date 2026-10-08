@@ -358,3 +358,18 @@ def test_workflow_function_gallery_uses_interactive_creation_and_module_scoping(
     assert 'functionRecords = await api("/api/platform/functions?limit=100")' in source
     assert 'fn.associations.modules.includes(draft.module)' in source
     assert 'action.value=String(created.id)' in source
+
+
+def test_declarative_function_editor_buttons_are_wired():
+    """Keep approved function edit, save and cancel actions usable."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] /
+              "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
+    assert 'data-wf-declarative-name' in source
+    assert 'data-wf-declarative-type' in source
+    assert 'data-wf-declarative-value' in source
+    assert 'data-wf-declarative-save' in source
+    assert 'data-wf-declarative-cancel' in source
+    assert 'declarativeEditorDialog()' in source
+    assert 'method:"PATCH",body:JSON.stringify({name,source:steps,status:"Active"})' in source
