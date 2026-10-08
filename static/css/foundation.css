@@ -414,7 +414,7 @@ img, svg, canvas, video { max-width: 100%; }
 @keyframes rotate { to { transform: rotate(360deg); } }
 
 
-/* Expanded Yash CRM information architecture */
+/* Expanded CONVOSIS CRM information architecture */
 .legacy-nav { display: none !important; }
 .expanded-nav { padding-bottom: 18px; }
 .nav-group { margin: 2px 0; }
