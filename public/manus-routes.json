@@ -2,7 +2,7 @@
   "routes": [
     {
       "path": "/",
-      "title": "Yash CRM Home"
+      "title": "CONVOSIS CRM Home"
     },
     {
       "path": "/dashboard",
