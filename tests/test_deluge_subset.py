@@ -60,3 +60,22 @@ def test_deluge_conditional_actions_compile():
 def test_deluge_rejects_invalid_condition_blocks(source):
     with pytest.raises(HTTPException):
         parse_deluge(source)
+
+
+def test_deluge_literal_collection_for_each_loop():
+    source = 'for each item in ["Hot", "Warm"] {\ncrm.addTag($item);\n}'
+    assert parse_deluge(source) == [
+        {"type": "tag", "value": "Hot"},
+        {"type": "tag", "value": "Warm"},
+    ]
+
+
+@pytest.mark.parametrize("source", [
+    'for each item in [1,2] {\ncrm.addTag($item);\n}',
+    'for each item in ["ok"] {\ncrm.addTag($item);',
+    'for each item in ["ok"] {\nwhile(true) {\ncrm.addTag($item);\n}\n}',
+    'for each item in ' + str(["x"] * 21).replace("'", '"') + ' {\ncrm.addTag($item);\n}',
+])
+def test_deluge_rejects_unbounded_or_invalid_collections(source):
+    with pytest.raises(HTTPException):
+        parse_deluge(source)
