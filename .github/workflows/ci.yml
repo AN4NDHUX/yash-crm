@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: crm-ci-${{ github.ref }}
@@ -42,12 +43,14 @@ jobs:
           node-version: "22"
       - run: python -m pip install -r requirements-dev.txt pytest pytest-timeout pip-audit bandit
       - run: python -m playwright install --with-deps chromium
-      - run: python -m pip_audit -r requirements.txt
+      - id: dependency_scan
+        run: python -m pip_audit -r requirements.txt
       - run: bandit -q -r app -lll
       - run: python -m compileall -q app migrations
       - name: Validate all frontend modules
         run: find static/js -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Verify PostgreSQL migrations
+        id: migrations
         run: python -m alembic upgrade head
         env:
           APP_ENV: production
@@ -63,6 +66,7 @@ jobs:
         run: pytest -q tests/test_full_module_smoke.py --timeout=120
 
       - name: Browser end-to-end tests (Chromium)
+        id: browser
         run: pytest -q tests/test_browser_e2e.py --timeout=180
         env:
           APP_ENV: development
@@ -71,9 +75,35 @@ jobs:
           APP_PASSWORD: supersecretpass123
 
       - name: Full regression suite
+        id: regression
         run: pytest -q --timeout=180
         env:
           APP_ENV: development
           ENABLE_AUTH: "true"
           APP_USERNAME: admin
           APP_PASSWORD: supersecretpass123
+      - name: Publish independently verifiable test statuses
+        if: always() && github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          DEPENDENCY_SCAN_OUTCOME: ${{ steps.dependency_scan.outcome }}
+          MIGRATION_OUTCOME: ${{ steps.migrations.outcome }}
+          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+          REGRESSION_OUTCOME: ${{ steps.regression.outcome }}
+        with:
+          script: |
+            const checks = [
+              ['ci/dependency-security', process.env.DEPENDENCY_SCAN_OUTCOME],
+              ['ci/postgresql-migrations', process.env.MIGRATION_OUTCOME],
+              ['ci/chromium-browser-e2e', process.env.BROWSER_OUTCOME],
+              ['ci/full-crm-regression', process.env.REGRESSION_OUTCOME]
+            ];
+            for (const [statusContext, outcome] of checks) {
+              await github.rest.repos.createCommitStatus({
+                ...context.repo, sha: context.sha,
+                state: outcome === 'success' ? 'success' : 'failure',
+                context: statusContext,
+                description: outcome === 'success' ? 'Passed on GitHub Actions' : 'Failed or skipped; review Actions job',
+                target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+              });
+            }
