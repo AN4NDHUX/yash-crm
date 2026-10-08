@@ -540,7 +540,26 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
         for step in spec:
             if not isinstance(step, dict) or str(step.get("type", "")).lower() not in allowed:
                 raise ValueError("Unsupported custom function step")
-            resolved_step = {key: resolve(item) for key, item in step.items()}
+            conditions = step.get("_conditions", [])
+            if conditions:
+                if not isinstance(conditions, list) or len(conditions) > 5:
+                    raise ValueError("Invalid function condition")
+                matched = True
+                for condition in conditions:
+                    field = condition.get("field", "")
+                    if not isinstance(field, str) or not field.isidentifier() or field.startswith("_") or field.lower() in {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}:
+                        raise ValueError("Invalid function condition field")
+                    actual = values.get(field, getattr(record, field, None))
+                    expected = condition.get("value")
+                    operator = condition.get("operator")
+                    if operator not in {"==", "!="}:
+                        raise ValueError("Invalid function condition operator")
+                    if (str(actual) == str(expected)) != (operator == "=="):
+                        matched = False
+                        break
+                if not matched:
+                    continue
+            resolved_step = {key: resolve(item) for key, item in step.items() if key != "_conditions"}
             _execute_workflow_action(db, resolved_step, resource, record, values)
         add_audit(db, "function_executed", resource, record.id, f"Custom function '{function_record.title}' executed")
     elif action_type in {"webhook", "webhook_queue", "email", "call", "meeting"}:
