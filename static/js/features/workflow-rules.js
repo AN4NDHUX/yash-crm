@@ -28,6 +28,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let step = 0;
   let rules = [];
   let activity = [];
+  let customFunctions = [];
   const el = (root, selector) => root.querySelector(selector);
   const els = (root, selector) => [...root.querySelectorAll(selector)];
   const moduleOptions = () => {
@@ -81,7 +82,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   const actionRows = () => draft.actions.map((item,index) => `<div class="wf-action-row" data-action-row="${index}">
     <select class="field-select" data-wf-action-type="${index}">${opts(actions,item.type,esc)}</select>
     ${item.type === "field_update" ? `<select class="field-select" data-wf-action-field="${index}">${opts([["","Select field"],...fieldsFor()],item.field || "",esc)}</select>` : ""}
-    <input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>
+    ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
   const editor = () => {
@@ -116,10 +117,12 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <section class="card settings-section"><h3>Execution history</h3>${activity.length ? activity.map(x=>`<div class="rule-row"><div class="rule-info"><strong>${esc(x.resource)} #${x.record_id}</strong><small>${esc(x.event)} · ${esc(x.status)}</small></div></div>`).join("") : "<p>No workflow executions yet.</p>"}</section>`;
   async function view() {
     if (draft) return editor();
-    const [records, executions] = await Promise.all([
+    const [records, executions, functionRecords] = await Promise.all([
       api("/api/platform/workflow_rules?limit=100"),
-      api("/api/automation/executions?limit=100")
+      api("/api/automation/executions?limit=100"),
+      api("/api/platform/functions?limit=100")
     ]);
+    customFunctions = (functionRecords.items || []).filter(fn=>fn.status === "Active");
     rules = records.items || [];
     activity = executions.items || [];
     return list();
@@ -151,6 +154,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 0 && (!draft.name || !draft.module)) return "Select a module and enter a rule name.";
     if (step === 2 && draft.criteria_mode === "conditions" && draft.conditions.some(c=>!c.field || (!["is_empty","is_not_empty"].includes(c.operator) && !String(c.value ?? "").trim()))) return "Choose a field, operator and value for each condition.";
     if (step === 3 && draft.actions.some(a=>a.type === "field_update" && !a.field)) return "Select a target field for every field update.";
+    if (step === 3 && draft.actions.some(a=>a.type === "function" && !a.value)) return "Select an active custom function.";
     return "";
   }
   function bind(root) {
