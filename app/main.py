@@ -610,6 +610,9 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     username = _clean_username(payload.get("username") or email.split("@", 1)[0])
     phone = _normalize_phone(payload.get("phone")) or None
     password = str(payload.get("password") or "")
+    organization_name = str(payload.get("organization_name") or "").strip()
+    if not organization_name or not 2 <= len(organization_name) <= 160:
+        raise HTTPException(422, "Organization name must contain 2 to 160 characters")
     if len(name) < 2 or len(name) > 120:
         raise HTTPException(422, "Enter your full name")
     if parseaddr(email)[1] != email or "@" not in email or "." not in email.rsplit("@", 1)[-1]:
@@ -664,7 +667,22 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
         invitation.accepted_at = datetime.utcnow()
         user.invited_at = invitation.created_at
     else:
-        _ensure_user_subscription(db, user)
+        subscription = _ensure_user_subscription(db, user)
+        organization = db.get(Organization, subscription.organization_id)
+        if organization is None:
+            raise HTTPException(500, "Could not initialize organization")
+        organization.name = organization_name
+        setting = db.scalar(select(OrganizationSetting).where(OrganizationSetting.organization_id == organization.id))
+        if setting is not None:
+            setting.org_name = organization_name
+        for company_record in db.scalars(select(PlatformRecord).where(
+            PlatformRecord.organization_id == organization.id,
+            PlatformRecord.resource == "company_details",
+        )).all():
+            if company_record.data.get("name") == "CONVOSIS CRM":
+                company_record.data = {**company_record.data, "name": organization_name,
+                                       "legal_name": organization_name}
+                company_record.title = organization_name
     db.commit()
     db.refresh(user)
     token = _create_session(request, db, user)
