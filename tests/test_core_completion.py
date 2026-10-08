@@ -47,7 +47,7 @@ def test_email_related_list_accepts_body_and_persists_it():
         with TestClient(main.app) as c:
             lead = c.post('/api/leads', headers=auth, json={'name':'Email Test Lead','company':'Acme'}).json()
             email = c.post('/api/emails', headers=auth, json={
-                'subject':'Welcome', 'body':'Hello from Yash CRM', 'status':'Draft',
+                'subject':'Welcome', 'body':'Hello from CONVOSIS CRM', 'status':'Draft',
                 'related_type':'leads', 'related_id':lead['id']
             })
             related = c.get(f"/api/leads/{lead['id']}/related", headers=auth)
@@ -56,7 +56,7 @@ def test_email_related_list_accepts_body_and_persists_it():
             out['related_body'] = related.json()['emails'][0].get('body')
         """
     )
-    assert out == {'email_code': 200, 'body': 'Hello from Yash CRM', 'related_body': 'Hello from Yash CRM'}
+    assert out == {'email_code': 200, 'body': 'Hello from CONVOSIS CRM', 'related_body': 'Hello from CONVOSIS CRM'}
 
 
 def test_workflow_executes_for_core_lead_create():
