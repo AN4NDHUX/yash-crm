@@ -1021,12 +1021,10 @@ function confirmAction(title, copy, actionLabel = "Continue") {
 }
 
 async function deleteRecord(resource, id) {
-  const permanent = ["approval_processes", "blueprints"].includes(resource);
-  const confirmed = permanent
-    ? await confirmAction("Delete this rule?", "This permanently removes it from your workspace and cannot be undone.", "Delete")
-    : resource === "users"
-      ? await confirmAction("Deactivate this user?", "They will no longer appear as an owner option. You can reactivate them from the same list.", "Deactivate")
-      : await confirmAction("Archive this record?", "This removes the record from your active workspace lists.", "Archive");
+  const permanent = false;
+  const confirmed = resource === "users"
+    ? await confirmAction("Deactivate this user?", "This user can be reactivated later.", "Deactivate")
+    : await confirmAction("Delete this record?", "The record will remain in Settings > Recycle Bin for 30 days.", "Delete");
   if (!confirmed) return;
   try {
     await api(`/api/${resource}/${id}`, { method: "DELETE" });
