@@ -58,14 +58,20 @@ def verify_public_readiness():
 
     live_revision = str(ready.get("app_revision") or "")
     live_migration = str(ready.get("migration_revision") or "")
-    if EXPECTED_APP_REVISION:
-        assert live_revision.startswith(EXPECTED_APP_REVISION) or EXPECTED_APP_REVISION.startswith(live_revision), (
-            f"Production revision mismatch: live={live_revision!r} expected={EXPECTED_APP_REVISION!r}"
-        )
-    if EXPECTED_MIGRATION_REVISION:
-        assert live_migration == EXPECTED_MIGRATION_REVISION, (
-            f"Production migration mismatch: live={live_migration!r} expected={EXPECTED_MIGRATION_REVISION!r}"
-        )
+    assert EXPECTED_APP_REVISION, "EXPECTED_APP_REVISION is required for release verification"
+    assert EXPECTED_MIGRATION_REVISION, "EXPECTED_MIGRATION_REVISION is required for release verification"
+    assert live_revision and live_revision != "unknown" and len(live_revision) >= 7, (
+        f"Production app revision missing or invalid: {live_revision!r}"
+    )
+    assert live_migration and live_migration != "unknown", (
+        f"Production migration revision missing: {live_migration!r}"
+    )
+    assert live_revision.startswith(EXPECTED_APP_REVISION) or (
+        len(EXPECTED_APP_REVISION) >= 7 and EXPECTED_APP_REVISION.startswith(live_revision)
+    ), f"Production revision mismatch: live={live_revision!r} expected={EXPECTED_APP_REVISION!r}"
+    assert live_migration == EXPECTED_MIGRATION_REVISION, (
+        f"Production migration mismatch: live={live_migration!r} expected={EXPECTED_MIGRATION_REVISION!r}"
+    )
     return {"health": health, "ready": ready}
 
 
