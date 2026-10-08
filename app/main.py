@@ -2949,6 +2949,43 @@ def update_organization(
     return {"ok": True, "id": organization.id, "name": organization.name, "slug": organization.slug}
 
 
+@app.post("/api/organization/transfer-ownership")
+def transfer_organization_ownership(
+    payload: dict[str, Any],
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    """Transfer ownership only to an existing active member of this organization."""
+    organization, membership = _require_organization_admin(db, actor)
+    if organization.owner_user_id != actor.id or str(membership.membership_role or "").lower() != "owner":
+        raise HTTPException(403, "Only the current organization owner can transfer ownership")
+    try:
+        target_id = int(payload.get("user_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(422, "A valid target user_id is required")
+    if target_id == actor.id:
+        raise HTTPException(422, "Choose a different organization member")
+    target = db.scalar(select(OrganizationMember).where(
+        OrganizationMember.organization_id == organization.id,
+        OrganizationMember.user_id == target_id,
+        OrganizationMember.status == "Active",
+    ))
+    target_user = db.get(User, target_id)
+    if target is None or target_user is None or target_user.status != "Active":
+        raise HTTPException(404, "Active organization member not found")
+    previous_owner_id = organization.owner_user_id
+    organization.owner_user_id = target_id
+    target.membership_role = "Owner"
+    membership.membership_role = "Admin"
+    add_audit(
+        db, "organization_ownership_transferred", "organizations", organization.id,
+        f"Transferred organization ownership from #{previous_owner_id} to #{target_id}",
+        actor_id=actor.id,
+    )
+    db.commit()
+    return {"ok": True, "organization_id": organization.id, "owner_user_id": target_id}
+
+
 @app.get("/api/organization/members")
 def organization_members(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     organization = _ensure_user_organization(db, actor)
