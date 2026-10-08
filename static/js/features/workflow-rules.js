@@ -38,6 +38,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let functionPicker = false;
   let functionSearch = "";
   let functionConfiguration = false;
+  let functionEditor = false;
   let listQuery = "";
   let moduleFilter = "all";
   const selectedRuleIds = new Set();
@@ -100,6 +101,15 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
+  const functionEditorDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create Python Function" style="max-width:900px;width:min(94vw,900px)">
+    <header><h2>Create Python Function</h2><p>Save a function definition for this organization. Script execution is not enabled.</p></header>
+    <div class="form-grid" style="padding:16px">
+      <div class="field"><label>Function name</label><input class="field-input" data-wf-new-function-name maxlength="160" required/></div>
+      <div class="field"><label>Entrypoint</label><input class="field-input" data-wf-new-function-entry value="main" maxlength="80"/></div>
+      <div class="field full"><label>Python source</label><textarea class="field-input" data-wf-new-function-source rows="13" spellcheck="false" placeholder="def main(record):&#10;    return {&quot;record_id&quot;: record.get(&quot;id&quot;)}"></textarea></div>
+    </div>
+    <footer class="wf-editor-footer"><button type="button" class="button" data-wf-editor-close>Cancel</button><button type="button" class="button button-primary" data-wf-editor-save>Save Draft</button></footer>
+  </div></div>`;
   const configureFunctionDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Configure Function" style="max-width:680px;width:min(92vw,680px)">
     <header><h2>Configure Function</h2><p>Choose how to configure your workflow function.</p></header>
     <div style="display:grid;gap:12px;padding:16px">
@@ -139,7 +149,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
       ${actionRows()}<button type="button" class="button button-small" data-wf-open-function>Browse Functions</button><button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
-    return `${functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
+    return `${functionEditor ? functionEditorDialog() : functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
@@ -200,6 +210,25 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     el(root,"[data-wf-close-function]")?.addEventListener("click",async()=>{functionPicker=false;await refresh(root);});
     el(root,"[data-wf-function-search]")?.addEventListener("input",async event=>{functionSearch=event.target.value;await refresh(root);el(root,"[data-wf-function-search]")?.focus();});
     el(root,"[data-wf-configure-function]")?.addEventListener("click",async()=>{functionConfiguration=true;await refresh(root);});
+    el(root,"[data-wf-editor-close]")?.addEventListener("click",async()=>{functionEditor=false;functionPicker=true;await refresh(root);});
+    el(root,"[data-wf-editor-save]")?.addEventListener("click",async()=>{
+      const name=el(root,"[data-wf-new-function-name]")?.value.trim();
+      const entrypoint=el(root,"[data-wf-new-function-entry]")?.value.trim();
+      const source=el(root,"[data-wf-new-function-source]")?.value || "";
+      if(!name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(entrypoint) || !source.trim() || new TextEncoder().encode(source).length>32768){
+        toast("Invalid function","Provide a name, valid entrypoint and source of at most 32 KiB.","error");return;
+      }
+      try{
+        await api("/api/platform/functions",{method:"POST",body:JSON.stringify({
+          name,runtime:"Python",entrypoint,source:{code:source,language:"Python"},
+          input_schema:{type:"object"},associations:{modules:[draft.module]},
+          status:"Inactive"
+        })});
+        functionEditor=false;functionPicker=true;
+        toast("Function draft saved","Activate only after isolated execution is available.");
+        await refresh(root);
+      }catch(error){toast("Function save failed",error.message,"error");}
+    });
     el(root,"[data-wf-function-config-close]")?.addEventListener("click",async()=>{functionConfiguration=false;await refresh(root);});
     els(root,"[data-wf-function-method]").forEach(button=>button.addEventListener("click",async()=>{
       const method=button.dataset.wfFunctionMethod;
@@ -207,7 +236,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       if(method==="existing"){functionPicker=true;await refresh(root);return;}
       if(method==="gallery"){toast("Function gallery","No gallery templates are installed yet.");await refresh(root);return;}
       functionPicker=false;
-      navigate("/setup/developer_hub");
+      functionEditor=true;
+      await refresh(root);
     }));
     el(root,"[data-wf-associate-function]")?.addEventListener("click",async()=>{
       const selected=el(root,'input[name="wf-function-choice"]:checked')?.value;
