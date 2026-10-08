@@ -65,3 +65,25 @@ def test_recycle_ui_has_selection_and_permanent_delete_controls():
     assert 'data-recycle-permanent-selected' in setup
     assert 'data-recycle-restore-selected' in setup
     assert '/api/administration/recycle-bin/bulk-restore' in app
+
+
+def test_recycle_restore_enforces_30_day_expiry():
+    out=app_scenario("""
+    from datetime import datetime, timedelta
+    with TestClient(main.app) as c:
+        c.post('/api/auth/signup',json={'name':'Retention Owner','organization_name':'Retention Org',
+            'username':'retention.owner','email':'retention.owner@example.com','password':'strong-password-123'})
+        lead=c.post('/api/leads',json={'name':'Expired Lead','company':'Example'})
+        lid=lead.json()['id']
+        c.delete('/api/leads/'+str(lid))
+        with main.SessionLocal() as db:
+            record=db.get(main.Lead,lid)
+            record.updated_at=datetime.utcnow()-timedelta(days=31)
+            db.commit()
+        out['restore']=c.post('/api/administration/restore',
+            json={'resource':'leads','record_id':lid}).status_code
+        out['bulk_restore']=c.post('/api/administration/recycle-bin/bulk-restore',
+            json={'resource':'leads','ids':[lid]}).status_code
+    """)
+    assert out['restore']==410, out
+    assert out['bulk_restore']==410, out
