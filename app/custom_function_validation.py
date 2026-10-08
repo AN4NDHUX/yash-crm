@@ -65,6 +65,8 @@ def validate_function_source(values: dict) -> None:
         return  # Existing declarative workflow executor validates step types.
     if not isinstance(source, dict):
         raise HTTPException(422, "Python source must be a step list or code object")
+    if str(values.get("status", "")).lower() == "active":
+        raise HTTPException(422, "Python scripts cannot be activated until an isolated execution worker is configured")
     try:
         validate_python_source(source.get("code"))
     except FunctionValidationError as exc:
