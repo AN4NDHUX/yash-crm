@@ -420,3 +420,16 @@ def test_convos_is_shared_ui_cleanup_preserves_terminal_editor():
     assert 'overflow-x: auto' in css
     assert ':focus-visible' in css
     assert '@media (max-width: 820px)' in css
+
+
+def test_fullscreen_function_editor_escapes_transformed_app_container():
+    """The code overlay must mount at body level rather than inside the CRM shell."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] /
+              "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
+    assert 'data-wf-code-portal' in source
+    assert 'document.body.appendChild(overlay)' in source
+    assert 'document.querySelector("[data-wf-code-portal]")?.remove()' in source
+    assert 'width:100%;max-width:none;height:100%' in source
+    assert 'grid-template-columns:repeat(auto-fit' in source
