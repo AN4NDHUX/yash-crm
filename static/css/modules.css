@@ -379,7 +379,7 @@ button, a, input, select, textarea { touch-action: manipulation; }
   .main-area { margin-left: 0 !important; width: 100% !important; }
 }
 
-/* Loader: transparent particle field, no card behind the Yash logo. */
+/* Loader: transparent particle field, no card behind the CONVOSIS CRM logo. */
 .brand-orbs-shell {
   width: 112px !important;
   height: 112px !important;
@@ -565,7 +565,7 @@ button, a, input, select, textarea { touch-action: manipulation; }
 }
 
 
-/* Uploaded loader assets — exact user-provided spinner + centered Yash mark. */
+/* Uploaded loader assets — exact user-provided spinner + centered CONVOSIS CRM mark. */
 .uploaded-loader-orb {
   position: relative;
   width: 132px;
@@ -630,7 +630,7 @@ button, a, input, select, textarea { touch-action: manipulation; }
 }
 
 
-/* Reliable in-app loader: CSS radial spokes + uploaded Yash logo. */
+/* Reliable in-app loader: CSS radial spokes + uploaded CONVOSIS CRM logo. */
 .yash-radial-loader {
   position: relative;
   width: 132px;
