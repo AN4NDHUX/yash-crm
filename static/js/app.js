@@ -475,13 +475,13 @@ function dashboardFormPayload(form) {
 
 function bindReportDashboard() {
   $('[data-reports-delete-selected]')?.addEventListener("click",async()=>{
-    const ids=$('[data-report-select]:checked').map(el=>Number(el.dataset.reportSelect));
+    const ids=$$('[data-report-select]:checked').map(el=>Number(el.dataset.reportSelect));
     if(!ids.length){toast("Select reports","Choose one or more reports to delete.");return;}
     if(!confirm("Move "+ids.length+" selected reports to Recycle Bin for 30 days?"))return;
     try {const result=await api("/api/administration/bulk-delete",{method:"POST",body:JSON.stringify({resource:"reports",ids})});toast("Reports deleted",result.deleted+" reports moved to Recycle Bin.");await renderRoute();}
     catch(error){toast("Delete failed",error.message,"error");}
   });
-  $('[data-report-delete]').forEach(button=>button.addEventListener("click",async()=>{
+  $$('[data-report-delete]').forEach(button=>button.addEventListener("click",async()=>{
     if (!confirm("Delete this report? It can be restored from Recycle Bin for 30 days.")) return;
     try {await api("/api/platform/reports/"+button.dataset.reportDelete,{method:"DELETE"});toast("Report deleted","Moved to 30-day Recycle Bin.");await renderRoute();}
     catch(error){toast("Delete failed",error.message,"error");}
@@ -1054,13 +1054,13 @@ function bindPlatform(resource) {
   $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
   $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   const current = state.platformCatalog.resources[resource] ? platformState(resource) : null;
-  $('[data-platform-select-record]').forEach(input=>input.addEventListener("change",event=>{
+  $$('[data-platform-select-record]').forEach(input=>input.addEventListener("change",event=>{
     const id=Number(input.dataset.id);
     current.selectedIds=event.target.checked?[...new Set([...current.selectedIds,id])]:current.selectedIds.filter(value=>value!==id);
     renderRoute();
   }));
   $('[data-platform-select-all]')?.addEventListener("change",event=>{
-    const ids=$('[data-platform-select-record]').map(el=>Number(el.dataset.id));
+    const ids=$$('[data-platform-select-record]').map(el=>Number(el.dataset.id));
     current.selectedIds=event.target.checked?[...new Set([...current.selectedIds,...ids])]:current.selectedIds.filter(id=>!ids.includes(id));
     renderRoute();
   });
