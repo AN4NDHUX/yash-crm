@@ -252,7 +252,7 @@
           </div>
           <div class="field signup-only" id="organization-create-field">
             <label for="organization-name">Organization name</label>
-            <input id="organization-name" name="organization_name" autocomplete="organization" minlength="2" maxlength="160" required placeholder="Your company or organization" />
+            <input id="organization-name" name="organization_name" autocomplete="organization" minlength="2" maxlength="160" placeholder="Your company or organization" />
           </div>
           <div class="field signup-only">
             <label for="username">Username</label>
@@ -317,6 +317,9 @@
   })[mode];
 
   const form = document.getElementById("auth-form");
+  // Hidden signup fields must not block native form validation on login/reset.
+  const organizationInput = document.getElementById("organization-name");
+  if (organizationInput) organizationInput.required = mode === "signup" && !invitationToken;
   const errorBox = document.getElementById("auth-error");
   const submit = document.getElementById("submit-button");
   const password = document.getElementById("password");
