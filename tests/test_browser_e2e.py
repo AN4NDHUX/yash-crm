@@ -97,7 +97,9 @@ def test_browser_signup_login_and_module_navigation():
                   );
                 }""")
 
-                page.goto(base + "/setup/workflow_rules")
+                page.goto(base + "/app/setup/workflow_rules")
+                page.locator("[data-wf-create]").wait_for(timeout=12000)
+                assert page.locator("[data-platform-create=workflow_rules]").count() == 0
                 page.locator("[data-wf-create]").click()
                 page.locator("[data-wf-name]").fill("Browser Lead Workflow")
                 page.locator("[data-wf-module]").select_option("leads")
