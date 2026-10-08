@@ -1,1 +1,1 @@
-"""Business-service layer for Yash CRM."""
+"""Business-service layer for CONVOSIS CRM."""
