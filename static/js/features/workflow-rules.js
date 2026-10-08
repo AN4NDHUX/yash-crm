@@ -11,7 +11,7 @@ const actions = [
   ["audit", "Audit activity"], ["field_update", "Update field"],
   ["create_task", "Create task"], ["notification", "Notification"],
   ["tag", "Add tag"], ["webhook_queue", "Queue webhook"],
-  ["email", "Queue email"]
+  ["email", "Queue email"], ["function", "Custom function"]
 ];
 const opts = (items, selected, escape) => items.map(([value, label]) =>
   `<option value="${escape(value)}" ${String(selected) === String(value) ? "selected" : ""}>${escape(label)}</option>`).join("");
