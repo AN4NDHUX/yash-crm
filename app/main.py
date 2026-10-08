@@ -2569,13 +2569,15 @@ def workflow_execution_history(status: str | None = None, limit: int = Query(100
 
 @app.post("/api/automation/workflows/run-due")
 def run_due_workflows(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    # The deployment-provisioned platform owner can own legacy global records.
+    # Only that owner's unscoped queue entries may be processed through this path.
+    from app.workflow_worker import process_due
+    if _is_platform_owner(actor):
+        return process_due(limit=limit, legacy_owner_id=actor.id, report=True)
     _require_organization_admin(db, actor)
     organization_id = TENANT_ORGANIZATION_ID.get() or _organization_id_for_user(db, actor.id)
     if not organization_id:
         raise HTTPException(403, "An active organization is required")
-    # Keep legacy administrative API while delegating to the same worker claim path.
-    # Never process jobs from other organizations in an authenticated request.
-    from app.workflow_worker import process_due
     return process_due(limit=limit, organization_id=organization_id, report=True)
 
 
