@@ -81,7 +81,7 @@ def test_tenant_sensitive_model_matrix_is_organization_scoped():
 def test_read_only_sharing_allows_read_but_denies_write():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Sharing Owner','username':'sharing.owner','email':'sharing.owner@example.com',
             'password':'strong-password-123'
         })
@@ -102,7 +102,7 @@ def test_read_only_sharing_allows_read_but_denies_write():
             ))
             db.commit()
         c.post('/api/auth/logout')
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Sharing Member','username':'sharing.member','email':'sharing.member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -116,7 +116,7 @@ def test_read_only_sharing_allows_read_but_denies_write():
 def test_role_hierarchy_can_grant_subordinate_record_access():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Sales Rep','username':'role.rep','email':'role.rep@example.com',
             'password':'strong-password-123'
         })
@@ -144,7 +144,7 @@ def test_role_hierarchy_can_grant_subordinate_record_access():
             ])
             db.commit()
         c.post('/api/auth/logout')
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Manager','username':'role.manager','email':'manager@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -164,7 +164,7 @@ def test_role_hierarchy_can_grant_subordinate_record_access():
 def test_existing_empty_workspace_user_can_accept_invitation_safely():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Target Owner','username':'target.owner','email':'target.owner@example.com',
             'password':'strong-password-123'
         })
@@ -173,7 +173,7 @@ def test_existing_empty_workspace_user_can_accept_invitation_safely():
         target_org = c.get('/api/organization').json()['id']
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Existing User','username':'existing.user','email':'existing@example.com',
             'password':'strong-password-123'
         })
@@ -189,7 +189,7 @@ def test_existing_empty_workspace_user_can_accept_invitation_safely():
 def test_normal_member_cannot_change_organization_settings():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Settings Owner','username':'settings.owner','email':'settings.owner@example.com',
             'password':'strong-password-123'
         })
@@ -198,7 +198,7 @@ def test_normal_member_cannot_change_organization_settings():
         owner_update = c.put('/api/settings/general', json={'org_name':'Owner Workspace'})
         out['owner_update'] = owner_update.status_code
         c.post('/api/auth/logout')
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Settings Member','username':'settings.member','email':'settings.member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -213,7 +213,7 @@ def test_platform_owner_can_view_cross_organization_records():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
         # Create a customer tenant and record.
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Customer Tenant','username':'customer.tenant','email':'customer.tenant@example.com',
             'password':'strong-password-123'
         })
@@ -237,7 +237,7 @@ def test_bulk_orm_update_and_delete_are_tenant_scoped():
     from sqlalchemy import delete, select, update
 
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Bulk Tenant A','username':'bulk.a','email':'bulk.a@example.com',
             'password':'strong-password-123'
         })
@@ -245,7 +245,7 @@ def test_bulk_orm_update_and_delete_are_tenant_scoped():
         org_a = c.get('/api/organization').json()['id']
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Bulk Tenant B','username':'bulk.b','email':'bulk.b@example.com',
             'password':'strong-password-123'
         })
