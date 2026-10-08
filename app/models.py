@@ -399,6 +399,9 @@ class WorkflowExecution(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(180), unique=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class BlueprintTransitionLog(Base):
