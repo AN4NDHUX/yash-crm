@@ -288,3 +288,39 @@ def test_scheduled_lead_workflow_blocks_early_execution():
     assert out['lead_status'] in (200, 201)
     assert out['queued']
     assert out['early_status'] == 409
+
+
+def test_workflow_owner_assignment_rejects_user_from_another_organization():
+    out = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Other Owner','organization_name':'Different Workspace',
+            'username':'other.workspace.owner','email':'other.workspace@example.com',
+            'password':'strong-password-123'
+        })
+        with main.SessionLocal() as db:
+            other_user = db.scalar(main.select(main.User).where(main.User.email == 'other.workspace@example.com'))
+            other_id = other_user.id
+        c.post('/api/auth/logout')
+        c.post('/api/auth/signup', json={
+            'name':'Primary Owner','organization_name':'Primary Workspace',
+            'username':'primary.workspace.owner','email':'primary.workspace@example.com',
+            'password':'strong-password-123'
+        })
+        own_id = c.get('/api/organization').json()['id']
+        rule = c.post('/api/platform/workflow_rules', json={
+            'name':'Unsafe Owner','module':'leads','event':'create',
+            'actions':[{'type':'owner_change','user_id':other_id}],
+            'status':'Active'
+        })
+        lead = c.post('/api/leads', json={'name':'Protected Assignment','company':'Tenant'})
+        with main.SessionLocal() as db:
+            saved = db.get(main.Lead, lead.json()['id'])
+            out['tenant_safe'] = saved.organization_id == own_id and saved.owner_id != other_id
+        executions = c.get('/api/automation/executions').json()['items']
+        out['rejected'] = any(row['rule_id'] == rule.json()['id'] and row['status'] == 'failed' for row in executions)
+        out['rule_status'] = rule.status_code
+    """)
+    assert out['rule_status'] == 201
+    assert out['tenant_safe']
+    assert out['rejected']
