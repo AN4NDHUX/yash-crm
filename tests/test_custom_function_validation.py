@@ -87,3 +87,44 @@ def test_malformed_python_source_returns_422():
         with pytest.raises(HTTPException) as error:
             validate_function_source({"runtime": "Python", "source": source, "status": "Inactive"})
         assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize("source", [
+    [],
+    [{"type": "audit"}] * 21,
+    [{"type": "shell"}],
+    [{"type": "function", "function_id": 1}],
+    [{"type": "field_update", "value": "missing field"}],
+    ["audit"],
+])
+def test_invalid_declarative_function_steps_rejected_on_save(source):
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    with pytest.raises(HTTPException) as error:
+        validate_function_source({
+            "runtime": "Python", "entrypoint": "steps",
+            "status": "Active", "source": source,
+        })
+    assert error.value.status_code == 422
+
+
+def test_legacy_dict_wrapped_declarative_steps_supported():
+    from app.custom_function_validation import validate_function_source
+
+    validate_function_source({
+        "runtime": "Python", "entrypoint": "steps", "status": "Active",
+        "source": {"steps": [{"type": "audit"}]},
+    })
+
+
+def test_dict_wrapped_declarative_steps_reject_nested_function():
+    from fastapi import HTTPException
+    from app.custom_function_validation import validate_function_source
+
+    with pytest.raises(HTTPException) as error:
+        validate_function_source({
+            "runtime": "Python", "entrypoint": "steps", "status": "Active",
+            "source": {"steps": [{"type": "function", "function_id": 1}]},
+        })
+    assert error.value.status_code == 422
