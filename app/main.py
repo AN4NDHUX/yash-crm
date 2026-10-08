@@ -610,8 +610,8 @@ def auth_signup(payload: dict[str, Any], request: Request, db: Session = Depends
     username = _clean_username(payload.get("username") or email.split("@", 1)[0])
     phone = _normalize_phone(payload.get("phone")) or None
     password = str(payload.get("password") or "")
-    # Keep existing API signup clients compatible; the browser requires an explicit name.
-    organization_name = str(payload.get("organization_name") or name).strip()
+    # Independent registration must explicitly name its organization.
+    organization_name = str(payload.get("organization_name") or "").strip()
     invitation_requested = bool(str(payload.get("invitation_token") or payload.get("invite") or "").strip())
     if not invitation_requested and not 2 <= len(organization_name) <= 160:
         raise HTTPException(422, "Organization name must contain 2 to 160 characters")
