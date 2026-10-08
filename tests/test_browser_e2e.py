@@ -93,6 +93,25 @@ def test_browser_signup_login_and_module_navigation():
                   );
                 }""")
 
+                page.goto(base + "/setup/workflow_rules")
+                page.locator("[data-wf-create]").click()
+                page.locator("[data-wf-name]").fill("Browser Lead Workflow")
+                page.locator("[data-wf-module]").select_option("leads")
+                page.locator("[data-wf-next]").click()
+                page.locator("[data-wf-event]").select_option("create_or_edit")
+                page.locator("[data-wf-next]").click()
+                page.locator('input[name="wf-criteria-mode"][value="all"]').check()
+                page.locator("[data-wf-next]").click()
+                page.locator("[data-wf-action-type='0']").select_option("audit")
+                page.locator("[data-wf-next]").click()
+                page.wait_for_function("""async () => {
+                  const response = await fetch('/api/platform/workflow_rules?limit=100');
+                  return response.ok && (await response.json()).items.some(
+                    row => row.name === 'Browser Lead Workflow' && row.event === 'create_or_edit'
+                  );
+                }""")
+                assert page.locator("[data-wf-edit]").count() >= 1
+
                 for href in ("/leads", "/deals", "/quotes", "/reports", "/setup"):
                     page.click(f'a[href="{href}"]')
                     page.wait_for_url(f"**{href}**", timeout=10000)
