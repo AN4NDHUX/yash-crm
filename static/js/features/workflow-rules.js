@@ -39,6 +39,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   let functionSearch = "";
   let functionConfiguration = false;
   let functionGallery = false;
+  let declarativeEditor = null;
   let functionEditor = false;
   let functionEditingId = null;
   let functionDraft = null;
@@ -118,6 +119,14 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     {name:"Add Reviewed Tag",description:"Mark the matched record as reviewed.",steps:[{type:"tag",value:"Reviewed"}]},
     {name:"Audit Record",description:"Write an audit entry when the workflow matches.",steps:[{type:"audit"}]}
   ];
+  const declarativeEditorDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Edit CRM function" style="max-width:720px;width:min(94vw,720px)">
+    <header><h2>Edit CRM function</h2><p>Changes to an active function affect workflows using it.</p></header>
+    <div class="form-grid" style="padding:16px">
+      <div class="field full"><label>Function name</label><input class="field-input" data-wf-declarative-name maxlength="160" value="${esc(declarativeEditor?.name || "")}"/></div>
+      <div class="field full"><label>Approved action</label><select class="field-select" data-wf-declarative-type>${opts([["audit","Audit record"],["tag","Add tag"],["create_task","Create task"]],declarativeEditor?.type || "audit",esc)}</select></div>
+      <div class="field full"><label>Tag or task subject</label><input class="field-input" data-wf-declarative-value maxlength="250" value="${esc(declarativeEditor?.value || "")}"/></div>
+    </div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-declarative-cancel>Cancel</button><button type="button" class="button button-primary" data-wf-declarative-save>Save changes</button></footer>
+  </div></div>`;
   const functionGalleryDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Function Gallery" style="max-width:760px;width:min(94vw,760px)">
     <header><h2>Function Gallery</h2><p>Choose an approved CRM function for ${esc(draft.module)}. Gallery functions can run without arbitrary script execution.</p></header>
     <div style="display:grid;gap:12px;padding:16px">
@@ -163,7 +172,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
       ${actionRows()}<button type="button" class="button button-small" data-wf-open-function>Browse Functions</button><button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
-    return `${functionEditor ? functionEditorDialog() : functionGallery ? functionGalleryDialog() : functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
+    return `${declarativeEditor ? declarativeEditorDialog() : functionEditor ? functionEditorDialog() : functionGallery ? functionGalleryDialog() : functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
@@ -231,11 +240,36 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     els(root,"[data-wf-edit-function]").forEach(button=>button.addEventListener("click",async()=>{
       const fn=customFunctions.find(item=>String(item.id)===button.dataset.wfEditFunction);
       if(!fn)return;
-      if(Array.isArray(fn.source) || Array.isArray(fn.source?.steps)){toast("Declarative function","This function uses approved CRM actions and cannot be edited in the Python source editor.","error");return;}
+      if(Array.isArray(fn.source) || Array.isArray(fn.source?.steps)){
+        const steps=Array.isArray(fn.source)?fn.source:fn.source.steps;
+        if(steps.length!==1 || !["audit","tag","create_task"].includes(steps[0]?.type)){
+          toast("Advanced function","Only single-action audit, tag and task functions can be edited here.","error");return;
+        }
+        declarativeEditor={id:fn.id,name:fn.name || "",type:steps[0].type,value:steps[0].value || steps[0].subject || ""};
+        functionPicker=false;await refresh(root);return;
+      }
       functionEditingId=fn.id;
       functionDraft={name:fn.name || "",entrypoint:fn.entrypoint || "main",code:fn.source?.code || ""};
       functionEditor=true;functionPicker=false;await refresh(root);
     }));
+    el(root,"[data-wf-declarative-cancel]")?.addEventListener("click",async()=>{
+      declarativeEditor=null;functionPicker=true;await refresh(root);
+    });
+    el(root,"[data-wf-declarative-save]")?.addEventListener("click",async()=>{
+      const name=el(root,"[data-wf-declarative-name]")?.value.trim();
+      const type=el(root,"[data-wf-declarative-type]")?.value;
+      const value=el(root,"[data-wf-declarative-value]")?.value.trim();
+      if(!name || (type!=="audit" && !value)){
+        toast("Complete function","Enter a name and a tag or task subject.","error");return;
+      }
+      const steps=[type==="audit"?{type:"audit"}:type==="tag"?{type:"tag",value}:{type:"create_task",subject:value}];
+      try{
+        await api("/api/platform/functions/"+declarativeEditor.id,{method:"PATCH",body:JSON.stringify({name,source:steps,status:"Active"})});
+        declarativeEditor=null;functionPicker=true;
+        toast("Function updated","Approved CRM action saved.");
+        await refresh(root);
+      }catch(error){toast("Function update failed",error.message,"error");}
+    });
     el(root,"[data-wf-editor-close]")?.addEventListener("click",async()=>{functionEditor=false;functionPicker=true;await refresh(root);});
     el(root,"[data-wf-editor-save]")?.addEventListener("click",async()=>{
       const name=el(root,"[data-wf-new-function-name]")?.value.trim();
