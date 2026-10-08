@@ -150,7 +150,9 @@ def verify_tenant_isolation():
         if lead_id is not None:
             # Clean up even if a security assertion fails. Do not mask the original error.
             try:
-                call(a, "POST", "/api/leads/bulk-archive", {"related_id": [lead_id]}, expected=(200,))
+                _, archived = call(a, "POST", "/api/leads/bulk-archive", {"related_id": [lead_id]}, expected=(200,))
+                if not archived.get("ok") or archived.get("archived") != 1:
+                    raise AssertionError(f"Smoke-lead archive was not confirmed for lead {lead_id}: {archived}")
             except Exception as cleanup_error:
                 print(f"WARNING: Could not archive Tier 0 smoke lead {lead_id}: {cleanup_error}", file=sys.stderr)
 
