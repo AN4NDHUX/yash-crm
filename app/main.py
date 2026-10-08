@@ -4953,6 +4953,71 @@ def restore_archived(payload: RestorePayload, db: Session = Depends(get_db), act
     return {"ok": True, "resource": payload.resource, "id": payload.record_id}
 
 
+def _recycle_records(db: Session, resource: str, ids: list[int], organization_id: int) -> list[Any]:
+    if resource in PLATFORM_RESOURCES:
+        query = select(PlatformRecord).where(PlatformRecord.resource == resource, PlatformRecord.id.in_(ids),
+                                             PlatformRecord.organization_id == organization_id,
+                                             PlatformRecord.archived == True)
+    elif resource in RESOURCE_MAP and resource != "users":
+        model = RESOURCE_MAP[resource]
+        if not hasattr(model, "archived") or not hasattr(model, "organization_id"):
+            raise HTTPException(422, "Module does not support recycle-bin operations")
+        query = select(model).where(model.id.in_(ids), model.organization_id == organization_id, model.archived == True)
+    else:
+        raise HTTPException(404, "Module not found")
+    records = db.scalars(query).all()
+    if len(records) != len(ids):
+        raise HTTPException(404, "One or more deleted records were not found")
+    return records
+
+
+@app.post("/api/administration/recycle-bin/bulk-restore")
+def bulk_restore_archived(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    organization, _ = _require_organization_admin(db, actor)
+    resource = str(payload.get("resource") or "").strip()
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(type(i) is not int or i <= 0 for i in ids):
+        raise HTTPException(422, "Select 1 to 100 valid record IDs")
+    ids = list(dict.fromkeys(ids))
+    rows = _recycle_records(db, resource, ids, organization.id)
+    for row in rows:
+        if not can_access_record(db, resource, row, actor, "write"):
+            raise HTTPException(403, "Restore permission denied")
+    for row in rows:
+        row.archived = False
+        add_audit(db, "restore", resource, row.id, "Bulk restore from recycle bin", actor_id=actor.id)
+    db.commit()
+    return {"restored": len(rows)}
+
+
+@app.post("/api/administration/recycle-bin/permanent-delete")
+def permanently_delete_archived(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    organization, membership = _require_organization_admin(db, actor)
+    if str(membership.membership_role or "").lower() not in {"owner", "administrator"}:
+        raise HTTPException(403, "Organization owner permission is required to permanently delete records")
+    resource = str(payload.get("resource") or "").strip()
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(type(i) is not int or i <= 0 for i in ids):
+        raise HTTPException(422, "Select 1 to 100 valid record IDs")
+    ids = list(dict.fromkeys(ids))
+    rows = _recycle_records(db, resource, ids, organization.id)
+    for row in rows:
+        if not can_access_record(db, resource, row, actor, "write"):
+            raise HTTPException(403, "Permanent-delete permission denied")
+    try:
+        with db.begin_nested():
+            for row in rows:
+                add_audit(db, "permanent_delete", resource, row.id,
+                          "Permanently removed archived record", actor_id=actor.id)
+                db.delete(row)
+            db.flush()
+    except Exception as error:
+        db.rollback()
+        raise HTTPException(409, "Cannot permanently delete records referenced by other CRM data") from error
+    db.commit()
+    return {"deleted": len(rows)}
+
+
 @app.get("/api/administration/duplicates")
 def duplicate_candidates(resource: str, db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     organization, _membership = _require_organization_admin(db, actor)
