@@ -210,7 +210,13 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     activity = executions.items || [];
     return list();
   }
-  async function refresh(root) { root.innerHTML = await view(); bind(root); }
+  async function refresh(root) {
+    document.querySelector("[data-wf-code-portal]")?.remove();
+    root.innerHTML = await view();
+    const overlay = root.querySelector("[data-wf-code-portal]");
+    if (overlay) document.body.appendChild(overlay);
+    bind(root);
+  }
   function readCurrent(root) {
     if (!draft) return;
     const get = selector => el(root,selector)?.value;
