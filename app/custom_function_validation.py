@@ -78,20 +78,39 @@ def validate_declarative_steps(source: list) -> None:
 
 
 def validate_function_source(values: dict) -> None:
-    """Validate script drafts; retain the existing declarative step-list format."""
-    if str(values.get("runtime", "")).lower() != "python":
-        return
+    """Fail closed on executable scripts until a separately isolated worker exists.
+
+    Only approved declarative steps can be Active. Static Python validation
+    does not grant execution permission, and selecting another runtime must
+    not bypass this boundary.
+    """
+    runtime = str(values.get("runtime") or "Python").strip().lower()
     source = values.get("source")
-    if isinstance(source, list):
-        validate_declarative_steps(source)
+    status = str(values.get("status") or "Inactive").strip().lower()
+
+    if runtime not in {"python", "javascript", "http"}:
+        raise HTTPException(422, "Unsupported custom function runtime")
+
+    if isinstance(source, list) or (
+        isinstance(source, dict) and isinstance(source.get("steps"), list)
+    ):
+        if runtime != "python":
+            raise HTTPException(422, "Declarative steps require the Python runtime")
+        steps = source if isinstance(source, list) else source["steps"]
+        validate_declarative_steps(steps)
         return
-    if isinstance(source, dict) and isinstance(source.get("steps"), list):
-        validate_declarative_steps(source["steps"])
-        return
-    if not isinstance(source, dict):
+
+    if status == "active":
+        raise HTTPException(
+            422, "Executable custom functions require an isolated execution worker"
+        )
+
+    if runtime != "python":
+        raise HTTPException(
+            422, "Only Python draft source is currently supported"
+        )
+    if not isinstance(source, dict) or "steps" in source:
         raise HTTPException(422, "Python source must be a step list or code object")
-    if str(values.get("status", "")).lower() == "active":
-        raise HTTPException(422, "Python scripts cannot be activated until an isolated execution worker is configured")
     try:
         validate_python_source(source.get("code"))
     except FunctionValidationError as exc:
