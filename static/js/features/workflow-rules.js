@@ -86,6 +86,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   const actionRows = () => draft.actions.map((item,index) => `<div class="wf-action-row" data-action-row="${index}">
     <select class="field-select" data-wf-action-type="${index}">${opts(actions,item.type,esc)}</select>
     ${item.type === "field_update" ? `<select class="field-select" data-wf-action-field="${index}">${opts([["","Select field"],...fieldsFor()],item.field || "",esc)}</select>` : ""}
+    ${item.type === "email" ? `<input class="field-input" data-wf-action-to="${index}" type="email" aria-label="Recipient email" placeholder="Approved recipient email" value="${esc(item.to || "")}"/><input class="field-input" data-wf-action-subject="${index}" aria-label="Email subject" placeholder="Email subject" value="${esc(item.subject || "")}"/>` : ""}
     ${item.type === "function" ? `<select class="field-select" data-wf-action-value="${index}" aria-label="Custom function">${opts([["","Select active custom function"],...customFunctions.map(fn=>[String(fn.id),fn.name || fn.title])],item.value ?? "",esc)}</select>` : `<input class="field-input" data-wf-action-value="${index}" placeholder="${item.type === "field_update" ? "New value" : item.type === "create_task" ? "Task subject" : "Action details (optional)"}" value="${esc(item.value ?? "")}"/>`}
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
@@ -151,6 +152,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     } else if (step === 3) { draft.scheduled_for = get("[data-wf-scheduled-for]") || ""; draft.actions = els(root,"[data-action-row]").map(row=>({
       type:el(row,"[data-wf-action-type]").value,
       field:el(row,"[data-wf-action-field]")?.value || "",
+      to:el(row,"[data-wf-action-to]")?.value || "",
+      subject:el(row,"[data-wf-action-subject]")?.value || "",
       value:el(row,"[data-wf-action-value]").value
     })); }
   }
@@ -159,7 +162,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 0 && (!draft.name || !draft.module)) return "Select a module and enter a rule name.";
     if (step === 2 && draft.criteria_mode === "conditions" && draft.conditions.some(c=>!c.field || (!["is_empty","is_not_empty"].includes(c.operator) && !String(c.value ?? "").trim()))) return "Choose a field, operator and value for each condition.";
     if (step === 3 && draft.actions.some(a=>a.type === "field_update" && !a.field)) return "Select a target field for every field update.";
-    if (step === 3 && draft.actions.some(a=>a.type === "function" && !a.value)) return "Select an active custom function.";
+    if (step === 3 && draft.actions.some(a=>a.type === "function" && !a.value)) return "Select an active custom function."
+    if (step === 3 && draft.actions.some(a=>a.type === "email" && (!a.to || !a.subject))) return "Email actions require an approved recipient and subject.";;
     return "";
   }
   function bind(root) {
