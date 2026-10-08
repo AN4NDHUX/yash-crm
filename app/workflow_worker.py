@@ -85,9 +85,11 @@ def _send_external(action: dict, execution: WorkflowExecution) -> None:
     raise ValueError("Unknown external workflow action")
 
 
-def process_due(limit: int = 20) -> int:
+def process_due(limit: int = 20, organization_id: int | None = None, *, report: bool = False) -> int | dict:
     now = datetime.utcnow()
     processed = 0
+    completed = 0
+    failed = 0
     with SessionLocal() as db:
         # On PostgreSQL, row locking and SKIP LOCKED make the claim atomic.
         query = select(WorkflowExecution).where(
@@ -97,6 +99,8 @@ def process_due(limit: int = 20) -> int:
             or_(WorkflowExecution.scheduled_for.is_(None), WorkflowExecution.scheduled_for <= now),
             or_(WorkflowExecution.next_attempt_at.is_(None), WorkflowExecution.next_attempt_at <= now),
         ).order_by(WorkflowExecution.created_at).limit(min(limit, 50))
+        if organization_id is not None:
+            query = query.where(WorkflowExecution.organization_id == organization_id)
         if db.bind.dialect.name == "postgresql":
             query = query.with_for_update(skip_locked=True)
         candidates = db.scalars(query).all()
@@ -144,6 +148,7 @@ def process_due(limit: int = 20) -> int:
                 add_audit(db, "automation", execution.resource, execution.record_id,
                           f"Background workflow execution #{execution.id} completed")
                 db.commit()
+                completed += 1
             except Exception as error:
                 db.rollback()
                 execution = db.get(WorkflowExecution, execution_id)
@@ -157,11 +162,14 @@ def process_due(limit: int = 20) -> int:
                         execution.next_attempt_at = datetime.utcnow() + timedelta(
                             seconds=min(3600, 30 * 2 ** (execution.attempts - 1)))
                     db.commit()
+                failed += 1
                 log.exception("Workflow delivery failed: execution=%s", execution_id)
             finally:
                 TENANT_ACTOR_ID.reset(actor_token)
                 TENANT_ORGANIZATION_ID.reset(org_token)
             processed += 1
+    if report:
+        return {"processed": processed, "completed": completed, "failed": failed, "skipped": 0, "run_at": now.isoformat()}
     return processed
 
 
