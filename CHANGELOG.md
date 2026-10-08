@@ -20,7 +20,7 @@
 
 ### Integration boundaries
 
-- External mail, telephony, messaging, SAML/AD and third-party AI execution require real provider credentials/endpoints. Yash CRM now manages their configuration and connection references without exposing secrets or pretending an unconfigured provider action succeeded.
+- External mail, telephony, messaging, SAML/AD and third-party AI execution require real provider credentials/endpoints. CONVOSIS CRM now manages their configuration and connection references without exposing secrets or pretending an unconfigured provider action succeeded.
 
 ## [0.1.0.0] - 2026-10-01
 
@@ -35,7 +35,7 @@
 
 ### Changed
 
-- Expanded the existing Yash CRM navigation while retaining its branding, responsive theme and latest workspace styling.
+- Expanded the existing CONVOSIS CRM navigation while retaining its branding, responsive theme and latest workspace styling.
 - Strengthened lead conversion so retries reuse the existing account, contact and conversion deal instead of creating duplicates.
 - Refactored reusable module definitions into a central platform catalog and added dialect-safe database engine configuration.
 - Updated the service worker and route manifest for the expanded application.
