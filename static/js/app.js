@@ -1030,7 +1030,7 @@ async function deleteRecord(resource, id) {
     await api(`/api/${resource}/${id}`, { method: "DELETE" });
     if (["accounts", "contacts"].includes(resource)) invalidateLookups();
     if (resource === "users") await refreshMeta();
-    toast(permanent ? "Deleted" : resource === "users" ? "User deactivated" : "Record archived", permanent ? "The rule has been removed." : "The record has been removed from the active view.");
+    toast(resource === "users" ? "User deactivated" : "Record deleted", resource === "users" ? "User deactivated; access removed." : "Moved to Recycle Bin for 30 days.");
     const parts = window.location.pathname.split("/").filter(Boolean);
     if (MODULES[resource] && parts[0] === resource && parts[1]) await navigate(`/${resource}`);
     else await renderRoute();
@@ -1039,11 +1039,11 @@ async function deleteRecord(resource, id) {
 
 async function deletePlatformRecord(resource, id) {
   const config = state.platformCatalog.resources[resource];
-  const confirmed = await confirmAction(`Archive this ${config.singular.toLowerCase()}?`, "The record will move to the recycle bin and can be restored.", "Archive");
+  const confirmed = await confirmAction(`Delete this ${config.singular.toLowerCase()}?`, "The record will remain in Recycle Bin for 30 days.", "Delete");
   if (!confirmed) return;
   try {
     await api(`/api/platform/${resource}/${id}`, { method: "DELETE" });
-    toast("Record archived", "It can be restored from Setup > Recycle Bin.");
+    toast("Record deleted", "It can be restored from Settings > Recycle Bin for 30 days.");
     await renderRoute();
   } catch (error) { toast("Could not archive record", error.message, "error"); }
 }
