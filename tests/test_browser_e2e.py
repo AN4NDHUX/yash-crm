@@ -83,14 +83,26 @@ def test_browser_signup_login_and_module_navigation():
                     page.wait_for_url(f"**{href}**", timeout=10000)
                     assert page.url.startswith(base + href)
 
-                page.evaluate("""async () => {
-                    await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
+                logout = page.evaluate("""async () => {
+                    const response = await fetch('/api/auth/logout', {
+                        method: 'POST', credentials: 'same-origin'
+                    });
+                    return {status: response.status, body: await response.text()};
                 }""")
+                assert logout["status"] == 200, f"Logout failed: {logout}"
                 page.goto(base + "/login")
                 page.fill("#identifier", "browser.user")
                 page.fill("#password", "browser-password-123")
-                page.click("#submit-button")
-                page.wait_for_url("**/dashboard", timeout=10000)
+                with page.expect_response(
+                    lambda response: "/api/auth/login" in response.url and response.request.method == "POST",
+                    timeout=15000,
+                ) as login_response:
+                    page.click("#submit-button")
+                response = login_response.value
+                assert response.status == 200, (
+                    f"Browser login returned {response.status}: {response.text()[:1000]}"
+                )
+                page.wait_for_url("**/dashboard", timeout=15000)
 
                 browser.close()
         finally:
