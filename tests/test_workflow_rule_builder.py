@@ -404,3 +404,19 @@ def test_python_function_editor_is_fullscreen_and_terminal_styled():
     assert 'data-wf-editor-save' in source
     assert 'codeInput.addEventListener("keydown"' in source
     assert 'codeInput.setRangeText("    ",start,end,"end")' in source
+
+
+def test_convos_is_shared_ui_cleanup_preserves_terminal_editor():
+    """Global layout rules must not override the full-screen function editor."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "static/css/components.css").read_text(encoding="utf-8")
+    app_css = (root / "static/css/app.css").read_text(encoding="utf-8")
+    assert '@import url("./components.css")' in app_css
+    assert '.wf-rule-overlay:not([style*="padding:0"])' in css
+    assert 'overscroll-behavior: contain' in css
+    assert 'max-height: calc(100dvh - 24px)' in css
+    assert 'overflow-x: auto' in css
+    assert ':focus-visible' in css
+    assert '@media (max-width: 820px)' in css
