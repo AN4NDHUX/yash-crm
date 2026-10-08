@@ -85,7 +85,7 @@ def _send_external(action: dict, execution: WorkflowExecution) -> None:
     raise ValueError("Unknown external workflow action")
 
 
-def process_due(limit: int = 20, organization_id: int | None = None, *, report: bool = False) -> int | dict:
+def process_due(limit: int = 20, organization_id: int | None = None, *, report: bool = False, legacy_owner_id: int | None = None) -> int | dict:
     now = datetime.utcnow()
     processed = 0
     completed = 0
@@ -99,7 +99,9 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
             or_(WorkflowExecution.scheduled_for.is_(None), WorkflowExecution.scheduled_for <= now),
             or_(WorkflowExecution.next_attempt_at.is_(None), WorkflowExecution.next_attempt_at <= now),
         ).order_by(WorkflowExecution.created_at).limit(min(limit, 50))
-        if organization_id is not None:
+        if legacy_owner_id is not None:
+            query = query.where(WorkflowExecution.organization_id.is_(None), WorkflowExecution.owner_id == legacy_owner_id)
+        elif organization_id is not None:
             query = query.where(WorkflowExecution.organization_id == organization_id)
         if db.bind.dialect.name == "postgresql":
             query = query.with_for_update(skip_locked=True)
@@ -122,6 +124,8 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
                 rule = db.get(PlatformRecord, execution.rule_id)
                 if rule is None or rule.archived or rule.organization_id != execution.organization_id:
                     raise ValueError("Workflow rule no longer belongs to this organization")
+                if legacy_owner_id is not None and (execution.owner_id != legacy_owner_id or rule.owner_id != legacy_owner_id):
+                    raise ValueError("Legacy workflow does not belong to the platform owner")
                 model = RESOURCE_MAP.get(execution.resource)
                 if model:
                     record = db.get(model, execution.record_id)
@@ -133,6 +137,8 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
                     raise ValueError("Workflow source record is missing")
                 if getattr(record, "organization_id", None) != execution.organization_id:
                     raise ValueError("Workflow source is outside the execution organization")
+                if legacy_owner_id is not None and getattr(record, "owner_id", None) != legacy_owner_id:
+                    raise ValueError("Legacy workflow source does not belong to the platform owner")
                 values = (dict(record.data or {}) if isinstance(record, PlatformRecord)
                           else {column.name: getattr(record, column.name) for column in record.__table__.columns})
                 for action in execution.actions or []:
