@@ -148,8 +148,8 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <header><h2>Functions - ${esc(moduleOptions().find(([key])=>key===draft.module)?.[1] || draft.module)}</h2></header>
       <div class="wf-list-actions"><label>Search <input class="field-input" data-wf-function-search placeholder="Search functions" value="${esc(functionSearch)}"/></label><button type="button" class="button" data-wf-configure-function>Configure Function</button></div>
       <div style="max-height:45vh;overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Description</th><th>Language</th><th>Modified On</th></tr></thead><tbody>
-      ${filtered.map(fn=>`<tr><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${fn.status !== "Active" ? "disabled" : ""} ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")} (${esc(fn.status || "Draft")})</label> <button type="button" class="button button-small" data-wf-edit-function="${esc(String(fn.id))}">Edit</button></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4">No functions found for this module. Choose Configure Function → Gallery to create an active function.</td></tr>'}
-      </tbody></table></div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-close-function>Cancel</button><button type="button" class="button button-primary" data-wf-associate-function>Associate</button></footer>
+      ${filtered.map(fn=>`<tr data-wf-function-row="${esc(String(fn.id))}"><td><label><input type="radio" name="wf-function-choice" value="${esc(String(fn.id))}" ${fn.status !== "Active" ? "disabled" : ""} ${draft.actions.some(a=>a.type==="function"&&String(a.value)===String(fn.id))?"checked":""}/> ${esc(fn.name || fn.title || "")} (${esc(fn.status || "Draft")})</label> <button type="button" class="button button-small" data-wf-edit-function="${esc(String(fn.id))}">Edit</button></td><td>${esc(fn.description || "")}</td><td>${esc(fn.language || "Configured")}</td><td>${esc(fn.updated_at || fn.modified_at || "")}</td></tr>`).join("") || '<tr><td colspan="4"><p>No functions found for this module.</p><button type="button" class="button button-primary" data-wf-empty-gallery>Create a function from Gallery</button></td></tr>'}
+      </tbody></table></div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-close-function>Cancel</button><button type="button" class="button button-primary" data-wf-associate-function ${filtered.some(fn=>fn.status==="Active")?"":"disabled"}>Associate</button></footer>
     </div></div>`;
   };
   const editor = () => {
@@ -235,8 +235,16 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
   function bind(root) {
     el(root,"[data-wf-open-function]")?.addEventListener("click",async()=>{readCurrent(root);functionPicker=true;await refresh(root);});
     el(root,"[data-wf-close-function]")?.addEventListener("click",async()=>{functionPicker=false;await refresh(root);});
-    el(root,"[data-wf-function-search]")?.addEventListener("input",async event=>{functionSearch=event.target.value;await refresh(root);el(root,"[data-wf-function-search]")?.focus();});
-    el(root,"[data-wf-configure-function]")?.addEventListener("click",async()=>{functionConfiguration=true;await refresh(root);});
+    el(root,"[data-wf-function-search]")?.addEventListener("input",event=>{
+      functionSearch=event.target.value;
+      const query=functionSearch.toLowerCase();
+      els(root,"[data-wf-function-row]").forEach(row=>{
+        const fn=customFunctions.find(item=>String(item.id)===row.dataset.wfFunctionRow);
+        row.hidden=!String(fn?.name || fn?.title || "").toLowerCase().includes(query);
+      });
+    });
+    el(root,"[data-wf-configure-function]")?.addEventListener("click",async()=>{functionPicker=false;functionConfiguration=true;await refresh(root);});
+    el(root,"[data-wf-empty-gallery]")?.addEventListener("click",async()=>{functionPicker=false;functionGallery=true;await refresh(root);});
     els(root,"[data-wf-edit-function]").forEach(button=>button.addEventListener("click",async()=>{
       const fn=customFunctions.find(item=>String(item.id)===button.dataset.wfEditFunction);
       if(!fn)return;
@@ -289,7 +297,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
         await refresh(root);
       }catch(error){toast("Function save failed",error.message,"error");}
     });
-    el(root,"[data-wf-function-config-close]")?.addEventListener("click",async()=>{functionConfiguration=false;await refresh(root);});
+    el(root,"[data-wf-function-config-close]")?.addEventListener("click",async()=>{functionConfiguration=false;functionPicker=true;await refresh(root);});
     els(root,"[data-wf-function-method]").forEach(button=>button.addEventListener("click",async()=>{
       const method=button.dataset.wfFunctionMethod;
       functionConfiguration=false;
