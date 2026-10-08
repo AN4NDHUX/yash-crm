@@ -606,7 +606,7 @@ def run_platform_automation(db: Session, resource: str, event: str, record: Plat
 
 def _active_blueprint(db: Session, resource: str) -> Blueprint | None:
     aliases = {resource.lower(), resource.rstrip("s").lower(), resource.replace("_", " ").lower(), resource.rstrip("s").replace("_", " ").lower()}
-    blueprints = db.scalars(select(Blueprint).where(Blueprint.active == True).order_by(Blueprint.id)).all()
+    blueprints = db.scalars(select(Blueprint).where(Blueprint.active == True, Blueprint.archived == False).order_by(Blueprint.id)).all()
     return next((item for item in blueprints if str(item.module or "").lower() in aliases or str(item.module or "").lower().replace(" ", "_") in aliases), None)
 
 
