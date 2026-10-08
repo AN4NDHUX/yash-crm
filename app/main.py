@@ -4874,6 +4874,37 @@ def _purge_expired_recycle_records(db: Session) -> int:
     return removed
 
 
+@app.post("/api/administration/bulk-delete")
+def bulk_delete_records(payload: dict[str, Any], db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+    resource = str(payload.get("resource") or "").strip()
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(type(item) is not int or item <= 0 for item in ids):
+        raise HTTPException(422, "Select 1 to 100 valid record IDs")
+    ids = list(dict.fromkeys(ids))
+    if resource in PLATFORM_RESOURCES:
+        model = PlatformRecord
+        rows = db.scalars(select(model).where(model.resource == resource, model.id.in_(ids), model.archived == False)).all()
+    elif resource in RESOURCE_MAP and resource != "users":
+        model = RESOURCE_MAP[resource]
+        if not hasattr(model, "archived"):
+            raise HTTPException(422, "This module does not support recycle-bin deletion")
+        rows = db.scalars(select(model).where(model.id.in_(ids), model.archived == False)).all()
+    else:
+        raise HTTPException(404, "Module not found")
+    if len(rows) != len(ids):
+        raise HTTPException(404, "Some selected records were not found")
+    for row in rows:
+        if not can_access_record(db, resource, row, actor, "write"):
+            raise HTTPException(403, "You do not have permission to delete all selected records")
+    for row in rows:
+        row.archived = True
+        if isinstance(row, PlatformRecord):
+            row.version = int(row.version or 1) + 1
+        add_audit(db, "archive", resource, row.id, "Bulk deleted to 30-day recycle bin", actor_id=actor.id)
+    db.commit()
+    return {"ok": True, "deleted": len(rows), "retention_days": 30}
+
+
 @app.post("/api/administration/recycle-bin/purge-expired")
 def purge_expired_recycle_records(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     _require_organization_admin(db, actor)
