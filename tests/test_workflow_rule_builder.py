@@ -342,3 +342,19 @@ def test_invalid_workflow_trigger_and_schedule_are_rejected():
     """)
     assert out['missing_field'] == 422
     assert out['invalid_datetime'] == 422
+
+
+def test_workflow_function_gallery_uses_interactive_creation_and_module_scoping():
+    """Prevent regression to a blocking prompt or a stale function dropdown."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] /
+              "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
+    assert 'data-wf-gallery-create' in source
+    assert 'data-wf-gallery-close' in source
+    assert 'functionGalleryDialog()' in source
+    assert 'functionGallery=true' in source
+    assert 'prompt("Function gallery:' not in source
+    assert 'functionRecords = await api("/api/platform/functions?limit=100")' in source
+    assert 'fn.associations.modules.includes(draft.module)' in source
+    assert 'action.value=String(created.id)' in source
