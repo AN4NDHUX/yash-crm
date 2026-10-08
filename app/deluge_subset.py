@@ -49,7 +49,7 @@ def parse_deluge(source):
                 raise HTTPException(422, f"Line {line_number}: unexpected closing brace")
             condition_stack.pop()
             continue
-        conditional = re.fullmatch(r'if\s*\(\s*(\$record\.[A-Za-z][A-Za-z0-9_]{0,79})\s*(==|!=)\s*("(?:[^"\\\\]|\\\\.)*")\s*\)\s*\{', line)
+        conditional = re.fullmatch(r'if\s*\(\s*(\$record\.[A-Za-z][A-Za-z0-9_]{0,79})\s*(==|!=)\s*("[^"]{0,1000}")\s*\)\s*\{', line)
         if conditional:
             field_reference, operator, literal = conditional.groups()
             _argument(field_reference)
