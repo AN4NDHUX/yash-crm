@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from fastapi import HTTPException
+from app.deluge_subset import parse_deluge
 
 MAX_SOURCE_BYTES = 32_768
 MAX_AST_NODES = 2_000
@@ -88,7 +89,7 @@ def validate_function_source(values: dict) -> None:
     source = values.get("source")
     status = str(values.get("status") or "Inactive").strip().lower()
 
-    if runtime not in {"python", "javascript", "http"}:
+    if runtime not in {"python", "javascript", "http", "deluge"}:
         raise HTTPException(422, "Unsupported custom function runtime")
 
     if isinstance(source, list) or (
@@ -98,6 +99,12 @@ def validate_function_source(values: dict) -> None:
             raise HTTPException(422, "Declarative steps require the Python runtime")
         steps = source if isinstance(source, list) else source["steps"]
         validate_declarative_steps(steps)
+        return
+
+    if runtime == "deluge":
+        if not isinstance(source, dict) or not isinstance(source.get("code"), str):
+            raise HTTPException(422, "Deluge source must be a code object")
+        parse_deluge(source["code"])
         return
 
     if status == "active":
