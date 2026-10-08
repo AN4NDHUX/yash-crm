@@ -56,7 +56,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker, with_loader_criteria
 
 from app.platform_catalog import PLATFORM_RESOURCES, SETUP_NAVIGATION, public_catalog
-from app.custom_function_validation import validate_python_source, FunctionValidationError
+from app.custom_function_validation import validate_function_source
 from app.billing import BillingError, configured_provider, create_hosted_checkout, verify_webhook
 from app.access_policy import request_entitlement_feature, request_resource_action
 
@@ -4691,11 +4691,7 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
     if isinstance(actor, User):
         values["owner_id"] = actor.id
     normalize_platform_links(db, resource, values)
-    if resource == "functions" and str(values.get("runtime", "")).lower() == "python" and isinstance(values.get("source"), dict):
-        try:
-            validate_python_source(values["source"].get("code"))
-        except FunctionValidationError as exc:
-            raise HTTPException(422, str(exc)) from exc
+    validate_function_source(values) if resource == "functions" else None
     validate_platform_values(resource, values)
     if config.get("singleton") and db.scalar(select(PlatformRecord.id).where(PlatformRecord.resource == resource, PlatformRecord.archived == False)):
         raise HTTPException(409, f"{config['label']} already has an active record")
@@ -4758,11 +4754,7 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
     values = dict(record.data or {})
     values.update(changes)
     normalize_platform_links(db, resource, values)
-    if resource == "functions" and str(values.get("runtime", "")).lower() == "python" and isinstance(values.get("source"), dict):
-        try:
-            validate_python_source(values["source"].get("code"))
-        except FunctionValidationError as exc:
-            raise HTTPException(422, str(exc)) from exc
+    validate_function_source(values) if resource == "functions" else None
     validate_platform_values(resource, values)
     sync_platform_columns(record, values)
     record.version = int(record.version or 1) + 1
