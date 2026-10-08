@@ -111,3 +111,69 @@ def test_webhook_url_requires_server_side_https_configuration():
         out['rejected'] = True
     """)
     assert result["rejected"] is True
+
+
+def test_smtp_delivery_uses_tls_and_allowlisted_recipient():
+    result = app_scenario("""
+    import os
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from app.workflow_worker import _send_external
+    os.environ.update({
+        'WORKFLOW_EMAIL_RECIPIENTS':'allowed@example.com',
+        'WORKFLOW_SMTP_HOST':'smtp.example.com',
+        'WORKFLOW_SMTP_USER':'service',
+        'WORKFLOW_SMTP_PASSWORD':'test-only',
+        'WORKFLOW_EMAIL_FROM':'crm@example.com',
+    })
+    calls = []
+    class FakeSMTP:
+        def __init__(self,*args,**kwargs): calls.append('connect')
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def starttls(self,**kwargs): calls.append('starttls')
+        def login(self,*args): calls.append('login')
+        def send_message(self,message):
+            calls.append('send')
+            out['recipient'] = message['To']
+            out['subject'] = message['Subject']
+    with patch('app.workflow_worker.smtplib.SMTP', FakeSMTP):
+        _send_external({'type':'email','to':'allowed@example.com',
+            'subject':'Welcome','body':'Hello'},
+            SimpleNamespace(id=9,resource='leads',record_id=2,
+            organization_id=1,idempotency_key='test-9'))
+    out['calls'] = calls
+    """)
+    assert result['calls'] == ['connect','starttls','login','send']
+    assert result['recipient'] == 'allowed@example.com'
+    assert result['subject'] == 'Welcome'
+
+
+def test_webhook_delivery_is_signed_and_has_idempotency_header():
+    result = app_scenario("""
+    import os, hmac, hashlib
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from app.workflow_worker import _send_external
+    os.environ['WORKFLOW_WEBHOOK_URL'] = 'https://hooks.example.com/crm'
+    os.environ['WORKFLOW_WEBHOOK_SECRET'] = 'a' * 40
+    class FakeResponse:
+        status = 202
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+    class FakeOpener:
+        def open(self,request,timeout):
+            raw = request.data
+            out['signature_valid'] = request.get_header('X-crm-signature') == (
+                'sha256=' + hmac.new(('a'*40).encode(),raw,hashlib.sha256).hexdigest())
+            out['idempotency'] = request.get_header('X-crm-idempotency-key')
+            out['url'] = request.full_url
+            return FakeResponse()
+    with patch('app.workflow_worker.build_opener', return_value=FakeOpener()):
+        _send_external({'type':'webhook_queue','value':'test'},
+            SimpleNamespace(id=9, resource='leads', record_id=2,
+            organization_id=1,idempotency_key='test-9'))
+    """)
+    assert result['signature_valid'] is True
+    assert result['idempotency'] == 'test-9'
+    assert result['url'] == 'https://hooks.example.com/crm'
