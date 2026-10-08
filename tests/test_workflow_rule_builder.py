@@ -388,3 +388,19 @@ def test_workflow_function_picker_empty_state_and_search_buttons():
     assert 'functionPicker=false;functionConfiguration=true;await refresh(root)' in source
     assert 'functionConfiguration=false;functionPicker=true;await refresh(root)' in source
     assert 'functionSearch=event.target.value;await refresh(root)' not in source
+
+
+def test_python_function_editor_is_fullscreen_and_terminal_styled():
+    """Prevent regression to a small textarea modal without editor controls."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] /
+              "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
+    assert 'height:100dvh' in source
+    assert 'width:100vw' in source
+    assert 'data-wf-editor-lines' in source
+    assert 'data-wf-editor-position' in source
+    assert 'data-wf-new-function-source' in source
+    assert 'data-wf-editor-save' in source
+    assert 'codeInput.addEventListener("keydown"' in source
+    assert 'codeInput.setRangeText("    ",start,end,"end")' in source
