@@ -180,44 +180,38 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
 
 
 def purge_recycle_bin(limit_per_module: int = 50) -> int:
-    """Periodically remove expired archived CRM records without crossing tenants.
-
-    Database FK-protected records are skipped rather than cascading into live data.
-    """
-    from app.models import PlatformRecord
-    cutoff = datetime.utcnow() - timedelta(days=30)
-    removed = 0
-    models = list(dict.fromkeys(
-        [model for model in RESOURCE_MAP.values()
-         if hasattr(model, "archived") and hasattr(model, "updated_at")] + [PlatformRecord]
-    ))
+    """Purge expired records by organization, without bypassing tenant scope."""
+    from app.models import Organization
+    from app.main import _purge_expired_recycle_records
     with SessionLocal() as db:
-        for model in models:
-            rows = db.scalars(select(model).where(
-                model.archived == True, model.updated_at < cutoff
-            ).limit(limit_per_module)).all()
-            for row in rows:
-                try:
-                    with db.begin_nested():
-                        db.delete(row)
-                        db.flush()
-                    removed += 1
-                except Exception:
-                    log.warning("Recycle-bin purge skipped FK-protected %s #%s",
-                                model.__tablename__, row.id)
-        db.commit()
+        org_ids = list(db.scalars(select(Organization.id)).all())
+    removed = 0
+    for org_id in org_ids:
+        token = TENANT_ORGANIZATION_ID.set(org_id)
+        try:
+            with SessionLocal() as db:
+                removed += _purge_expired_recycle_records(db, org_id)
+                db.commit()
+        finally:
+            TENANT_ORGANIZATION_ID.reset(token)
     return removed
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     interval = max(5, min(300, int(os.getenv("WORKFLOW_POLL_SECONDS", "15"))))
+    next_cleanup = 0.0
     while True:
         try:
             process_due()
-            purge_recycle_bin()
         except Exception:
             log.exception("Workflow poll failed")
+        if time.monotonic() >= next_cleanup:
+            try:
+                purge_recycle_bin()
+            except Exception:
+                log.exception("Recycle Bin cleanup failed")
+            next_cleanup = time.monotonic() + 3600
         time.sleep(interval)
 
 
