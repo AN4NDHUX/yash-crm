@@ -49,7 +49,7 @@ def run_app_script(body: str) -> dict:
 def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        a = c.post('/api/auth/signup', json={
+        a = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'User One','username':'user.one','email':'one@example.com',
             'phone':'+919900001111','password':'123456789012'
         })
@@ -65,7 +65,7 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
         out['a_modules'] = c.get('/api/admin/metadata/modules').json()['total']
         c.post('/api/auth/logout')
 
-        b = c.post('/api/auth/signup', json={
+        b = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'User Two','username':'user.two','email':'two@example.com',
             'phone':'+919900002222','password':'abcdefghijkl'
         })
@@ -104,24 +104,24 @@ def test_new_accounts_start_empty_and_existing_account_restores_owned_data():
 def test_duplicate_email_phone_and_username_are_rejected_and_8_char_password_is_valid():
     out = run_app_script("""
     with TestClient(main.app) as c:
-        first = c.post('/api/auth/signup', json={
+        first = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Unique User','username':'unique.user','email':'unique@example.com',
             'phone':'+919811112222','password':'123456789012'
         })
         c.post('/api/auth/logout')
-        same_email = c.post('/api/auth/signup', json={
+        same_email = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Other','username':'other.one','email':'unique@example.com',
             'phone':'+919811113333','password':'abcdefghijkl'
         })
-        same_phone = c.post('/api/auth/signup', json={
+        same_phone = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Other','username':'other.two','email':'other2@example.com',
             'phone':'+919811112222','password':'abcdefghijkl'
         })
-        same_username = c.post('/api/auth/signup', json={
+        same_username = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Other','username':'unique.user','email':'other3@example.com',
             'phone':'+919811114444','password':'abcdefghijkl'
         })
-        short_password = c.post('/api/auth/signup', json={
+        short_password = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Short Password','username':'short.pass','email':'short@example.com',
             'password':'1234567'
         })
@@ -145,7 +145,7 @@ def test_duplicate_email_phone_and_username_are_rejected_and_8_char_password_is_
 def test_account_events_create_in_app_notifications():
     out = run_app_script("""
     with TestClient(main.app) as c:
-        created = c.post('/api/auth/signup', json={
+        created = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Notify User','username':'notify.user','email':'notify@example.com',
             'phone':'+919822223333','password':'123456789012'
         })
@@ -167,7 +167,7 @@ def test_account_events_create_in_app_notifications():
 def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_blocked():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        a = c.post('/api/auth/signup', json={
+        a = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Tenant A','username':'tenant.a','email':'tenant.a@example.com',
             'phone':'+919700000001','password':'password-1234'
         })
@@ -176,7 +176,7 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
         c.put('/api/settings/general', json={'org_name':'Tenant A CRM','currency':'USD'})
         c.post('/api/auth/logout')
 
-        b = c.post('/api/auth/signup', json={
+        b = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Tenant B','username':'tenant.b','email':'tenant.b@example.com',
             'phone':'+919700000002','password':'password-1234'
         })
@@ -187,7 +187,7 @@ def test_username_email_phone_restore_same_workspace_and_cross_user_access_is_bl
         c.put('/api/settings/general', json={'org_name':'Tenant B CRM','currency':'INR'})
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Tenant C','username':'tenant.c','email':'tenant.c@example.com',
             'phone':'+919700000003','password':'password-1234'
         })
@@ -263,7 +263,7 @@ def test_owner_console_is_only_available_to_configured_platform_owner():
         out['owner_api'] = c.get('/api/owner/overview').status_code
         c.post('/api/auth/logout')
 
-        created = c.post('/api/auth/signup', json={
+        created = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Other Administrator',
             'username':'other.admin',
             'email':'other.admin@example.com',
