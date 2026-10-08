@@ -56,13 +56,38 @@ def validate_python_source(source: str) -> dict[str, int]:
     return {"bytes": len(source.encode("utf-8")), "ast_nodes": len(nodes)}
 
 
+DECLARATIVE_ACTIONS = {
+    "field_update", "update_field", "create_task", "task",
+    "notification", "notify", "tag", "audit",
+}
+MAX_DECLARATIVE_STEPS = 20
+
+
+def validate_declarative_steps(source: list) -> None:
+    """Validate the workflow executor's approved action language at save time."""
+    if not 1 <= len(source) <= MAX_DECLARATIVE_STEPS:
+        raise HTTPException(422, "Function requires between 1 and 20 approved steps")
+    for index, step in enumerate(source, start=1):
+        if not isinstance(step, dict):
+            raise HTTPException(422, f"Function step {index} must be an object")
+        action = str(step.get("type", "")).lower()
+        if action not in DECLARATIVE_ACTIONS:
+            raise HTTPException(422, f"Function step {index} has an unsupported action")
+        if action in {"field_update", "update_field"} and not str(step.get("field", "")).strip():
+            raise HTTPException(422, f"Function step {index} requires a field")
+
+
 def validate_function_source(values: dict) -> None:
     """Validate script drafts; retain the existing declarative step-list format."""
     if str(values.get("runtime", "")).lower() != "python":
         return
     source = values.get("source")
     if isinstance(source, list):
-        return  # Existing declarative workflow executor validates step types.
+        validate_declarative_steps(source)
+        return
+    if isinstance(source, dict) and isinstance(source.get("steps"), list):
+        validate_declarative_steps(source["steps"])
+        return
     if not isinstance(source, dict):
         raise HTTPException(422, "Python source must be a step list or code object")
     if str(values.get("status", "")).lower() == "active":
