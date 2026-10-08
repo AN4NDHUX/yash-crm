@@ -50,7 +50,7 @@ def run_app_script(body: str, **env_overrides: str) -> dict:
 def test_normal_account_cannot_administer_users_or_security():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        created = c.post('/api/auth/signup', json={
+        created = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Standard User','username':'standard.user','email':'standard@example.com',
             'password':'strong-password-123'
         })
@@ -140,11 +140,11 @@ def test_security_headers_and_no_duplicate_routes():
 def test_password_policy_requires_eight_characters():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        short = c.post('/api/auth/signup', json={
+        short = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Short Password','username':'short.password','email':'short@example.com',
             'password':'1234567'
         })
-        valid = c.post('/api/auth/signup', json={
+        valid = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Valid Password','username':'valid.password','email':'valid@example.com',
             'password':'12345678'
         })
@@ -157,7 +157,7 @@ def test_password_policy_requires_eight_characters():
 def test_document_download_is_tenant_authorized_and_database_backed():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Document Owner','username':'doc.owner','email':'doc.owner@example.com',
             'password':'strong-password-123'
         })
@@ -176,7 +176,7 @@ def test_document_download_is_tenant_authorized_and_database_backed():
         with main.SessionLocal() as db:
             out['blob_count'] = int(db.scalar(main.select(main.func.count()).select_from(main.DocumentBlob)) or 0)
         c.post('/api/auth/logout')
-        second = c.post('/api/auth/signup', json={
+        second = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Other Tenant','username':'other.tenant','email':'other.tenant@example.com',
             'password':'strong-password-123'
         })
