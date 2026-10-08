@@ -583,7 +583,7 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
             except ValueError:
                 scheduled_for = None
         external = any(str(item.get("type", "")).lower() in {"email", "webhook", "webhook_queue"} for item in actions)
-        execution = WorkflowExecution(owner_id=record.owner_id, rule_id=rule.id, resource=resource, record_id=record.id, event=event, status="queued" if scheduled_for or external else "running", actions=actions, scheduled_for=scheduled_for, idempotency_key=key)
+        execution = WorkflowExecution(organization_id=getattr(record, "organization_id", None) or rule.organization_id or TENANT_ORGANIZATION_ID.get(), owner_id=record.owner_id, rule_id=rule.id, resource=resource, record_id=record.id, event=event, status="queued" if scheduled_for or external else "running", actions=actions, scheduled_for=scheduled_for, idempotency_key=key)
         db.add(execution)
         db.flush()
         if scheduled_for or external:
