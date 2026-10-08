@@ -10,7 +10,7 @@ Mode: Startup
 
 ## Problem Statement
 
-Yash CRM should replace manual sales reporting with one auditable view of the complete Lead -> Visit -> Quotation -> Invoice -> Payment -> Incentive journey. Management must be able to see who is performing, who is close to target, where leads are stuck, which quotations need follow-up, which invoices remain unpaid, and who has earned an incentive. The AI layer must make this information easier to understand and act on without becoming the source of financial truth.
+CONVOSIS CRM should replace manual sales reporting with one auditable view of the complete Lead -> Visit -> Quotation -> Invoice -> Payment -> Incentive journey. Management must be able to see who is performing, who is close to target, where leads are stuck, which quotations need follow-up, which invoices remain unpaid, and who has earned an incentive. The AI layer must make this information easier to understand and act on without becoming the source of financial truth.
 
 ## Demand Evidence
 
@@ -320,7 +320,7 @@ Mode: SELECTIVE_EXPANSION. The broad vision remains Lead -> Visit -> Quotation -
 - Present each exception as one scannable row with trigger, quotation label, owner, amount at risk, validity date, age, review state, and one primary action; keep secondary evidence and history progressively disclosed.
 - Show rule provenance and AI provenance separately. Never use sparkle styling, confidence theater, or language implying that AI calculated amounts or decided exception membership.
 - Provide complete states for first load, empty queue, AI unconfigured, ranking in progress, ranked, rate limited, quota exhausted, provider error, malformed response fallback, stale proposal, approval in progress, succeeded, rejected, duplicate, and reconciliation required.
-- Preserve the existing Yash CRM visual system and responsive navigation. Desktop uses a dense review table/list; narrow screens use single-column exception cards with a sticky filter/sort control and minimum 44px touch targets.
+- Preserve the existing CONVOSIS CRM visual system and responsive navigation. Desktop uses a dense review table/list; narrow screens use single-column exception cards with a sticky filter/sort control and minimum 44px touch targets.
 - Before approval, show an escaped exact Task preview containing server-owned subject, owner, priority, due date, source quotation, status, and bounded drafted description. Confirmation names that a persistent database Task will be created and the available audited Cancel state transition.
 - Make deterministic order instantly restorable, show the complete exception count in both modes, retain focus after updates, announce asynchronous results through accessible live regions, and support full keyboard operation without color-only meaning.
 - Use warm actionable empty and error states: explain what happened, preserve the queue, and offer one safe next action. Never replace deterministic data with a full-screen AI failure.
