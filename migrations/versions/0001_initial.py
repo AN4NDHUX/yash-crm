@@ -1,4 +1,4 @@
-"""Create the initial Yash CRM schema."""
+"""Create the initial CONVOSIS CRM schema."""
 
 from alembic import op
 import sqlalchemy as sa
