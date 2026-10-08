@@ -1195,22 +1195,22 @@ function bindOrganizationManagement() {
       if (result.delivery === "not_configured") toast("Email delivery unavailable", "Configure SMTP to send invitations.", "error");
     }, "Invitation created.");
   });
-  $('[data-org-member-save]').forEach(button => button.addEventListener('click', () => {
+  $$('[data-org-member-save]').forEach(button => button.addEventListener('click', () => {
     const id = button.dataset.orgMemberSave;
     const role = $('[data-org-role="' + id + '"]')?.value;
     perform(() => api("/api/organization/members/" + id, {method:"PATCH", body:JSON.stringify({membership_role:role})}), "Member role updated.");
   }));
-  $('[data-org-member-status]').forEach(button => button.addEventListener('click', () => {
+  $$('[data-org-member-status]').forEach(button => button.addEventListener('click', () => {
     const id = button.dataset.orgMemberStatus;
     const status = button.dataset.nextStatus;
     if (!window.confirm(status + " this member?")) return;
     perform(() => api("/api/organization/members/" + id, {method:"PATCH", body:JSON.stringify({status})}), "Member status updated.");
   }));
-  $('[data-org-invite-revoke]').forEach(button => button.addEventListener('click', () => {
+  $$('[data-org-invite-revoke]').forEach(button => button.addEventListener('click', () => {
     if (!window.confirm("Revoke this invitation?")) return;
     perform(() => api("/api/organization/invitations/" + button.dataset.orgInviteRevoke, {method:"DELETE"}), "Invitation revoked.");
   }));
-  $('[data-org-transfer]').forEach(button => button.addEventListener('click', () => {
+  $$('[data-org-transfer]').forEach(button => button.addEventListener('click', () => {
     const target = button.dataset.orgTarget;
     if (window.prompt("Transfer ownership permanently to " + target + "? Type TRANSFER to confirm.") !== "TRANSFER") return;
     perform(() => api("/api/organization/transfer-ownership", {method:"POST", body:JSON.stringify({user_id:Number(button.dataset.orgTransfer)})}), "Ownership transferred.");
