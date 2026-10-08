@@ -138,7 +138,7 @@ def related_label(db: Session, related_type: str, related_id: int) -> str | None
 def platform_config(resource: str) -> dict[str, Any]:
     config = PLATFORM_RESOURCES.get(resource)
     if config is None:
-        raise HTTPException(404, "Unknown Yash CRM module or setup resource")
+        raise HTTPException(404, "Unknown CONVOSIS CRM module or setup resource")
     return config
 
 
@@ -622,7 +622,7 @@ def seed_defaults(db: Session) -> None:
         Activity(activity_type="Call", subject="Welcome call completed", due_at=datetime.utcnow() - timedelta(days=1), owner_id=arjun.id, status="Completed", priority="Normal", related_type="leads", related_id=leads[3].id, description="Introductory call completed.", completed_at=datetime.utcnow() - timedelta(days=1)),
     ]
     db.add_all(activities)
-    db.add(OrganizationSetting(id=1, org_name="Yash CRM", timezone="Asia/Kolkata", currency="INR", date_format="DD MMM YYYY", fiscal_year_start="April", default_pipeline="Default sales pipeline", notifications={"daily_digest": True, "mentions": True, "deal_updates": True}))
+    db.add(OrganizationSetting(id=1, org_name="CONVOSIS CRM", timezone="Asia/Kolkata", currency="INR", date_format="DD MMM YYYY", fiscal_year_start="April", default_pipeline="Default sales pipeline", notifications={"daily_digest": True, "mentions": True, "deal_updates": True}))
     db.add(ApprovalProcess(name="Discount approval", module="Deals", trigger="Discount is greater than 15%", approver="Sales manager", status="Active", conditions=[{"field": "discount", "operator": ">", "value": "15"}], steps=[{"order": 1, "approver": "Sales manager"}]))
     db.add(Blueprint(name="Deal progression", module="Deals", entry_criteria="Amount is greater than 0", stages=[{"id": "qualification", "label": "Qualification"}, {"id": "needs-analysis", "label": "Needs Analysis"}, {"id": "proposal", "label": "Proposal"}, {"id": "negotiation", "label": "Negotiation"}, {"id": "closed-won", "label": "Closed Won"}], transitions=[{"from": "Qualification", "to": "Needs Analysis", "label": "Qualify"}, {"from": "Needs Analysis", "to": "Proposal", "label": "Create proposal"}, {"from": "Proposal", "to": "Negotiation", "label": "Start negotiation"}, {"from": "Negotiation", "to": "Closed Won", "label": "Close won"}], active=True))
     db.commit()
@@ -643,7 +643,7 @@ def ensure_workspace_defaults(db: Session) -> None:
         db.add(OrganizationSetting(
             owner_id=actor_id,
             organization_id=organization_id,
-            org_name="Yash CRM",
+            org_name="CONVOSIS CRM",
             timezone="Asia/Kolkata",
             currency="INR",
             date_format="DD MMM YYYY",
@@ -725,7 +725,7 @@ def ensure_workspace_defaults(db: Session) -> None:
     lead = db.scalar(select(Lead).order_by(Lead.id).limit(1))
     if db.scalar(select(Product.id).limit(1)) is None and owner:
         db.add_all([
-            Product(name="Yash CRM Enterprise", sku="YCR-ENT-001", category="CRM platform", unit_price=480000, stock_quantity=999, status="Active", description="Enterprise customer operations workspace.", owner_id=owner.id, organization_id=organization_id, related_type="accounts" if account else None, related_id=account.id if account else None),
+            Product(name="CONVOSIS CRM Enterprise", sku="YCR-ENT-001", category="CRM platform", unit_price=480000, stock_quantity=999, status="Active", description="Enterprise customer operations workspace.", owner_id=owner.id, organization_id=organization_id, related_type="accounts" if account else None, related_id=account.id if account else None),
             Product(name="Implementation Sprint", sku="YCR-SVC-010", category="Professional services", unit_price=125000, stock_quantity=20, status="Active", description="Guided onboarding and rollout package.", owner_id=owner.id, organization_id=organization_id, related_type="contacts" if contact else None, related_id=contact.id if contact else None),
         ])
     if db.scalar(select(Note.id).limit(1)) is None and owner and (account or lead):
@@ -755,7 +755,7 @@ def ensure_platform_defaults(db: Session, include_demo: bool = False) -> None:
     if admin is None and organization_id is None:
         admin = db.scalar(select(User).order_by(User.id))
     defaults: dict[str, list[dict[str, Any]]] = {
-        "company_details": [{"name": "Yash CRM", "legal_name": "Yash CRM", "email": admin.email if admin else "admin@yashcrm.local", "status": "Active"}],
+        "company_details": [{"name": "CONVOSIS CRM", "legal_name": "CONVOSIS CRM", "email": admin.email if admin else "admin@yashcrm.local", "status": "Active"}],
         "fiscal_years": [{"name": "April - March", "start_date": "2026-04-01", "end_date": "2027-03-31", "status": "Active"}],
         "roles": [{"name": "Administrator", "data_scope": "All", "status": "Active", "description": "Full record visibility."}, {"name": "Sales Manager", "parent_role": "Administrator", "data_scope": "Own and Subordinates", "status": "Active"}, {"name": "Sales Representative", "parent_role": "Sales Manager", "data_scope": "Own", "status": "Active"}],
         "profiles": [{"name": "Administrator", "permissions": {"all_modules": ["create", "read", "update", "delete", "export"], "setup": ["manage"]}, "status": "Active"}, {"name": "Standard", "permissions": {"crm_modules": ["create", "read", "update"], "setup": []}, "status": "Active"}],
