@@ -106,9 +106,9 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     <button class="button button-small" type="button" data-wf-remove-action="${index}" ${draft.actions.length === 1 ? "disabled" : ""}>Remove</button>
   </div>`).join("");
   const functionEditorDialog = () => `<div class="wf-rule-overlay" data-wf-code-portal style="position:fixed;inset:0;z-index:9999;padding:0;background:#080e1b">
-    <div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Python function editor" style="position:absolute;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border-radius:0;display:flex;flex-direction:column;overflow:hidden;background:#101827;color:#e2e8f0">
+    <div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Deluge function editor" style="position:absolute;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border-radius:0;display:flex;flex-direction:column;overflow:hidden;background:#101827;color:#e2e8f0">
       <header style="padding:18px 24px;background:#172338;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;gap:16px">
-        <div><h2 style="color:#f8fafc;margin:0">${functionEditingId ? "Edit" : "Create"} Python Function</h2><p style="color:#94a3b8;margin:6px 0 0">Python draft editor · Script execution is not enabled</p></div>
+        <div><h2 style="color:#f8fafc;margin:0">${functionEditingId ? "Edit" : "Create"} Deluge Function</h2><p style="color:#94a3b8;margin:6px 0 0">Executable Deluge-style CRM actions · Restricted safe syntax</p></div>
         <button type="button" class="button" data-wf-editor-close aria-label="Close editor">Close</button>
       </header>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;padding:16px 24px;background:#101827">
@@ -116,14 +116,14 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
         <label style="color:#cbd5e1">Entrypoint<input class="field-input" data-wf-new-function-entry value="${esc(functionDraft?.entrypoint || "main")}" maxlength="80" style="margin-top:6px;background:#1e293b;color:#f8fafc;border:1px solid #475569"/></label>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 24px;background:#1e293b;border-top:1px solid #334155;border-bottom:1px solid #334155;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13px">
-        <span>function.py <span style="color:#64748b">· Python 3 · Draft only</span></span><span data-wf-editor-position>Ln 1, Col 1</span>
+        <span>function.dg <span style="color:#64748b">· Deluge subset · Workflow enabled</span></span><span data-wf-editor-position>Ln 1, Col 1</span>
       </div>
       <div style="flex:1;min-height:0;display:flex;background:#0b1220;overflow:hidden">
         <pre aria-hidden="true" data-wf-editor-lines style="margin:0;padding:18px 12px 18px 20px;min-width:55px;overflow:hidden;text-align:right;line-height:1.6;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;color:#64748b;user-select:none;border-right:1px solid #253247">1</pre>
-        <textarea data-wf-new-function-source aria-label="Python source code" spellcheck="false" wrap="off" placeholder="def main(record):&#10;    return {&quot;record_id&quot;: record.get(&quot;id&quot;)}" style="flex:1;width:100%;height:100%;resize:none;border:0;outline:none;border-radius:0;background:#0b1220;color:#dbeafe;padding:18px 16px;line-height:1.6;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4;white-space:pre;overflow:auto">${esc(functionDraft?.code || "")}</textarea>
+        <textarea data-wf-new-function-source aria-label="Deluge source code" spellcheck="false" wrap="off" placeholder="crm.addTag(&quot;Reviewed&quot;);&#10;crm.createTask(&quot;Follow up&quot;);" style="flex:1;width:100%;height:100%;resize:none;border:0;outline:none;border-radius:0;background:#0b1220;color:#dbeafe;padding:18px 16px;line-height:1.6;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:4;white-space:pre;overflow:auto">${esc(functionDraft?.code || "crm.addTag(\\\"Reviewed\\\");")}</textarea>
       </div>
       <footer class="wf-editor-footer" style="margin:0;padding:14px 24px;background:#172338;border-top:1px solid #334155;display:flex;justify-content:flex-end;gap:12px">
-        <button type="button" class="button" data-wf-editor-close>Cancel</button><button type="button" class="button button-primary" data-wf-editor-save>Save Draft</button>
+        <button type="button" class="button" data-wf-editor-close>Cancel</button><button type="button" class="button button-primary" data-wf-editor-save>Save &amp; Activate</button>
       </footer>
     </div></div>`;
   const galleryTemplates = [
@@ -332,12 +332,12 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       }
       try{
         await api("/api/platform/functions"+(functionEditingId?"/"+functionEditingId:""),{method:functionEditingId?"PATCH":"POST",body:JSON.stringify({
-          name,runtime:"Python",entrypoint,source:{code:source,language:"Python"},
+          name,runtime:"Deluge",entrypoint,source:{code:source,language:"Deluge"},
           input_schema:{type:"object"},associations:{modules:[draft.module]},
-          status:"Inactive"
+          status:"Active"
         })});
         functionEditor=false;functionPicker=true;functionEditingId=null;functionDraft=null;
-        toast("Function draft saved","Activate only after isolated execution is available.");
+        toast("Function activated","Deluge function is ready to associate with a workflow.");
         await refresh(root);
       }catch(error){toast("Function save failed",error.message,"error");}
     });
