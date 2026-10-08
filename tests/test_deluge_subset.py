@@ -34,3 +34,11 @@ def test_deluge_rejects_unsupported_or_dangerous_code(source):
 def test_python_remains_unexecutable():
     with pytest.raises(HTTPException):
         validate_function_source({"runtime": "Python", "status": "Active", "source": {"code": "print(1)"}})
+
+
+def test_deluge_notification_and_record_reference():
+    steps = parse_deluge('crm.notify("Review this lead");\ncrm.createTask($record.name);')
+    assert steps == [
+        {"type": "notification", "value": "Review this lead"},
+        {"type": "create_task", "subject": "$record.name"},
+    ]
