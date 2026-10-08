@@ -42,3 +42,21 @@ def test_deluge_notification_and_record_reference():
         {"type": "notification", "value": "Review this lead"},
         {"type": "create_task", "subject": "$record.name"},
     ]
+
+
+def test_deluge_conditional_actions_compile():
+    source = 'if ($record.status == "Qualified") {\ncrm.addTag("Reviewed");\n}'
+    assert parse_deluge(source) == [{
+        "type": "tag", "value": "Reviewed",
+        "_conditions": [{"field": "status", "operator": "==", "value": "Qualified"}],
+    }]
+
+
+@pytest.mark.parametrize("source", [
+    'if ($record.password == "secret") {\ncrm.addTag("Unsafe");\n}',
+    'if ($record.status == "Qualified") {\ncrm.addTag("Open");',
+    '}\ncrm.addTag("Unexpected");',
+])
+def test_deluge_rejects_invalid_condition_blocks(source):
+    with pytest.raises(HTTPException):
+        parse_deluge(source)
