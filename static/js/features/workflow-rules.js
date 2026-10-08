@@ -243,7 +243,26 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       const method=button.dataset.wfFunctionMethod;
       functionConfiguration=false;
       if(method==="existing"){functionPicker=true;await refresh(root);return;}
-      if(method==="gallery"){toast("Function gallery","No gallery templates are installed yet.");await refresh(root);return;}
+      if(method==="gallery"){
+        const templates=[
+          {name:"Add Follow-up Task",steps:[{type:"create_task",subject:"Follow up with CRM record"}]},
+          {name:"Add Reviewed Tag",steps:[{type:"tag",value:"Reviewed"}]},
+          {name:"Audit Record",steps:[{type:"audit"}]}
+        ];
+        const choice=prompt("Function gallery: enter 1 for Follow-up Task, 2 for Reviewed Tag, or 3 for Audit Record.");
+        if(choice===null){await refresh(root);return;}
+        const selected=templates[Number(choice)-1];
+        if(!selected){toast("Invalid selection","Choose 1, 2, or 3.","error");await refresh(root);return;}
+        try{
+          await api("/api/platform/functions",{method:"POST",body:JSON.stringify({
+            name:selected.name,runtime:"Python",entrypoint:"steps",source:selected.steps,
+            associations:{modules:[draft.module]},status:"Active"
+          })});
+          toast("Gallery function created",selected.name);
+          functionPicker=true;
+        }catch(error){toast("Gallery function failed",error.message,"error");}
+        await refresh(root);return;
+      }
       functionPicker=false;
       functionEditingId=null;functionDraft=null;functionEditor=true;
       await refresh(root);
