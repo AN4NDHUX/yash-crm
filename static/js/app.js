@@ -1079,6 +1079,51 @@ function bindPlatform(resource) {
   $('[data-platform-owner]')?.addEventListener("change", (event) => { current.owner_id = event.target.value; current.offset = 0; renderRoute(); });
   $('[data-platform-sort]')?.addEventListener("change", (event) => { current.sort = event.target.value; current.offset = 0; renderRoute(); });
   $$('[data-page]').forEach((button) => button.addEventListener("click", () => { if (!current) return; current.offset += button.dataset.page === "next" ? 25 : -25; renderRoute(); }));
+  const recycleSelection = () => $$('[data-recycle-select]:checked').map(el=>({resource:el.dataset.resource,id:Number(el.dataset.id)}));
+  function syncRecycleButtons() {
+    const checked=recycleSelection();
+    const restore=$('[data-recycle-restore-selected]');
+    const permanent=$('[data-recycle-permanent-selected]');
+    if(restore) restore.disabled=!checked.length;
+    if(permanent) permanent.disabled=!checked.length;
+  }
+  $$('[data-recycle-select]').forEach(el=>el.addEventListener('change',syncRecycleButtons));
+  $('[data-recycle-select-all]')?.addEventListener('change',event=>{
+    $$('[data-recycle-select]').forEach(el=>{el.checked=event.target.checked;});
+    syncRecycleButtons();
+  });
+  async function recycleBatch(restore) {
+    const entries=recycleSelection();
+    if(!entries.length)return;
+    if(!restore && !confirm("Permanently delete selected records? This cannot be undone."))return;
+    const grouped={};
+    for(const item of entries)(grouped[item.resource]??=[]).push(item.id);
+    try{
+      for(const [resource,ids] of Object.entries(grouped)){
+        await api(restore?'/api/administration/recycle-bin/bulk-restore':'/api/administration/recycle-bin/permanent-delete',{
+          method:'POST',body:JSON.stringify({resource,ids})
+        });
+      }
+      toast(restore?'Records restored':'Records permanently deleted',entries.length+' records processed.');
+      await renderRoute();
+    }catch(error){toast('Recycle Bin operation failed',error.message,'error');}
+  }
+  $('[data-recycle-restore-selected]')?.addEventListener('click',()=>recycleBatch(true));
+  $('[data-recycle-permanent-selected]')?.addEventListener('click',()=>recycleBatch(false));
+  $$('[data-recycle-permanent]').forEach(button=>button.addEventListener('click',async()=>{
+    if(!confirm('Permanently delete this record? This cannot be undone.'))return;
+    try{
+      await api('/api/administration/recycle-bin/permanent-delete',{method:'POST',body:JSON.stringify({resource:button.dataset.resource,ids:[Number(button.dataset.id)]})});
+      toast('Record permanently deleted');await renderRoute();
+    }catch(error){toast('Permanent delete failed',error.message,'error');}
+  }));
+  $('[data-recycle-purge-expired]')?.addEventListener('click',async()=>{
+    try{
+      const result=await api('/api/administration/recycle-bin/purge-expired',{method:'POST'});
+      toast('Cleanup finished',result.purged+' expired records purged.');
+      await renderRoute();
+    }catch(error){toast('Cleanup failed',error.message,'error');}
+  });
   $$('[data-restore-resource]').forEach((button) => button.addEventListener("click", async () => { try { await api("/api/administration/restore", { method: "POST", body: JSON.stringify({ resource: button.dataset.restoreResource, record_id: Number(button.dataset.id) }) }); toast("Record restored"); await renderRoute(); } catch (error) { toast("Could not restore record", error.message, "error"); } }));
   $('[data-import-form]')?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const file = form.querySelector('[name="file"]').files[0]; if (!file) return; const body = new FormData(); body.append("file", file); try { const response = await fetch(`/api/import/${form.elements.resource.value}`, { method: "POST", body }); const result = await response.json(); if (!response.ok) throw new Error(result.detail || "Import failed"); toast("Import complete", `${result.imported} rows imported; ${result.errors.length} errors.`); form.reset(); } catch (error) { toast("Could not import CSV", error.message, "error"); } });
   $('[data-duplicate-form]')?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const target = $('[data-duplicate-results]'); try { const result = await api(`/api/administration/duplicates?resource=${encodeURIComponent(form.elements.resource.value)}`); target.innerHTML = result.groups.length ? result.groups.map((group) => `<div class="rule-row"><div class="rule-info"><strong>${esc(group.value)}</strong><small>${group.count} records match on ${esc(group.match_on)}</small></div>${badge("Review")}</div>`).join("") : emptyState("✓", "No duplicates found", "No exact normalized matches were detected."); } catch (error) { toast("Duplicate scan failed", error.message, "error"); } });
