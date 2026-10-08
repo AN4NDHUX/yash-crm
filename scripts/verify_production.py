@@ -6,6 +6,7 @@ import sys
 import uuid
 from http.cookiejar import CookieJar
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
@@ -27,6 +28,11 @@ def client():
 def call(opener, method: str, path: str, payload=None, headers=None, expected=(200,)):
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request_headers = {"Accept": "application/json", **(headers or {})}
+    if method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+        # Production cookie-authenticated writes require a same-origin browser source.
+        # Preserve CSRF enforcement instead of weakening application middleware.
+        parsed_base = urlsplit(BASE_URL)
+        request_headers.setdefault("Origin", f"{parsed_base.scheme}://{parsed_base.netloc}")
     if payload is not None:
         request_headers["Content-Type"] = "application/json"
     req = Request(BASE_URL + path, data=body, headers=request_headers, method=method)
