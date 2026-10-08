@@ -55,7 +55,7 @@ def run_app_script(body: str) -> dict:
 def test_invited_user_joins_same_organization_and_other_tenant_is_isolated():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        a = c.post('/api/auth/signup', json={
+        a = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Org Owner','username':'org.owner','email':'org.owner@example.com',
             'password':'strong-password-123'
         })
@@ -68,7 +68,7 @@ def test_invited_user_joins_same_organization_and_other_tenant_is_isolated():
         org_a = c.get('/api/organization').json()['id']
         c.post('/api/auth/logout')
 
-        b = c.post('/api/auth/signup', json={
+        b = c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Org Member','username':'org.member','email':'member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -77,7 +77,7 @@ def test_invited_user_joins_same_organization_and_other_tenant_is_isolated():
         out['same_org'] = org_a == org_b
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Other Tenant','username':'other.tenant','email':'other@example.com',
             'password':'strong-password-123'
         })
@@ -105,7 +105,7 @@ def test_invited_user_joins_same_organization_and_other_tenant_is_isolated():
 def test_record_limit_is_shared_across_organization_members():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Quota Owner','username':'quota.owner','email':'quota.owner@example.com',
             'password':'strong-password-123'
         })
@@ -118,7 +118,7 @@ def test_record_limit_is_shared_across_organization_members():
         first = c.post('/api/leads', json={'name':'First shared record'})
         out['first'] = first.status_code
         c.post('/api/auth/logout')
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Quota Member','username':'quota.member','email':'quota.member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -132,7 +132,7 @@ def test_record_limit_is_shared_across_organization_members():
 def test_profile_denial_is_enforced_at_api_boundary():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Profile User','username':'profile.user','email':'profile@example.com',
             'password':'strong-password-123'
         })
@@ -159,7 +159,7 @@ def test_profile_denial_is_enforced_at_api_boundary():
 def test_field_level_write_permission_is_enforced():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Field User','username':'field.user','email':'field@example.com',
             'password':'strong-password-123'
         })
@@ -189,7 +189,7 @@ def test_field_level_write_permission_is_enforced():
 def test_signed_billing_webhook_is_required_and_idempotent():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Paid User','username':'paid.user','email':'paid@example.com',
             'password':'strong-password-123'
         })
@@ -233,7 +233,7 @@ def test_signed_billing_webhook_is_required_and_idempotent():
 def test_advanced_analytics_is_plan_gated():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Analytics User','username':'analytics.user','email':'analytics@example.com',
             'password':'strong-password-123'
         })
@@ -262,7 +262,7 @@ def test_advanced_analytics_is_plan_gated():
 def test_cross_organization_user_admin_is_blocked():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Admin A','username':'admin.a','email':'admin.a@example.com',
             'password':'strong-password-123'
         })
@@ -273,7 +273,7 @@ def test_cross_organization_user_admin_is_blocked():
             out['admin_a_id'] = admin_a.id
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'User B','username':'user.b','email':'user.b@example.com',
             'password':'strong-password-123'
         })
@@ -300,7 +300,7 @@ def test_cross_organization_user_admin_is_blocked():
 def test_approval_actor_id_payload_cannot_impersonate_approver():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Request Owner','username':'request.owner','email':'request.owner@example.com',
             'password':'strong-password-123'
         })
@@ -317,7 +317,7 @@ def test_approval_actor_id_payload_cannot_impersonate_approver():
         lead = c.post('/api/leads', json={'name':'Approval Lead'}).json()
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Real Approver','username':'real.approver','email':'approver@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -369,7 +369,7 @@ def test_approval_actor_id_payload_cannot_impersonate_approver():
 def test_global_search_respects_private_record_sharing():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Search Owner','username':'search.owner','email':'search.owner@example.com',
             'password':'strong-password-123'
         })
@@ -379,7 +379,7 @@ def test_global_search_respects_private_record_sharing():
         out['lead_id'] = lead['id']
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Search Peer','username':'search.peer','email':'search.peer@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -396,7 +396,7 @@ def test_global_search_respects_private_record_sharing():
 def test_approval_snapshot_redacts_hidden_fields_for_approver():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Snapshot Owner','username':'snapshot.owner','email':'snapshot.owner@example.com',
             'password':'strong-password-123'
         })
@@ -413,7 +413,7 @@ def test_approval_snapshot_redacts_hidden_fields_for_approver():
         lead = c.post('/api/leads', json={'name':'Snapshot Lead','email':'secret-snapshot@example.com'}).json()
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Snapshot Approver','username':'snapshot.approver','email':'snapshot.approver@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -472,7 +472,7 @@ def test_approval_snapshot_redacts_hidden_fields_for_approver():
 def test_cpq_catalog_respects_product_field_security():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'CPQ Owner','username':'cpq.owner','email':'cpq.owner@example.com',
             'password':'strong-password-123'
         })
@@ -489,7 +489,7 @@ def test_cpq_catalog_respects_product_field_security():
         product = c.post('/api/products', json={'name':'Secure Product','sku':'SEC-001','unit_price':9999,'status':'Active'}).json()
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'CPQ Member','username':'cpq.member','email':'cpq.member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -522,7 +522,7 @@ def test_cpq_catalog_respects_product_field_security():
 def test_sensitive_administration_and_automation_routes_require_org_admin():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Boundary Owner','username':'boundary.owner','email':'boundary.owner@example.com',
             'password':'strong-password-123'
         })
@@ -553,7 +553,7 @@ def test_sensitive_administration_and_automation_routes_require_org_admin():
         out['owner_blueprint'] = c.get(f"/api/blueprints/{out['blueprint_id']}/transitions").status_code
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Boundary Member','username':'boundary.member','email':'boundary.member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
@@ -579,7 +579,7 @@ def test_sensitive_administration_and_automation_routes_require_org_admin():
 def test_archived_platform_record_restore_respects_private_sharing():
     out = run_app_script("""
     with TestClient(main.app, follow_redirects=False) as c:
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Restore Owner','username':'restore.owner','email':'restore.owner@example.com',
             'password':'strong-password-123'
         })
@@ -593,7 +593,7 @@ def test_archived_platform_record_restore_respects_private_sharing():
         c.delete(f'/api/platform/cases/{case_id}')
         c.post('/api/auth/logout')
 
-        c.post('/api/auth/signup', json={
+        c.post('/api/auth/signup', json={"organization_name": "Automated Test Organization", 
             'name':'Restore Member','username':'restore.member','email':'restore.member@example.com',
             'password':'strong-password-123','invitation_token':token
         })
