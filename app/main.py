@@ -2570,9 +2570,13 @@ def workflow_execution_history(status: str | None = None, limit: int = Query(100
 @app.post("/api/automation/workflows/run-due")
 def run_due_workflows(limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     _require_organization_admin(db, actor)
-    # Deliberately never deliver from a web request. Worker delivery uses atomic leases,
-    # bounded retries and the same tenant checks, while this legacy endpoint did not.
-    raise HTTPException(409, "Scheduled workflows are processed by the dedicated workflow worker")
+    organization_id = TENANT_ORGANIZATION_ID.get() or _organization_id_for_user(db, actor.id)
+    if not organization_id:
+        raise HTTPException(403, "An active organization is required")
+    # Keep legacy administrative API while delegating to the same worker claim path.
+    # Never process jobs from other organizations in an authenticated request.
+    from app.workflow_worker import process_due
+    return process_due(limit=limit, organization_id=organization_id, report=True)
 
 
 def _forecast_rows(db: Session, start: date, end: date, owner_id: int | None, actor: User | None) -> list[Deal]:
