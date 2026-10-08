@@ -1,0 +1,77 @@
+name: Tier 1 Workspace Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/tier1-workspace-verification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier1-workspace-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tier1-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt pytest pytest-timeout
+      - name: Organization rename regression
+        run: pytest -q tests/test_tier0_org_defaults.py::test_organization_rename_requires_membership_and_preserves_tenant_identity --timeout=180
+      - name: Ownership transfer regression
+        run: pytest -q tests/test_tier0_org_defaults.py::test_ownership_transfer_requires_current_owner_and_same_tenant_member --timeout=180
+      - name: Tier 1 organization and tenant regression
+        run: pytest -q tests/test_tier0_org_defaults.py tests/test_tier0_security_completion.py tests/test_tier0_tenant_audit.py tests/test_user_tenancy.py --timeout=180
+
+  production-security:
+    needs: tier1-regressions
+    runs-on: ubuntu-latest
+    env:
+      PRODUCTION_BASE_URL: ${{ vars.PRODUCTION_BASE_URL || 'https://yashcrm-production.up.railway.app' }}
+      PRODUCTION_ADMIN_USERNAME: ${{ secrets.PRODUCTION_ADMIN_USERNAME }}
+      PRODUCTION_ADMIN_PASSWORD: ${{ secrets.PRODUCTION_ADMIN_PASSWORD }}
+      PRODUCTION_SMOKE_USER_A_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_A_IDENTIFIER }}
+      PRODUCTION_SMOKE_USER_A_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_USER_A_PASSWORD }}
+      PRODUCTION_SMOKE_USER_B_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_B_IDENTIFIER }}
+      PRODUCTION_SMOKE_USER_B_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_USER_B_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install production verifier dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Resolve expected release
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD="$(python -m alembic heads | awk 'NR==1 {print $1}')"
+          test -n "$HEAD"
+          echo "EXPECTED_APP_REVISION=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "EXPECTED_MIGRATION_REVISION=$HEAD" >> "$GITHUB_ENV"
+      - name: Validate production smoke credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(PRODUCTION_ADMIN_USERNAME PRODUCTION_ADMIN_PASSWORD
+            PRODUCTION_SMOKE_USER_A_IDENTIFIER PRODUCTION_SMOKE_USER_A_PASSWORD
+            PRODUCTION_SMOKE_USER_B_IDENTIFIER PRODUCTION_SMOKE_USER_B_PASSWORD)
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "Missing required secret: $key" >&2
+              exit 1
+            fi
+          done
+      - name: Wait for exact deployed release and migration
+        run: python scripts/wait_for_production.py
+      - name: Verify production authentication, tenant isolation, and billing signatures
+        run: python scripts/verify_production.py
