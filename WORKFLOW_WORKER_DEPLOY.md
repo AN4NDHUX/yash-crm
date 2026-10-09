@@ -3,12 +3,15 @@
 The web app and the worker are separate Railway services using the same PostgreSQL database.
 
 ## Deploying the worker on Railway
-1. Ensure the web service deploys database migration `0024_workflow_delivery_queue` successfully.
+1. Ensure the web service has migrated PostgreSQL to the **current Alembic head** (check `python -m alembic heads`; do not assume an older hardcoded revision).
 2. Add a **new Railway service** from the same `AN4NDHUX/yash-crm` repository.
 3. Configure its Dockerfile path to **Dockerfile.worker**. No public domain or HTTP health check is required.
 4. Configure the same `DATABASE_URL` as the CRM web service (reference the existing PostgreSQL service variable), and set `APP_ENV=production`.
 5. Set `WORKFLOW_POLL_SECONDS=15` (minimum five seconds). One worker process is sufficient initially. PostgreSQL `FOR UPDATE SKIP LOCKED` allows safe multiworker claims.
 6. Deploy and inspect the worker logs. Run a workflow with a scheduled action and verify status transitions `queued -> running -> completed`.
+7. Execute `APP_ENV=production DATABASE_URL=... python -m scripts.check_worker_readiness` in the worker environment. It checks PostgreSQL connectivity, the migration head, and queue schema without claiming or sending any jobs. The same check runs in GitHub CI against PostgreSQL 17.
+8. Confirm that Railway actually has a **second running service** configured with `Dockerfile.worker`. A successful web deployment or CI preflight does not prove the separate worker is deployed.
+9. For `invokeurl` OAuth connections, configure `DELUGE_HTTP_CONNECTIONS_JSON` and referenced secret environment variables on the worker, scoped to the exact organization ID (see `DELUGE_INTEGRATIONS.md`).
 
 ## Optional email configuration
 - `WORKFLOW_SMTP_HOST`, `WORKFLOW_SMTP_PORT` (default `587`), `WORKFLOW_SMTP_USER`, `WORKFLOW_SMTP_PASSWORD`
