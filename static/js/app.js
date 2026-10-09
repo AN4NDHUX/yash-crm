@@ -802,8 +802,6 @@ function relatedPlainSection(id, label, rows, createResource, emptyMessage) {
 
 function relatedContent(resource, related) {
   const sections = [];
-  sections.push(relatedPlainSection('notes'
-
   sections.push(relatedPlainSection('notes', 'Notes', (related.notes || []).map((item) => relatedPlainRow(item.title, item.content || 'Open note', 'notes', item.id, false)), 'notes', 'No notes yet.'));
   const connectedRows = [];
   if (related.accounts?.length) connectedRows.push(...related.accounts.map((item) => relatedPlainRow(item.name, item.industry || item.type || 'Account', 'accounts', item.id)));
@@ -873,8 +871,6 @@ function dealProgress(record) {
     <div class="crm-pipeline-footer"><span>Click a stage to update this deal. Blueprint rules and permissions still apply.</span><button type="button" class="crm-pipeline-lost ${current === "Closed Lost" ? "is-current" : ""}" data-stage-update="${record.id}" data-stage="Closed Lost" ${current === "Closed Lost" ? 'aria-current="step" disabled' : ""}>${current === "Closed Lost" ? "Closed Lost · Current stage" : "Mark Closed Lost"}</button></div>
   </div>`;
 }
-
-function bindDetail(resource, id) {
 
 function bindDetail(resource, id) {
   $$('[data-go]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.go)));
