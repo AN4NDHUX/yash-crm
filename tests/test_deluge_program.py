@@ -101,3 +101,15 @@ else
 """)
     assert len(actions) == 1
     assert actions[0][0]["value"] == "Medium"
+
+
+def test_record_put_is_crm_action_not_map_mutation():
+    actions, variables = execute("""
+value = "Qualified";
+record.put("status", value);
+""")
+    assert len(actions) == 1
+    assert actions[0][0]["type"] == "field_update"
+    assert actions[0][0]["field"] == "status"
+    assert actions[0][0]["value"] == {"$deluge_expr": "value"}
+    assert actions[0][1]["value"] == "Qualified"
