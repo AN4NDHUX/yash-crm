@@ -18,9 +18,10 @@ Worker rejects redirects, script-supplied Authorization/Cookie headers, oversize
 
 ## Server configuration
 Set DELUGE_HTTP_CONNECTIONS_JSON on the worker, e.g.
-{"partner":{"enabled":true,"url":"https://api.partner.example.com/hooks","methods":["POST"],"auth_type":"OAuth2","token_url":"https://auth.partner.example.com/oauth/token","refresh_token_env":"PARTNER_REFRESH_TOKEN","client_id_env":"PARTNER_CLIENT_ID","client_secret_env":"PARTNER_CLIENT_SECRET"}}
+{"42":{"partner":{"enabled":true,"url":"https://api.partner.example.com/hooks","methods":["POST"],"auth_type":"OAuth2","grant_type":"refresh_token","token_url":"https://auth.partner.example.com/oauth/token","refresh_token_env":"PARTNER_REFRESH_TOKEN","client_id_env":"PARTNER_CLIENT_ID","client_secret_env":"PARTNER_CLIENT_SECRET"}}}
+Replace 42 with the actual integer organization ID. Connections are isolated per organization and cannot be reused by other tenants.
 Set secret values in environment variables through the deployment secret manager, never in script text.
-OAuth2 supports a pre-authorized access_token_env or an externally obtained refresh token with refresh grant.
+OAuth2 supports a pre-authorized access_token_env, a refresh_token grant, or client_credentials with optional scope.
 Initial interactive consent is not implemented; users must authorize externally before configuring refresh credentials.
 
 ## Not equivalent to complete Zoho runtime
