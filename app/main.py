@@ -5443,7 +5443,7 @@ def record_timeline(
         before = row.before if isinstance(row.before, dict) else {}
         after = row.after if isinstance(row.after, dict) else {}
         for field, allowed in (("status", allowed_status), ("stage", allowed_stages)):
-            if field not in readable or resource == "leads" and field != "status" or resource == "deals" and field != "stage":
+            if readable.get(field) not in allowed or (resource == "leads" and field != "status") or (resource == "deals" and field != "stage"):
                 continue
             previous, updated = before.get(field), after.get(field)
             if previous != updated and previous in allowed and updated in allowed:
