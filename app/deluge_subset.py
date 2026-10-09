@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 MAX_BYTES = 32768
 FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
-STATEMENT = re.compile(r"^(record\\.put|crm\\.addTag|crm\\.createTask|crm\\.notify|crm\\.invokeUrl|invokeurl|zoho\\.crm\\.updateRecord)\\((.*)\\)$")
+STATEMENT = re.compile(r"^(record\.put|crm\.addTag|crm\.createTask|crm\.notify|crm\.invokeUrl|invokeurl|zoho\.crm\.updateRecord)\((.*)\)$")
 REFERENCE = re.compile(r"^\$record\.([A-Za-z][A-Za-z0-9_]{0,79})$")
 PROTECTED = {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}
 
@@ -131,7 +131,7 @@ def parse_deluge(source):
             if len(condition_stack) > 5:
                 raise HTTPException(422, "Maximum conditional nesting is five")
             continue
-        expression_conditional = re.fullmatch(r'if\\s*\\((.+)\\)\\s*\\{', line)
+        expression_conditional = re.fullmatch(r'if\s*\((.+)\)\s*\{', line)
         if expression_conditional:
             expression = expression_conditional.group(1).strip()
             if len(expression) > 2048:
@@ -165,7 +165,7 @@ def parse_deluge(source):
             elif command in {"crm.invokeUrl", "invokeurl"}:
                 steps.append({"type": "webhook_queue", "value": _argument(arguments)})
             elif command == "zoho.crm.updateRecord":
-                parts = re.fullmatch(r'\\s*("(?:[^"\\\\]|\\\\.)*")\\s*,\\s*\\$record\\.id\\s*,\\s*(\\{.*\\})\\s*', arguments)
+                parts = re.fullmatch(r'\s*("(?:[^"\\]|\\.)*")\s*,\s*\$record\.id\s*,\s*(\{.*\})\s*', arguments)
                 if not parts:
                     raise HTTPException(422, "CRM update must target the current record")
                 module = _argument(parts.group(1))
