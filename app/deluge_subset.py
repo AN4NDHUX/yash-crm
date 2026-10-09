@@ -12,6 +12,7 @@ import ast
 import json
 import re
 from fastapi import HTTPException
+from app.deluge_expressions import normalize_deluge_expression
 
 MAX_BYTES = 32768
 FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
@@ -33,9 +34,7 @@ def _argument(token):
             raise HTTPException(422, "Invalid Deluge expression")
         # Validate Python-AST syntax only; execution uses the explicit allowlist evaluator.
         try:
-            normalized = re.sub(r"\$record\.([A-Za-z][A-Za-z0-9_]{0,79})", r"record.\1", expression)
-            normalized = normalized.replace("&&", " and ").replace("||", " or ")
-            normalized = re.sub(r"!(?!=)", " not ", normalized).strip()
+            normalized = normalize_deluge_expression(expression)
             ast.parse(normalized, mode="eval")
         except SyntaxError as exc:
             raise HTTPException(422, "Invalid Deluge expression syntax") from exc
