@@ -73,3 +73,11 @@ level = settings.get("level");
 def test_program_rejects_unsafe_or_unbounded_actions(source):
     with pytest.raises((HTTPException, ValueError)):
         execute(source)
+
+
+def test_identity_data_not_visible_via_record_map_iteration():
+    actions, vars = execute("""
+fields = record.keys();
+count = fields.size();
+""", {"organization_id": 8, "password": "secret", "name": "Visible"})
+    assert vars["count"] == 1
