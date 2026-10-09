@@ -5367,12 +5367,16 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         from app.services.stage_scoring import default_mapping, score_transition
         incoming["lead_score"] = score_transition(str(item.status or "New"), str(incoming.get("status") or item.status or "New"), default_mapping())["stage_score"]
     authorize_field_values(db, resource, incoming, actor, "write")
-    if resource == "deals":
-        blueprint = enforce_blueprint_transition(db, resource, item, before_full.get("stage"), incoming.get("stage"), {**before_full, **incoming})
-    elif resource == "leads":
-        blueprint = enforce_blueprint_transition(db, resource, item, before_full.get("status"), incoming.get("status"), {**before_full, **incoming})
+    if resource in {"leads", "deals"}:
+        from app.services.blueprint_engine import matching_blueprint, FIELDS
+        active_blueprint = matching_blueprint(db, resource, item)
+        controller = active_blueprint.field_name if active_blueprint else FIELDS[resource]
+        blueprint = enforce_blueprint_transition(
+            db, resource, item, before_full.get(controller), incoming.get(controller),
+            {**before_full, **incoming},
+        )
     else:
-        blueprint = None
+        blueprint, controller = None, None
     for key, value in incoming.items():
         column = model.__table__.columns.get(key)
         if key in {"id", "created_at", "updated_at"} or column is None:
@@ -5389,10 +5393,14 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         item.completed_at = datetime.utcnow()
     if resource == "activities" and getattr(item, "status", None) != "Completed":
         item.completed_at = None
-    if resource == "deals" and item.stage != before[0]:
-        record_blueprint_transition(db, blueprint, resource, item_id, str(before[0] or ""), str(item.stage), serialize(item, db), actor_id=item.owner_id)
-    if resource == "leads" and item.status != before_full.get("status"):
-        record_blueprint_transition(db, blueprint, resource, item_id, str(before_full.get("status") or ""), str(item.status), serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
+    if resource in {"leads", "deals"} and blueprint is not None and controller:
+        previous_state = str(before_full.get(controller) or "")
+        updated_state = str(getattr(item, controller) or "")
+        if previous_state != updated_state:
+            record_blueprint_transition(
+                db, blueprint, resource, item_id, previous_state, updated_state,
+                serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None,
+            )
     run_record_automation(db, resource, "update", item, serialize(item, db, actor), before_full)
     add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     db.commit()
@@ -5520,7 +5528,7 @@ def record_timeline(
     entries.sort(key=lambda item: item["occurred_at"], reverse=True)
     from app.services.blueprint_engine import matching_blueprint, transition_choices, FIELDS
     bp = matching_blueprint(db, resource, record)
-    field_name = FIELDS[resource]
+    field_name = bp.field_name if bp else FIELDS[resource]
     current_state = str(getattr(record, field_name) or "")
     choices = transition_choices(bp, current_state) if bp else []
     return {"items": entries[:300], "total": len(entries),

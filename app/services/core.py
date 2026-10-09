@@ -805,7 +805,8 @@ def record_blueprint_transition(db: Session, blueprint: Blueprint | None, resour
             if action.get("type") not in {"create_task", "tag", "field_update", "notification"}:
                 raise ValueError("Unsupported Blueprint after-action")
             _execute_workflow_action(db, action, resource, record, values)
-    add_audit(db, "blueprint_transition", resource, record_id, f"Blueprint '{blueprint.name}' moved {from_stage} → {to_stage}", before={"stage": from_stage}, after={"stage": to_stage}, actor_id=actor_id)
+    field = blueprint.field_name or ("status" if resource == "leads" else "stage")
+    add_audit(db, "blueprint_transition", resource, record_id, f"Blueprint '{blueprint.name}' moved {from_stage} → {to_stage}", before={field: from_stage}, after={field: to_stage}, actor_id=actor_id)
 
 
 def apply_assignment_rule(db: Session, resource: str, values: dict[str, Any]) -> None:

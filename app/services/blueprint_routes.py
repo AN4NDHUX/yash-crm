@@ -18,7 +18,7 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
     @app.get("/api/blueprint-designer/options")
     def blueprint_designer_options(module: str = "leads", db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
         """Expose field-specific criteria values from the current organization's records."""
-        from app.services.blueprint_engine import FIELDS, CRITERIA_FIELDS
+        from app.services.blueprint_engine import FIELDS, CRITERIA_FIELDS, STATE_FIELDS
         from app.services.core import STAGE_PROBABILITY
         from app.models import Lead, Deal
 
@@ -42,6 +42,7 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
             "deals": {
                 "stage": list(STAGE_PROBABILITY),
                 "status": ["Open", "Won", "Lost"],
+                "type": ["New business", "Expansion", "Renewal", "Partnership"],
             },
         }
         label_overrides = {
@@ -49,6 +50,46 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
             "stage": "Deal Stage", "status": "Lead Status" if module == "leads" else "Deal Status",
         }
         model = Lead if module == "leads" else Deal
+        native_labels = {
+            "name": "Lead Name" if module == "leads" else "Deal Name",
+            "company": "Company", "email": "Email", "phone": "Phone",
+            "source": "Lead Source" if module == "leads" else "Source",
+            "status": "Lead Status" if module == "leads" else "Deal Status",
+            "stage": "Deal Stage", "type": "Deal Type", "lead_score": "Lead Score",
+            "next_follow_up": "Next Follow-up", "expected_close_date": "Closing Date",
+            "owner_id": "Record Owner", "account_id": "Account", "contact_id": "Contact",
+            "probability": "Probability", "amount": "Amount", "layout_name": "Layout",
+            "notes": "Notes", "tags": "Tags",
+        }
+        internal_columns = {"id", "organization_id", "archived", "created_at", "updated_at",
+                            "converted_account_id", "converted_contact_id", "converted_deal_id"}
+        all_fields = []
+        for column in model.__table__.columns:
+            field = column.name
+            if field in internal_columns:
+                continue
+            supported = field in STATE_FIELDS[module]
+            all_fields.append({
+                "name": field,
+                "label": native_labels.get(field, field.replace("_", " ").title()),
+                "supported": supported,
+                "reason": "" if supported else "Not an editable single-choice field",
+            })
+        for custom in db.scalars(select(PlatformRecord).where(
+            PlatformRecord.organization_id == organization.id,
+            PlatformRecord.resource == "custom_fields",
+            PlatformRecord.archived == False,
+        )).all():
+            data = custom.data or {}
+            if str(data.get("module") or "").strip().lower().rstrip("s") != module.rstrip("s"):
+                continue
+            key = str(data.get("api_name") or "").strip()
+            if not key or any(field["name"] == key for field in all_fields):
+                continue
+            all_fields.append({
+                "name": key, "label": str(data.get("name") or custom.title or key)[:100],
+                "supported": False, "reason": "Custom fields are not yet mapped to native record state transitions",
+            })
         criteria_meta = {}
         for field in sorted(CRITERIA_FIELDS[module]):
             column = getattr(model, field)
@@ -74,11 +115,12 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
                 "allow_custom": field not in defaults[module],
             }
         return {
-            "fields": [{"name": FIELDS[module], "label": "Lead Status" if module == "leads" else "Deal Stage"}],
+            "fields": all_fields,
             "criteria_fields": sorted(CRITERIA_FIELDS[module]),
             "criteria_meta": criteria_meta,
             "layouts": list(dict.fromkeys(layouts)),
             "initial_states": defaults["leads"]["status"][:4] if module == "leads" else list(STAGE_PROBABILITY),
+            "state_values": defaults[module],
         }
 
 
@@ -171,14 +213,14 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
         if bp is None:
             raise HTTPException(409, "No published Blueprint matches this record")
         identifier = str(payload.get("transition_id") or "")
-        edge = find_transition(bp, str(getattr(record, FIELDS[resource]) or ""), identifier)
+        edge = find_transition(bp, str(getattr(record, bp.field_name or FIELDS[resource]) or ""), identifier)
         if edge is None:
             raise HTTPException(422, "The selected Blueprint transition is not available")
         extra = payload.get("fields") or {}
-        if not isinstance(extra, dict) or any(k not in CRITERIA_FIELDS[resource] - {FIELDS[resource]} for k in extra):
+        if not isinstance(extra, dict) or any(k not in CRITERIA_FIELDS[resource] - {bp.field_name or FIELDS[resource]} for k in extra):
             raise HTTPException(422, "Only allowed CRM fields can be updated during the transition")
         data = dict(extra)
-        data[FIELDS[resource]] = edge["to"]
+        data[bp.field_name or FIELDS[resource]] = edge["to"]
         # Route through the same permission, Blueprint and workflow validations as normal editing.
         from app.main import update_record
         return update_record(resource, item_id, RecordPayload(**data), db=db, actor=actor)

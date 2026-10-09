@@ -16,6 +16,8 @@ from app.models import Blueprint, BlueprintTransitionLog
 from app.database import TENANT_ORGANIZATION_ID
 
 FIELDS = {"leads": "status", "deals": "stage"}
+# Picklist-type native record fields that can safely control process states.
+STATE_FIELDS = {"leads": {"status", "source"}, "deals": {"stage", "status", "type"}}
 CRITERIA_FIELDS = {
     "leads": {"status", "name", "company", "email", "source", "lead_score"},
     "deals": {"stage", "name", "amount", "probability", "source", "status"},
@@ -33,8 +35,8 @@ def validate_blueprint(data: dict[str, Any], publish: bool = False) -> dict[str,
     if module not in FIELDS:
         _fail("Visual Blueprints currently support Leads and Deals")
     field = str(data.get("field_name") or FIELDS[module])
-    if field != FIELDS[module]:
-        _fail(f"The Blueprint state field for {module.title()} must be {FIELDS[module]}")
+    if field not in STATE_FIELDS[module]:
+        _fail("Blueprint stages require an editable single-choice field. Text, number, date, and unsupported custom fields cannot control process states.")
     name = str(data.get("name") or "").strip()
     if not 1 <= len(name) <= 160:
         _fail("Blueprint name is required (maximum 160 characters)")
@@ -136,7 +138,7 @@ def matching_blueprint(db, resource: str, record: Any) -> Blueprint | None:
             continue
         if (bp.layout_name or "Default") != (getattr(record, "layout_name", None) or "Default"):
             continue
-        if (bp.field_name or FIELDS[resource]) != FIELDS[resource]:
+        if (bp.field_name or FIELDS[resource]) not in STATE_FIELDS[resource]:
             continue
         # A previously transitioned record remains enrolled when its state changes.
         enrolled = db.scalar(select(BlueprintTransitionLog.id).where(
