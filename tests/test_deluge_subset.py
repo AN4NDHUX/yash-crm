@@ -129,3 +129,24 @@ def test_deluge_restricted_invokeurl_is_queued_for_worker():
     ]
     with pytest.raises(HTTPException):
         parse_deluge('invokeurl [url:"http://127.0.0.1",type:GET];')
+
+
+def test_deluge_local_assignment_and_else_branch_compile():
+    source = (
+        'score = $record.amount + 10;\n'
+        'if (score >= 50) {\n'
+        'crm.addTag("High");\n'
+        '} else {\n'
+        'crm.addTag("Low");\n'
+        '}'
+    )
+    steps = parse_deluge(source)
+    assert steps[0] == {"type":"variable_assign","name":"score","value":{"$deluge_expr":"$record.amount + 10"}}
+    assert steps[1]["_conditions"] == [{"expression":"score >= 50"}]
+    assert steps[2]["_conditions"] == [{"expression":"not (score >= 50)"}]
+
+
+def test_deluge_legacy_condition_else_stays_compatible():
+    steps = parse_deluge('if ($record.status == "Qualified") {\ncrm.addTag("Yes");\n}\nelse {\ncrm.addTag("No");\n}')
+    assert steps[0]["_conditions"] == [{"field":"status","operator":"==","value":"Qualified"}]
+    assert steps[1]["_conditions"][0]["expression"] == 'not ($record.status == "Qualified")'
