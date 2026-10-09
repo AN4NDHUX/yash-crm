@@ -104,7 +104,11 @@ def validate_function_source(values: dict) -> None:
     if runtime == "deluge":
         if not isinstance(source, dict) or not isinstance(source.get("code"), str):
             raise HTTPException(422, "Deluge source must be a code object")
-        parse_deluge(source["code"])
+        try:
+            parse_deluge(source["code"])
+        except HTTPException:
+            from app.deluge_program import compile_deluge_program
+            compile_deluge_program(source["code"])
         return
 
     if status == "active":
