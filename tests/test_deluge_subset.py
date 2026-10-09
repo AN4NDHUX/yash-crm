@@ -17,7 +17,6 @@ def test_deluge_compiles_approved_crm_operations():
 
 @pytest.mark.parametrize("source", [
     'import java.io.File;',
-    'crm.invokeUrl("https://example.com");',
     'record.put("organization_id", "other");',
     'record.put("password", "secret");',
     'while(true) {}',
@@ -119,3 +118,14 @@ def test_deluge_nested_loop_action_budget_is_enforced():
     with pytest.raises(HTTPException) as error:
         parse_deluge(source)
     assert error.value.status_code == 422
+
+
+def test_deluge_restricted_invokeurl_is_queued_for_worker():
+    assert parse_deluge('invokeurl("CRM webhook event");') == [
+        {"type": "webhook_queue", "value": "CRM webhook event"}
+    ]
+    assert parse_deluge('crm.invokeUrl($record.name);') == [
+        {"type": "webhook_queue", "value": "$record.name"}
+    ]
+    with pytest.raises(HTTPException):
+        parse_deluge('invokeurl [url:"http://127.0.0.1",type:GET];')
