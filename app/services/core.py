@@ -591,11 +591,28 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             local_vars.update(variables)
             resolved_step = {key: resolve(value) for key, value in step.items() if key != "_conditions"}
             run_resolved_step(resolved_step)
+        def handle_crm_task(task_name, expression, variables):
+            from app.deluge_expressions import evaluate_deluge_expression
+            from app.deluge_crm_tasks import run_crm_task
+            import re
+            # The triggering record ID is available only as a CRM task argument,
+            # never as a general Deluge expression or unrestricted record field.
+            fragments = re.split(r'("(?:[^"\\\\]|\\\\.)*"|\\'(?:[^\\'\\\\]|\\\\.)*\\')', expression)
+            for index in range(0, len(fragments), 2):
+                fragments[index] = re.sub(r'\\$record\\.id\\b', str(record.id), fragments[index])
+            safe_expression = "".join(fragments)
+            context = {**dict(getattr(record, "data", None) or {}), **values}
+            try:
+                arguments = evaluate_deluge_expression(safe_expression, context, variables)
+                return run_crm_task(db, task_name, arguments, source_resource=resource)
+            except HTTPException as exc:
+                raise ValueError("CRM task validation or permissions rejected") from exc
+
         for step in spec:
             if isinstance(step, dict) and step.get("type") == "deluge_program":
                 from app.deluge_program import execute_deluge_program
                 context = {**dict(getattr(record, "data", None) or {}), **values}
-                execute_deluge_program(step["program"], context, handle_program_action)
+                execute_deluge_program(step["program"], context, handle_program_action, handle_crm_task)
                 continue
             if not isinstance(step, dict) or str(step.get("type", "")).lower() not in allowed:
                 raise ValueError("Unsupported custom function step")
