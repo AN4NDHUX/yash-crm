@@ -527,7 +527,7 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 spec = spec.get("steps")
         if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
             raise ValueError("Custom function must have 1 to 20 action steps")
-        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue"}
+        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current"}
         def resolve(template):
             if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
                 from app.deluge_expressions import evaluate_deluge_expression
@@ -578,7 +578,16 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 if not matched:
                     continue
             resolved_step = {key: resolve(item) for key, item in step.items() if key != "_conditions"}
-            if str(resolved_step.get("type", "")).lower() == "webhook_queue":
+            if str(resolved_step.get("type", "")).lower() == "crm_update_current":
+                module = str(resolved_step.get("module") or "").lower().replace(" ", "_")
+                if module != resource.lower().replace(" ", "_"):
+                    raise ValueError("CRM integration task must target the current module")
+                fields = resolved_step.get("fields")
+                if not isinstance(fields, dict) or not 1 <= len(fields) <= 10:
+                    raise ValueError("Invalid CRM update field map")
+                for field, value in fields.items():
+                    _execute_workflow_action(db, {"type": "field_update", "field": field, "value": value}, resource, record, values)
+            elif str(resolved_step.get("type", "")).lower() == "webhook_queue":
                 from uuid import uuid4
                 # Only the separate worker performs external I/O. The destination
                 # is exclusively WORKFLOW_WEBHOOK_URL, not script-controlled.
