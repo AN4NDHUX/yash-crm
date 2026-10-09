@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 MAX_BYTES = 32768
 FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
-STATEMENT = re.compile(r"^(record\\.put|crm\\.addTag|crm\\.createTask|crm\\.notify|crm\\.invokeUrl|invokeurl)\\((.*)\\)$")
+STATEMENT = re.compile(r"^(record\\.put|crm\\.addTag|crm\\.createTask|crm\\.notify|crm\\.invokeUrl|invokeurl|zoho\\.crm\\.updateRecord)\\((.*)\\)$")
 REFERENCE = re.compile(r"^\$record\.([A-Za-z][A-Za-z0-9_]{0,79})$")
 PROTECTED = {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}
 
@@ -164,6 +164,21 @@ def parse_deluge(source):
                 steps.append({"type": "create_task", "subject": _argument(arguments)})
             elif command in {"crm.invokeUrl", "invokeurl"}:
                 steps.append({"type": "webhook_queue", "value": _argument(arguments)})
+            elif command == "zoho.crm.updateRecord":
+                parts = re.fullmatch(r'\\s*("(?:[^"\\\\]|\\\\.)*")\\s*,\\s*\\$record\\.id\\s*,\\s*(\\{.*\\})\\s*', arguments)
+                if not parts:
+                    raise HTTPException(422, "CRM update must target the current record")
+                module = _argument(parts.group(1))
+                try:
+                    fields = json.loads(parts.group(2))
+                except ValueError as exc:
+                    raise HTTPException(422, "CRM update field map must be JSON") from exc
+                if not isinstance(fields, dict) or not 1 <= len(fields) <= 10:
+                    raise HTTPException(422, "CRM update requires one to ten fields")
+                for field, value in fields.items():
+                    if not isinstance(field, str) or not FIELD.fullmatch(field) or field.lower() in PROTECTED or not isinstance(value, (str, int, float, bool, type(None))):
+                        raise HTTPException(422, "Unsupported or protected CRM update field")
+                steps.append({"type": "crm_update_current", "module": module, "fields": fields})
             else:
                 steps.append({"type": "notification", "value": _argument(arguments)})
         if condition_stack:
