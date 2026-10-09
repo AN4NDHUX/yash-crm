@@ -72,6 +72,41 @@ def compile_deluge_program(source):
                 raise HTTPException(422, "Deluge program too complex")
             count += 1
             position += 1
+            http = re.fullmatch(
+                r"(?:(?P<variable>[A-Za-z][A-Za-z0-9_]{0,39})\s*=\s*)?invokeurl\s*",
+                line, re.IGNORECASE
+            )
+            if http:
+                variable = http.group("variable")
+                if variable in RESERVED:
+                    raise HTTPException(422, "HTTP result variable is reserved")
+                if position >= len(lines) or lines[position] != "[":
+                    raise HTTPException(422, "invokeurl must use a bracketed request map")
+                position += 1
+                options = {}
+                while position < len(lines) and lines[position] not in {"]", "];"}:
+                    item = lines[position].rstrip(",").strip()
+                    position += 1
+                    pair = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]{0,39})\s*:\s*(.+)", item)
+                    if not pair:
+                        raise HTTPException(422, "Invalid invokeurl option")
+                    key, expression = pair.groups()
+                    if key not in {"url", "type", "connection", "headers", "body", "parameters"} or key in options:
+                        raise HTTPException(422, "Unsupported or duplicate invokeurl option")
+                    if key == "type" and expression in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                        expression = repr(expression)
+                    options[key] = _validate_expression(expression)
+                if position >= len(lines):
+                    raise HTTPException(422, "Unclosed invokeurl request map")
+                position += 1
+                if not {"url", "type", "connection"}.issubset(options):
+                    raise HTTPException(422, "invokeurl requires url, type, connection")
+                action_count += 1
+                if action_count > MAX_ACTIONS:
+                    raise HTTPException(422, "Deluge CRM action budget exceeded")
+                encoded = "{" + ",".join(repr(k) + ":(" + v + ")" for k, v in options.items()) + "}"
+                result.append({"kind": "http", "variable": variable, "args": _validate_expression(encoded)})
+                continue
             conditional = re.fullmatch(r"if\s*\((.+)\)\s*\{", line)
             if conditional:
                 branches = []
@@ -191,7 +226,7 @@ class _Flow(Exception):
         self.kind = kind
 
 
-def execute_deluge_program(program, record, action_handler, task_handler=None):
+def execute_deluge_program(program, record, action_handler, task_handler=None, http_handler=None):
     """Run prevalidated statements, with strict CPU and action budgets."""
     variables = {}
     operations = 0
@@ -212,6 +247,13 @@ def execute_deluge_program(program, record, action_handler, task_handler=None):
             if operations > MAX_OPERATIONS:
                 raise ValueError("Deluge execution budget exceeded")
             kind = node["kind"]
+            if kind == "http":
+                if http_handler is None:
+                    raise ValueError("Deluge HTTP adapter is not configured")
+                output = http_handler(node["args"], variables)
+                if node["variable"]:
+                    variables[node["variable"]] = output
+                continue
             if kind == "crm_task":
                 if task_handler is None:
                     raise ValueError("CRM task adapter is not configured")
