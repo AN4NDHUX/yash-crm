@@ -132,6 +132,7 @@ def test_structured_deluge_program_executes_through_crm():
             'source':{'code':code},'status':'Active'
         })
         out['function'] = fn.status_code
+        out['function_detail'] = fn.text[:800]
         if fn.status_code == 201:
             rule = c.post('/api/platform/workflow_rules', json={
                 'name':'Run Structured Deluge','module':'leads','event':'create',
