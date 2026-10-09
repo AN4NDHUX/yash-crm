@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.sql.sqltypes import String as SQLString
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Blueprint, PlatformRecord, User
+from app.models import Blueprint, PlatformRecord, User, MetadataModule, MetadataField
 from app.schemas import RecordPayload
 from app.services.core import RESOURCE_MAP, serialize, add_audit
 from app.services.security import _enforce_record_limit, can_access_record
@@ -90,6 +90,25 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
                 "name": key, "label": str(data.get("name") or custom.title or key)[:100],
                 "supported": False, "reason": "Custom fields are not yet mapped to native record state transitions",
             })
+        # Include fields configured through the metadata module builder.
+        # These entries are discoverable but cannot control ORM record states.
+        builder_ids = db.scalars(select(MetadataModule.id).where(
+            MetadataModule.organization_id == organization.id,
+            MetadataModule.api_name == module,
+            MetadataModule.enabled == True,
+        )).all()
+        if builder_ids:
+            for definition in db.scalars(select(MetadataField).where(
+                MetadataField.module_id.in_(builder_ids),
+            ).order_by(MetadataField.position, MetadataField.id)).all():
+                if any(item["name"] == definition.api_name for item in all_fields):
+                    continue
+                all_fields.append({
+                    "name": definition.api_name,
+                    "label": definition.label,
+                    "supported": False,
+                    "reason": "Custom metadata field is not mapped to core record transitions",
+                })
         criteria_meta = {}
         for field in sorted(CRITERIA_FIELDS[module]):
             column = getattr(model, field)
