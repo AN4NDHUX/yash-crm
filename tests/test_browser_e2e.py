@@ -398,3 +398,82 @@ def test_browser_blueprint_connect_states_and_publish():
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.communicate(timeout=5)
+
+
+def test_browser_leads_flat_timeline_and_split_views():
+    """Leads must use unboxed rows in Timeline and a selectable Split preview."""
+    port = free_port()
+    base = f"http://127.0.0.1:{port}"
+    with tempfile.TemporaryDirectory() as tmp:
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "development",
+            "DATABASE_URL": f"sqlite:///{tmp}/flat-views.db",
+            "ENABLE_AUTH": "true",
+            "APP_USERNAME": "admin",
+            "APP_PASSWORD": "supersecretpass123",
+            "ADMIN_EMAIL": "admin@example.com",
+            "ADMIN_NAME": "Administrator",
+            "SEED_DEMO_DATA": "false",
+            "PYTHONPATH": str(ROOT),
+        })
+        server = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app",
+             "--host", "127.0.0.1", "--port", str(port)],
+            cwd=ROOT, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True,
+        )
+        try:
+            wait_for_server(base)
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.goto(base + "/signup")
+                page.fill("#name", "Flat Layout Tester")
+                page.fill("#organization-name", "Flat Layout Org")
+                page.fill("#username", "flat.layout")
+                page.fill("#signup-email", "flat.layout@example.com")
+                page.fill("#password", "browser-password-123")
+                page.fill("#confirm-password", "browser-password-123")
+                page.click("#submit-button")
+                page.wait_for_url("**/dashboard", timeout=15000)
+                created = page.evaluate("""async () => {
+                    const results = [];
+                    for (const [name,status] of [['Flat Lead Alpha','New'],
+                                                 ['Flat Lead Beta','Contacted']]) {
+                        const response = await fetch('/api/leads', {
+                            method:'POST',
+                            headers:{'Content-Type':'application/json'},
+                            credentials:'same-origin',
+                            body: JSON.stringify({name,status,source:'Website'})
+                        });
+                        results.push({status:response.status,body:await response.json()});
+                    }
+                    return results;
+                }""")
+                assert all(item["status"] in (200, 201) for item in created), created
+                page.goto(base + "/leads")
+                page.locator('[data-toggle-view="timeline"]').click()
+                page.locator(".flat-timeline-entry").first.wait_for(timeout=15000)
+                assert page.locator(".flat-timeline-entry").count() >= 2
+                assert page.locator(".activity-item").count() == 0
+                assert page.locator(".flat-timeline-entry").first.evaluate(
+                    "(item) => getComputedStyle(item).borderTopWidth") == "0px"
+                page.goto(base + "/leads")
+                page.locator('[data-toggle-view="split"]').click()
+                page.locator(".flat-split-item").first.wait_for(timeout=15000)
+                assert page.locator(".flat-split-item").count() >= 2
+                assert page.locator(".related-item").count() == 0
+                page.locator(".flat-split-item").filter(has_text="Flat Lead Beta").click()
+                assert page.locator(".flat-preview-heading h2").inner_text() == "Flat Lead Beta"
+                assert page.locator(".flat-split-item.active").count() == 1
+                page.locator('[data-split-open="leads"]').click()
+                page.wait_for_url("**/leads/*", timeout=15000)
+                browser.close()
+        finally:
+            server.terminate()
+            try:
+                server.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.communicate(timeout=5)
