@@ -679,11 +679,40 @@ function gridView(resource, data) {
   return `<section class="record-grid">${data.items.map((row) => `<article class="card record-grid-card" data-open-record="${resource}" data-id="${row.id}"><div class="card-body"><span class="eyebrow">${esc(config.singular)} #${row.id}</span><h3>${esc(row.name || row.subject || row.full_name || row.title || `Record ${row.id}`)}</h3>${config.columns.slice(1,5).map((column) => `<p><small>${esc(column.label)}</small><strong>${esc(row[column.key] ?? '—')}</strong></p>`).join('')}</div></article>`).join('')}</section>`;
 }
 
-function splitView(resource, data) {
-  const config = MODULES[resource];
-  if (!data.items.length) return `<section class="card">${emptyState(config.icon, `No ${config.label.toLowerCase()} found`, "Create a record or change filters.")}</section>`;
-  const first = data.items[0];
-  return `<div class="module-split-view"><section class="card split-list">${data.items.map((row, index) => `<button class="related-item ${index === 0 ? 'active' : ''}" data-open-record="${resource}" data-id="${row.id}"><span class="related-dot">${esc(config.icon)}</span><span class="related-main"><strong>${esc(row.name || row.subject || row.full_name || row.title || `Record ${row.id}`)}</strong><small>${esc(row.status || row.stage || row.company || 'Active')}</small></span><span>›</span></button>`).join('')}</section><section class="card settings-section split-preview"><div class="settings-section-head"><h2>${esc(first.name || first.subject || first.full_name || first.title || `Record ${first.id}`)}</h2><p>Split preview. Open a row to view the full record and related lists.</p></div>${config.columns.map((column) => `<div class="rule-row"><div class="rule-info"><small>${esc(column.label)}</small><strong>${esc(first[column.key] ?? '—')}</strong></div></div>`).join('')}<div class="form-actions"><button class="button button-primary" data-open-record="${resource}" data-id="${first.id}">Open full record</button></div></section></div>`;
+function flatSplitPreview(resource, row) {
+  const config=MODULES[resource], name=row.name||row.subject||row.full_name||row.title||`Record ${row.id}`;
+  const labels={status:"Status",stage:"Stage",company:"Company",source:"Source",email:"Email",phone:"Phone",lead_score:"Lead score",next_follow_up:"Follow-up",owner_name:"Owner",account_name:"Account",amount:"Amount",probability:"Probability",expected_close_date:"Closing date"};
+  const keys=resource==="leads"?["status","company","source","email","phone","lead_score","next_follow_up","owner_name"]:
+    resource==="deals"?["stage","account_name","amount","probability","expected_close_date","owner_name"]:
+    (config.columns||[]).map(c=>c.key).filter(k=>k&&k!=="name").slice(0,8);
+  const details=[...new Set(keys)].filter(key=>row[key]!=null&&row[key]!=="").map(key=>{
+    const label=labels[key]||(config.columns||[]).find(c=>c.key===key)?.label||titleCase(key);
+    const value=key==="amount"?formatMoney(row[key]):["next_follow_up","expected_close_date"].includes(key)?formatDate(row[key]):
+      key==="probability"?`${Number(row[key])}%`:String(row[key]);
+    return `<div class="flat-preview-field"><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+  }).join("");
+  return `<div class="flat-preview-heading"><div><span class="flat-section-eyebrow">${esc(config.singular)} preview</span><h2>${esc(name)}</h2>
+    <p>Choose a record on the left to inspect its details.</p></div>
+    <button type="button" class="button button-primary button-small" data-split-open="${resource}" data-id="${row.id}">Open record ↗</button></div>
+    <dl class="flat-preview-fields">${details||'<p class="flat-muted">No additional details available.</p>'}</dl>`;
+}
+
+function splitView(resource,data) {
+  const config=MODULES[resource], current=state.moduleState[resource];
+  if(!data.items.length)return `<section class="flat-empty">${emptyState(config.icon,`No ${config.label.toLowerCase()} found`,"Change filters or create a new record.")}</section>`;
+  const selected=data.items.find(item=>String(item.id)===String(current.splitSelectedId))||data.items[0];
+  current.splitSelectedId=selected.id;current.splitRows=data.items;
+  return `<div class="module-split-flat"><nav class="flat-split-list" aria-label="${esc(config.label)} records">
+    <div class="flat-split-heading"><strong>Records</strong><span>${data.items.length} shown</span></div>
+    ${data.items.map(item=>{
+      const name=item.name||item.subject||item.full_name||item.title||`Record ${item.id}`;
+      const active=String(item.id)===String(selected.id);
+      return `<button type="button" class="flat-split-item ${active?"active":""}" data-split-select="${resource}" data-id="${item.id}" aria-pressed="${active}">
+        <span class="flat-split-avatar" aria-hidden="true">${esc(initials(name))}</span>
+        <span class="flat-split-copy"><strong>${esc(name)}</strong><small>${esc(item.status||item.stage||item.company||"Record")}</small></span>
+        <span class="flat-split-chevron" aria-hidden="true">›</span></button>`;
+    }).join("")}</nav>
+    <section class="flat-split-preview" data-split-preview aria-live="polite">${flatSplitPreview(resource,selected)}</section></div>`;
 }
 
 function chartView(resource, data) {
@@ -695,10 +724,25 @@ function chartView(resource, data) {
   return `<section class="card settings-section"><div class="settings-section-head"><h2>${esc(config.label)} distribution</h2><p>Current filtered records grouped by ${esc(key)}.</p></div><div class="pipeline-chart">${Object.entries(counts).map(([label,count]) => `<div class="pipeline-row"><span class="pipeline-label">${esc(label)}</span><div class="progress-track"><div class="progress-bar" style="width:${Math.max(4, Number(count) / max * 100)}%"></div></div><span class="pipeline-meta"><strong>${count}</strong> record${count === 1 ? '' : 's'}</span></div>`).join('') || `<p class="related-empty">No chart data available.</p>`}</div></section>`;
 }
 
-function timelineModuleView(resource, data) {
-  const config = MODULES[resource];
-  const rows = [...data.items].sort((a,b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-  return `<section class="card settings-section"><div class="settings-section-head"><h2>${esc(config.label)} timeline</h2><p>Recent filtered records ordered by their latest change.</p></div><div class="activity-list">${rows.map((row) => `<button class="activity-item" data-open-record="${resource}" data-id="${row.id}"><span class="activity-icon task">${esc(config.icon)}</span><span class="activity-copy"><strong>${esc(row.name || row.subject || row.full_name || row.title || `Record ${row.id}`)}</strong><small>${esc(row.status || row.stage || 'Updated')}</small></span><span class="activity-time">${formatDateTime(row.updated_at || row.created_at)}</span></button>`).join('') || `<p class="related-empty">No timeline entries.</p>`}</div></section>`;
+function timelineModuleView(resource,data) {
+  const config=MODULES[resource];
+  const rows=[...data.items].sort((a,b)=>String(b.updated_at||b.created_at||"").localeCompare(String(a.updated_at||a.created_at||"")));
+  let previousDay="";
+  const items=rows.map(item=>{
+    const name=item.name||item.subject||item.full_name||item.title||`Record ${item.id}`;
+    const date=String(item.updated_at||item.created_at||""),day=date.slice(0,10);
+    const heading=day&&day!==previousDay?`<h3 class="flat-timeline-day">${esc(formatDate(date))}</h3>`:"";
+    previousDay=day;
+    return `${heading}<button type="button" class="flat-timeline-entry" data-open-record="${resource}" data-id="${item.id}">
+      <span class="flat-timeline-rail" aria-hidden="true"><span class="flat-timeline-point"></span></span>
+      <span class="flat-timeline-copy"><strong>${esc(name)}</strong>
+        <small>${esc(item.status||item.stage||"Updated")}${item.company?` · ${esc(item.company)}`:""}</small></span>
+      <time class="flat-timeline-time" datetime="${esc(date)}">${esc(formatDateTime(date))}</time>
+      <span class="flat-timeline-open" aria-hidden="true">↗</span></button>`;
+  }).join("");
+  return `<section class="flat-timeline-view"><header class="flat-timeline-heading"><h2>${esc(config.label)} timeline</h2>
+    <p>Recent filtered records, newest changes first.</p></header>
+    <div class="flat-timeline-entries">${items||'<p class="flat-muted">No timeline entries match the filters.</p>'}</div></section>`;
 }
 
 function pagination(resource, data) {
@@ -727,6 +771,24 @@ function bindModule(resource) {
   const current = state.moduleState[resource];
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
+
+  const splitRoot = $(".module-split-flat");
+  splitRoot?.addEventListener("click", event => {
+    const open = event.target.closest("[data-split-open]");
+    if (open) { navigate(pathFor(open.dataset.splitOpen, open.dataset.id)); return; }
+    const button = event.target.closest("[data-split-select]");
+    if (!button) return;
+    const record = current.splitRows?.find(row => String(row.id) === button.dataset.id);
+    if (!record) return;
+    current.splitSelectedId = record.id;
+    $$("[data-split-select]", splitRoot).forEach(item => {
+      const active = item === button;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-pressed", String(active));
+    });
+    const preview = $("[data-split-preview]", splitRoot);
+    if (preview) preview.innerHTML = flatSplitPreview(resource, record);
+  });
   $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
   const search = $("[data-module-search]");
