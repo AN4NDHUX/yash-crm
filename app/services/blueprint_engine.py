@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.models import Blueprint
+from app.models import Blueprint, BlueprintTransitionLog
 from app.database import TENANT_ORGANIZATION_ID
 
 FIELDS = {"leads": "status", "deals": "stage"}
@@ -138,9 +138,15 @@ def matching_blueprint(db, resource: str, record: Any) -> Blueprint | None:
             continue
         if (bp.field_name or FIELDS[resource]) != FIELDS[resource]:
             continue
-        if bp.entry_conditions and not matches_conditions(bp.entry_conditions, row, resource):
+        # A previously transitioned record remains enrolled when its state changes.
+        enrolled = db.scalar(select(BlueprintTransitionLog.id).where(
+            BlueprintTransitionLog.blueprint_id == bp.id,
+            BlueprintTransitionLog.module == resource,
+            BlueprintTransitionLog.record_id == record.id,
+        ).limit(1)) is not None
+        if not enrolled and bp.entry_conditions and not matches_conditions(bp.entry_conditions, row, resource):
             continue
-        if bp.entry_criteria:
+        if bp.entry_criteria and not enrolled:
             # Legacy free-form criteria cannot be evaluated safely as code.
             # Accept only an explicit legacy JSON conditions array.
             try:
