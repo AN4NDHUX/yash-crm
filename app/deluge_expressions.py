@@ -6,6 +6,7 @@ allowlist, never executes arbitrary Python or makes network requests.
 from __future__ import annotations
 
 import ast
+import copy
 import operator
 import re
 from fastapi import HTTPException
@@ -21,7 +22,7 @@ COMPARE = {
     ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
     ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
 }
-ALLOWED_METHODS = {"get", "size", "containsKey", "contains", "isEmpty", "toString"}
+ALLOWED_METHODS = {"get", "size", "containsKey", "contains", "isEmpty", "toString", "put", "add", "remove", "keys", "values"}
 
 
 def evaluate_deluge_expression(source: str, record: dict | None = None):
@@ -39,7 +40,7 @@ def evaluate_deluge_expression(source: str, record: dict | None = None):
         raise HTTPException(422, "Unsupported Deluge expression syntax") from exc
     if len(list(ast.walk(tree))) > MAX_NODES:
         raise HTTPException(422, "Deluge expression is too complex")
-    snapshot = dict(record or {})
+    snapshot = copy.deepcopy(dict(record or {}))
 
     def interpret(node, depth=0):
         if depth > 20:
@@ -120,6 +121,38 @@ def evaluate_deluge_expression(source: str, record: dict | None = None):
                 target = read(node.func.value)
                 args = [read(arg) for arg in node.args]
                 method = node.func.attr
+                if method in {"put", "add", "remove"}:
+                    # Mutations are only allowed on expressions constructing fresh
+                    # collections; never on record-backed or nested references.
+                    def ephemeral(node):
+                        if isinstance(node, (ast.List, ast.Dict)):
+                            return True
+                        return (isinstance(node, ast.Call) and
+                                (isinstance(node.func, ast.Name) and node.func.id in {"Map", "List"} or
+                                 isinstance(node.func, ast.Attribute) and node.func.attr in {"put", "add", "remove"} and ephemeral(node.func.value)))
+                    if not ephemeral(node.func.value):
+                        raise HTTPException(422, "Collection mutation requires a new collection")
+                    if method == "put" and isinstance(target, dict) and len(args) == 2 and isinstance(args[0], str):
+                        if args[0].startswith("_") or args[0].lower() in PROTECTED or len(target) >= 100:
+                            raise HTTPException(422, "Invalid map key or capacity")
+                        target[args[0]] = args[1]
+                        return target
+                    if method == "add" and isinstance(target, list) and len(args) == 1:
+                        if len(target) >= 100:
+                            raise HTTPException(422, "List capacity exceeded")
+                        target.append(args[0])
+                        return target
+                    if method == "remove" and len(args) == 1:
+                        if isinstance(target, dict) and isinstance(args[0], str):
+                            if args[0].startswith("_") or args[0].lower() in PROTECTED:
+                                raise HTTPException(422, "Protected key")
+                            target.pop(args[0], None)
+                            return target
+                        if isinstance(target, list) and type(args[0]) is int and 0 <= args[0] < len(target):
+                            target.pop(args[0])
+                            return target
+                if method in {"keys", "values"} and isinstance(target, dict) and not args:
+                    return list(target.keys() if method == "keys" else target.values())
                 if method == "size" and not args and isinstance(target, (dict, list, str)):
                     return len(target)
                 if method == "isEmpty" and not args and isinstance(target, (dict, list, str)):
