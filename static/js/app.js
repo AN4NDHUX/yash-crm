@@ -778,6 +778,8 @@ function relatedNavigation(resource, related, timeline = null) {
   const closedActivities = (related.activities || []).filter((item) => item.status === 'Completed').length;
   const connectedCount = (related.accounts || []).length + (related.contacts || []).length + (related.deals || []).length;
   const items = [
+    ['current_stage', 'Current stage & transitions', resource === 'leads'],
+    ['stage_progress', 'Stage progress', resource === 'deals'],
     ['notes', 'Notes', true, (related.notes || []).length],
     ['connected_records', 'Connected records', ['accounts', 'contacts', 'deals'].includes(resource) || connectedCount > 0, connectedCount],
     ['attachments', 'Attachments', true, (related.attachments || []).length],
