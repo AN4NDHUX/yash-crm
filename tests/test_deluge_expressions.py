@@ -87,3 +87,11 @@ def test_zoho_style_update_record_is_current_record_only():
     ):
         with pytest.raises(HTTPException):
             parse_deluge(invalid)
+
+
+def test_deluge_boolean_normalization_preserves_quoted_literals():
+    evaluate = evaluate_deluge_expression
+    assert evaluate('"true" == "true"') is True
+    assert evaluate('"false && true" == "false && true"') is True
+    assert evaluate('true && "null" == "null"') is True
+    assert evaluate('$record.status == "true"', {"status": "true"}) is True
