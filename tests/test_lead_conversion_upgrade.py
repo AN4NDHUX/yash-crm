@@ -82,7 +82,7 @@ def test_custom_module_fields_and_related_rows_survive_conversion():
             db.add(MetadataField(module_id=module.id, api_name='deal_id',
                 label='Deal', field_type='lookup'))
             visit = PlatformRecord(resource='custom_visits', title='Important visit',
-                organization_id=org, related_type='leads', related_id=lead['id'],
+                organization_id=org, owner_id=lead['owner_id'], related_type='leads', related_id=lead['id'],
                 data={'lead_id':lead['id'], 'customer_note':'Keep this custom text',
                       'nested':{'checklist':['one','two']}})
             note = Note(title='Lead note', content='Preserve', organization_id=org,
