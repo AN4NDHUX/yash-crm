@@ -25,15 +25,25 @@ COMPARE = {
 ALLOWED_METHODS = {"get", "size", "containsKey", "contains", "isEmpty", "toString", "put", "add", "remove", "keys", "values"}
 
 
+
+def normalize_deluge_expression(source: str) -> str:
+    """Translate Deluge boolean tokens outside quoted literals only."""
+    quoted = re.split(r'("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')', source)
+    for index in range(0, len(quoted), 2):
+        part = quoted[index]
+        part = re.sub(r'\$record\.([A-Za-z][A-Za-z0-9_]{0,79})', r'record.\1', part)
+        part = re.sub(r'\btrue\b', "True", part)
+        part = re.sub(r'\bfalse\b', "False", part)
+        part = re.sub(r'\bnull\b', "None", part)
+        part = part.replace("&&", " and ").replace("||", " or ")
+        quoted[index] = re.sub(r'!(?!=)', " not ", part)
+    return "".join(quoted).strip()
+
+
 def evaluate_deluge_expression(source: str, record: dict | None = None):
     if not isinstance(source, str) or len(source) > MAX_EXPRESSION:
         raise HTTPException(422, "Deluge expression exceeds supported limit")
-    normalized = re.sub(r'\$record\.([A-Za-z][A-Za-z0-9_]{0,79})', r'record.\1', source.strip())
-    normalized = re.sub(r'\btrue\b', "True", normalized)
-    normalized = re.sub(r'\bfalse\b', "False", normalized)
-    normalized = re.sub(r'\bnull\b', "None", normalized)
-    normalized = normalized.replace("&&", " and ").replace("||", " or ")
-    normalized = re.sub(r"!(?!=)", " not ", normalized).strip()
+    normalized = normalize_deluge_expression(source)
     try:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError as exc:
