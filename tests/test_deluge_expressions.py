@@ -71,3 +71,19 @@ def test_deluge_record_collection_mutation_is_denied():
         evaluate_deluge_expression('$record.tags.add("untrusted")', {"tags": ["safe"]})
     with pytest.raises(HTTPException):
         evaluate_deluge_expression('$record.data.put("owner_id", 3)', {"data": {"name": "safe"}})
+
+
+def test_zoho_style_update_record_is_current_record_only():
+    source = 'zoho.crm.updateRecord("Leads", $record.id, {"status":"Qualified","lead_score":80});'
+    assert parse_deluge(source) == [{
+        "type": "crm_update_current",
+        "module": "Leads",
+        "fields": {"status": "Qualified", "lead_score": 80},
+    }]
+    for invalid in (
+        'zoho.crm.updateRecord("Leads", 999, {"status":"Qualified"});',
+        'zoho.crm.updateRecord("Leads", $record.id, {"organization_id":8});',
+        'zoho.crm.updateRecord("Leads", $record.id, {});',
+    ):
+        with pytest.raises(HTTPException):
+            parse_deluge(invalid)
