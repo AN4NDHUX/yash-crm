@@ -828,7 +828,7 @@ function relatedContent(resource, related) {
 function leadStagePanel(record,timeline) {
   const current = timeline?.current_stage || record.status || "New";
   const custom = !!timeline?.blueprint_enabled;
-  const choices = custom ? (timeline.transition_details || []) : MODULES.leads.status.filter(s => s !== "Converted" && s !== current).map(s => ({label:s,to:s}));
+  const choices = custom ? (timeline.transition_details || []) : MODULES.leads.status.filter(s => s !== current).map(s => ({label:s,to:s}));
   const converted = current === "Converted" || !!record.converted_contact_id;
   return `<section class="detail-plain-section crm-lead-state" id="detail-section-current_stage"><div class="detail-plain-head"><h3>Current stage &amp; transitions</h3><span class="crm-stage-label">${custom ? esc(timeline.blueprint_name || "Custom Blueprint") : "Lead process"}</span></div>
     <div class="crm-state-body"><div class="crm-state-current"><span>Current stage</span><strong>${esc(current)}</strong></div>
