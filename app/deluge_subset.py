@@ -8,6 +8,7 @@ Supported statements (one per line):
     info "Audit message";
 Only literal strings and $record.field references are accepted as values.
 """
+import ast
 import json
 import re
 from fastapi import HTTPException
@@ -26,6 +27,16 @@ def _argument(token):
         if field.lower() in PROTECTED:
             raise HTTPException(422, "Protected record reference")
         return token
+    if token.startswith("="):
+        expression = token[1:].strip()
+        if not expression or len(expression) > 2048:
+            raise HTTPException(422, "Invalid Deluge expression")
+        # Validate Python-AST syntax only; execution uses the explicit allowlist evaluator.
+        try:
+            ast.parse(re.sub(r"\\$record\\.([A-Za-z][A-Za-z0-9_]{0,79})", r"record.\\1", expression), mode="eval")
+        except SyntaxError as exc:
+            raise HTTPException(422, "Invalid Deluge expression syntax") from exc
+        return {"$deluge_expr": expression}
     try:
         value = json.loads(token)
     except (ValueError, TypeError) as exc:
