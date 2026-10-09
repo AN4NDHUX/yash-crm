@@ -5473,6 +5473,30 @@ def related_records(resource: str, item_id: int, db: Session = Depends(get_db), 
             model.archived == False,
         ).order_by(model.created_at.desc())).all()
         related[key] = visible(key, rows)
+    # Include linked platform and custom-module records in standard CRM related lists.
+    # Keep the original lead reference for audit and lineage; never expose records
+    # from another organization or ones the current actor cannot read.
+    if resource in {"leads", "accounts", "contacts", "deals"}:
+        organization_id = parent.organization_id
+        platform_rows = db.scalars(select(PlatformRecord).where(
+            PlatformRecord.organization_id == organization_id,
+            PlatformRecord.archived == False,
+        ).order_by(PlatformRecord.created_at.desc())).all()
+        related["custom_records"] = []
+        for record in platform_rows:
+            data = record.data or {}
+            direct = record.related_type == resource and record.related_id == item_id
+            keyed = (
+                (resource == "leads" and str(data.get("lead_id") or "") == str(item_id))
+                or (resource == "accounts" and record.account_id == item_id)
+                or (resource == "contacts" and record.contact_id == item_id)
+                or (resource == "deals" and record.deal_id == item_id)
+            )
+            if (direct or keyed) and can_access_record(db, record.resource, record, actor):
+                related["custom_records"].append({
+                    "id": record.id, "resource": record.resource,
+                    "title": record.title, "status": record.status,
+                })
     return related
 
 
