@@ -100,3 +100,18 @@
   .detail-tab-strip { width:100%; }
   .detail-tab { min-width:0; }
 }
+
+/* Critical form usability: modal header/actions stay visible while fields scroll. */
+#modal-backdrop { align-items:center; overflow:hidden; }
+#modal-backdrop > #modal { display:flex; flex-direction:column; width:min(680px,100%); max-height:calc(100dvh - 32px); min-height:0; overflow:hidden; }
+#modal-backdrop #modal .modal-head { flex:0 0 auto; }
+#modal-backdrop #record-form { display:flex; flex:1 1 auto; flex-direction:column; min-height:0; overflow:hidden; }
+#modal-backdrop #modal-body { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+#modal-backdrop #record-form > .modal-foot { display:flex; flex:0 0 auto; position:relative; z-index:1; gap:12px; align-items:center; justify-content:flex-end; padding:14px 22px max(14px,env(safe-area-inset-bottom)); background:#fff; border-top:1px solid var(--border); }
+#modal-backdrop #modal-submit { min-width:130px; }
+@media (max-width:700px) {
+  #modal-backdrop { padding:8px; }
+  #modal-backdrop > #modal { max-height:calc(100dvh - 16px); width:100%; }
+  #modal-backdrop #record-form > .modal-foot { padding:12px 16px max(12px,env(safe-area-inset-bottom)); }
+  #modal-backdrop #record-form > .modal-foot .button { flex:1 1 0; min-width:0; }
+}
