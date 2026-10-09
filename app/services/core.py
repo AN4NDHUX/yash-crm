@@ -527,7 +527,7 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 spec = spec.get("steps")
         if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
             raise ValueError("Custom function must have 1 to 20 action steps")
-        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit"}
+        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue"}
         def resolve(template):
             if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
                 from app.deluge_expressions import evaluate_deluge_expression
