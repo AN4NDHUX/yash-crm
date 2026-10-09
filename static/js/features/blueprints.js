@@ -235,8 +235,9 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
   if(connectorDrag){
     const link=connectorDrag;connectorDrag=null;
     if(link.moved){
-      const node=e.target.closest(".bp-node[data-bp-state]");
-      if(node){connectStates(link.from,Number(node.dataset.bpState));return;}
+      // Hit-test the drop location rather than the captured pointer target.
+      const node=document.elementFromPoint(e.clientX,e.clientY)?.closest(".bp-node[data-bp-state]") || e.target.closest(".bp-node[data-bp-state]");
+      if(node && Number(node.dataset.bpState)!==link.from){connectStates(link.from,Number(node.dataset.bpState));return;}
       connectingFrom=link.from;render();return;
     }
     return; // Click handler starts the connection.

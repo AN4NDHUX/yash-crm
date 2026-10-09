@@ -325,7 +325,7 @@ def test_browser_blueprint_connect_states_and_publish():
 
                 # Click a source connector and then a destination node.
                 page.locator('[data-bp-connect="0"]').click()
-                page.locator('[data-bp-state="1"]').click()
+                page.locator('.bp-node[data-bp-state="1"]').click()
                 assert page.locator(".bp-edge-label").count() == 1
                 assert page.locator(".bp-edge-label").first.inner_text() == "Move to Contacted"
                 page.locator("[data-bp-edge-label]").fill("Establish contact")
