@@ -273,3 +273,99 @@ def test_browser_lead_transitions_deal_stage_and_timeline():
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.communicate(timeout=5)
+
+
+def test_browser_blueprint_connect_states_and_publish():
+    """Click-to-connect and drag-to-connect must persist real Blueprint edges."""
+    port = free_port()
+    base = f"http://127.0.0.1:{port}"
+    with tempfile.TemporaryDirectory() as tmp:
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "development",
+            "DATABASE_URL": f"sqlite:///{tmp}/blueprint-canvas.db",
+            "ENABLE_AUTH": "true",
+            "APP_USERNAME": "admin",
+            "APP_PASSWORD": "supersecretpass123",
+            "ADMIN_EMAIL": "admin@example.com",
+            "ADMIN_NAME": "Administrator",
+            "SEED_DEMO_DATA": "false",
+            "PYTHONPATH": str(ROOT),
+        })
+        server = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app",
+             "--host", "127.0.0.1", "--port", str(port)],
+            cwd=ROOT, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True,
+        )
+        try:
+            wait_for_server(base)
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={"width": 1500, "height": 920})
+                page.goto(base + "/signup")
+                page.fill("#name", "Visual Canvas Owner")
+                page.fill("#organization-name", "Visual Canvas Organization")
+                page.fill("#username", "visual.canvas")
+                page.fill("#signup-email", "visual.canvas@example.com")
+                page.fill("#password", "browser-password-123")
+                page.fill("#confirm-password", "browser-password-123")
+                page.click("#submit-button")
+                page.wait_for_url("**/dashboard", timeout=15000)
+
+                page.goto(base + "/setup/blueprints")
+                page.locator('[data-bp-open="new"]').wait_for(timeout=15000)
+                page.locator('[data-bp-open="new"]').click()
+                page.locator('[data-bp-details] input[name="name"]').fill("Browser Connected Process")
+                page.locator('[data-bp-details] button[type="submit"]').click()
+                page.locator('[data-bp-canvas]').wait_for()
+                for label in ("New", "Contacted", "Qualified"):
+                    page.locator(f'[data-bp-add-state="{label}"]').click()
+                assert page.locator(".bp-node").count() == 3
+
+                # Click a source connector and then a destination node.
+                page.locator('[data-bp-connect="0"]').click()
+                page.locator('[data-bp-state="1"]').click()
+                assert page.locator(".bp-edge-label").count() == 1
+                assert page.locator(".bp-edge-label").first.inner_text() == "Move to Contacted"
+                page.locator("[data-bp-edge-label]").fill("Establish contact")
+                page.locator("[data-bp-edge-label]").press("Tab")
+
+                # Drag from the second state's connection handle onto the third state.
+                source = page.locator('[data-bp-connect="1"]').bounding_box()
+                target = page.locator('.bp-node[data-bp-state="2"]').bounding_box()
+                assert source and target
+                page.mouse.move(source["x"] + source["width"]/2, source["y"] + source["height"]/2)
+                page.mouse.down()
+                page.mouse.move(target["x"] + target["width"]/2, target["y"] + target["height"]/2, steps=12)
+                page.mouse.up()
+                assert page.locator(".bp-edge-label").count() == 2
+                assert page.locator(".bp-edge-path").count() == 2
+
+                page.locator('[data-bp="save"]').click()
+                page.locator('[data-bp-row]').filter(has_text="Browser Connected Process").wait_for()
+                page.locator('[data-bp-row]').filter(has_text="Browser Connected Process").locator("[data-bp-open]").click()
+                page.locator('[data-bp-details] button[type="submit"]').click()
+                page.locator(".bp-edge-label").first.wait_for()
+                assert page.locator(".bp-edge-label").count() == 2
+                page.locator('[data-bp="publish"]').click()
+
+                page.wait_for_function("""async () => {
+                    const res = await fetch('/api/blueprint-designer');
+                    return res.ok && (await res.json()).items.some(item =>
+                        item.name === 'Browser Connected Process' && item.active &&
+                        !item.draft && item.transitions.length === 2 &&
+                        item.transitions[0].label === 'Establish contact' &&
+                        item.transitions[0].from === 'New' &&
+                        item.transitions[0].to === 'Contacted' &&
+                        item.transitions[1].from === 'Contacted' &&
+                        item.transitions[1].to === 'Qualified');
+                }""", timeout=15000)
+                browser.close()
+        finally:
+            server.terminate()
+            try:
+                server.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.communicate(timeout=5)
