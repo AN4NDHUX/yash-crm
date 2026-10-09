@@ -1,0 +1,60 @@
+/* Shared spatial rhythm and alignment: applicable to all authenticated CRM modules. */
+:root { --ui-space-1: 4px; --ui-space-2: 8px; --ui-space-3: 12px; --ui-space-4: 16px; --ui-space-5: 20px; --ui-space-6: 24px; --ui-space-8: 32px; }
+:is(.content-area,.main-area,.card,.settings-section,.modal,.wf-rule-dialog,.detail-record-main,.detail-record-layout,.setup-page-shell) { min-width: 0; }
+.content-area { padding: 28px clamp(18px,2.5vw,36px) 48px; }
+.content-area > * { min-width: 0; }
+.content-area > * + * { margin-top: var(--ui-space-5); }
+.page-heading, .settings-heading-row, .card-head, .detail-title-row { display: flex; gap: var(--ui-space-4); align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.page-heading { margin-bottom: var(--ui-space-6); }
+.page-heading > :first-child, .card-head > :first-child, .settings-heading-row > :first-child { flex: 1 1 220px; min-width: 0; }
+.heading-actions, .module-toolbar-actions, .settings-actions, .card-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:var(--ui-space-2); min-width:0; }
+:is(.heading-actions,.module-toolbar-actions,.settings-actions,.card-actions) > * { max-width:100%; }
+:is(.module-toolbar,.setup-toolbar,.wf-list-actions) { gap:var(--ui-space-3); align-items:center; }
+:is(.card,.settings-section,.table-card,.setup-hub-card) { min-width:0; }
+:is(.card-head,.settings-section-head,.setup-hub-head) { gap:var(--ui-space-3); }
+:is(.form-grid,.settings-form) { column-gap:var(--ui-space-5); row-gap:var(--ui-space-4); }
+.form-grid > *, .settings-form > * { min-width:0; }
+.field { min-width:0; gap:var(--ui-space-2); }
+.field label { line-height:1.45; overflow-wrap:anywhere; }
+:is(.field-input,.field-select,.field-textarea) { max-width:100%; min-width:0; box-sizing:border-box; }
+:is(.form-actions,.modal-actions,.wf-editor-footer) { display:flex; gap:var(--ui-space-3); align-items:center; justify-content:flex-end; flex-wrap:wrap; }
+.modal-head { gap:var(--ui-space-4); align-items:center; }
+.modal-body { min-width:0; overflow-x:hidden; }
+.modal-body .form-grid { width:100%; }
+:is(.data-table,.table) th, :is(.data-table,.table) td { vertical-align:middle; }
+:is(.data-table,.table) th { white-space:normal; line-height:1.4; }
+:is(.data-table,.table) td { overflow-wrap:anywhere; }
+:is(.table-wrap,.data-table-wrap,.metadata-field-table) { min-width:0; max-width:100%; overflow-x:auto; }
+.detail-record-layout { gap:var(--ui-space-6); align-items:start; }
+.detail-record-main { min-width:0; }
+.detail-related-links { gap:var(--ui-space-1); }
+.detail-related-link { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:var(--ui-space-3); }
+.detail-related-link span { min-width:0; overflow-wrap:anywhere; text-align:left; }
+.detail-related-link small { flex:0 0 auto; }
+.detail-plain-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--ui-space-3); }
+.detail-related-row { display:flex; align-items:center; justify-content:space-between; gap:var(--ui-space-3); min-width:0; }
+.detail-related-row-copy { min-width:0; overflow-wrap:anywhere; }
+.wf-rule-overlay:not([style*="padding:0"]) > .wf-rule-dialog { max-width:calc(100vw - 24px); }
+.wf-rule-dialog .wf-details-card { min-width:0; }
+.wf-rule-dialog .wf-editor-footer { gap:var(--ui-space-3); }
+.wf-rule-dialog .wf-list-actions > * { min-width:0; }
+.wf-rule-dialog .field-input { max-width:100%; }
+.setup-workspace, .setup-console-grid, .dashboard-grid, .stats-grid { min-width:0; }
+@media (max-width: 900px) {
+  .content-area { padding:24px 18px 40px; }
+  .detail-record-layout { gap:var(--ui-space-4); }
+  .form-grid.three { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  .content-area { padding:18px 14px 32px; }
+  .content-area > * + * { margin-top:var(--ui-space-4); }
+  .page-heading, .settings-heading-row, .card-head, .detail-title-row { align-items:stretch; flex-direction:column; gap:var(--ui-space-3); }
+  .page-heading { margin-bottom:var(--ui-space-4); }
+  .heading-actions, .module-toolbar-actions { width:100%; justify-content:flex-start; }
+  .form-grid, .form-grid.three { grid-template-columns:minmax(0,1fr); }
+  .form-actions, .modal-actions { justify-content:stretch; }
+  .form-actions > .button, .modal-actions > .button { flex:1 1 120px; }
+  .modal-head { padding:16px; }
+  .modal-body { padding:16px; }
+  .detail-plain-head { align-items:flex-start; }
+}
