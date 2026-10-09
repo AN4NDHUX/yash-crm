@@ -41,6 +41,7 @@ class RecordPayload(BaseModel):
     deal_amount: float | None = None
     contact_role: str | None = None
     pipeline: str | None = None
+    layout_name: str | None = None
     activity_type: str | None = None
     subject: str | None = None
     title: str | None = None
