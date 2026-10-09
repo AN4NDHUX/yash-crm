@@ -33,7 +33,10 @@ def _argument(token):
             raise HTTPException(422, "Invalid Deluge expression")
         # Validate Python-AST syntax only; execution uses the explicit allowlist evaluator.
         try:
-            ast.parse(re.sub(r"\\$record\\.([A-Za-z][A-Za-z0-9_]{0,79})", r"record.\\1", expression), mode="eval")
+            normalized = re.sub(r"\$record\.([A-Za-z][A-Za-z0-9_]{0,79})", r"record.\1", expression)
+            normalized = normalized.replace("&&", " and ").replace("||", " or ")
+            normalized = re.sub(r"!(?!=)", " not ", normalized).strip()
+            ast.parse(normalized, mode="eval")
         except SyntaxError as exc:
             raise HTTPException(422, "Invalid Deluge expression syntax") from exc
         return {"$deluge_expr": expression}
