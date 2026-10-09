@@ -30,7 +30,7 @@ def setup_connection(monkeypatch, auth_type="None"):
         monkeypatch.setenv("TEST_REFRESH_TOKEN", "refresh-test-only")
         monkeypatch.setenv("TEST_CLIENT_ID", "client-test-only")
         monkeypatch.setenv("TEST_CLIENT_SECRET", "secret-test-only")
-    monkeypatch.setenv("DELUGE_HTTP_CONNECTIONS_JSON", json.dumps({"partner": connection}))
+    monkeypatch.setenv("DELUGE_HTTP_CONNECTIONS_JSON", json.dumps({"42": {"partner": connection}}))
     return {"type":"deluge_http", "url":connection["url"], "connection":"partner",
             "method":"POST", "body":{"name":"Test"}}
 
@@ -44,7 +44,7 @@ def test_connection_scoped_http_request_is_bounded(monkeypatch):
                          request.get_header("X-crm-idempotency-key"), timeout))
             return FakeResponse(b"accepted", 202)
     with patch("app.deluge_http.build_opener", return_value=FakeOpener()):
-        result = send_deluge_http(action, SimpleNamespace(idempotency_key="demo-key"))
+        result = send_deluge_http(action, SimpleNamespace(organization_id=42, idempotency_key="demo-key"))
     assert result == {"status": "delivered", "bytes": 8}
     assert seen[0][0] == "https://api.partner.example.com/hooks"
     assert seen[0][1] == "POST"
@@ -94,9 +94,9 @@ def test_connection_secrets_are_not_from_script_headers(monkeypatch):
 def test_oauth2_client_credentials_grant(monkeypatch):
     action = setup_connection(monkeypatch, "OAuth2")
     config = json.loads(__import__("os").environ["DELUGE_HTTP_CONNECTIONS_JSON"])
-    config["partner"].pop("refresh_token_env")
-    config["partner"]["grant_type"] = "client_credentials"
-    config["partner"]["scope"] = "records.write"
+    config["42"]["partner"].pop("refresh_token_env")
+    config["42"]["partner"]["grant_type"] = "client_credentials"
+    config["42"]["partner"]["scope"] = "records.write"
     monkeypatch.setenv("DELUGE_HTTP_CONNECTIONS_JSON", json.dumps(config))
     requests = []
     class FakeOpener:
@@ -111,3 +111,9 @@ def test_oauth2_client_credentials_grant(monkeypatch):
     with patch("app.deluge_http.build_opener", return_value=FakeOpener()):
         assert send_deluge_http(action, SimpleNamespace(idempotency_key="client-grant"))["status"] == "delivered"
     assert len(requests) == 2
+
+
+def test_connection_cannot_be_used_across_organizations(monkeypatch):
+    action = setup_connection(monkeypatch, "OAuth2")
+    with pytest.raises(ValueError, match="connections"):
+        send_deluge_http(action, SimpleNamespace(organization_id=43, idempotency_key="other-tenant"))
