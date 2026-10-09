@@ -110,6 +110,11 @@ def test_custom_module_fields_and_related_rows_survive_conversion():
                 out['expected_deal'] = result['deal']['id']
                 out['related_type'] = visit.related_type
                 out['note_related_type'] = note.related_type
+            related = c.get('/api/deals/' + str(result['deal']['id']) + '/related')
+            out['related_http'] = related.status_code
+            if related.status_code == 200:
+                out['custom_titles'] = [row['title'] for row in related.json().get('custom_records', [])]
+
     """)
     assert out['status'] == 200, out
     assert out['original_lead_ref'] is not None, out
@@ -119,3 +124,5 @@ def test_custom_module_fields_and_related_rows_survive_conversion():
     assert out['custom_deal'] == out['expected_deal'], out
     assert out['related_type'] == 'deals', out
     assert out['note_related_type'] == 'deals', out
+    assert out['related_http'] == 200, out
+    assert 'Important visit' in out['custom_titles'], out
