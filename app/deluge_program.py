@@ -26,7 +26,11 @@ def _lines(source):
         line = line.strip()
         if not line or line.startswith("//"):
             continue
-        if line.startswith("} else "):
+        if line == "{":
+            if not output or output[-1].endswith("{"):
+                raise HTTPException(422, "Unexpected opening brace")
+            output[-1] += " {"
+        elif line.startswith("} else "):
             output.append("}")
             output.append(line[2:].strip())
         else:
@@ -46,7 +50,7 @@ def _validate_expression(expression):
 
 
 def compile_deluge_program(source):
-    """Return structured statements. Blocks must use braces on their header line."""
+    """Return structured statements. Braces may be placed on the header line or on the following line."""
     lines = _lines(source)
     position = 0
     count = 0
