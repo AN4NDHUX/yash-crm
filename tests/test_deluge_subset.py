@@ -150,3 +150,10 @@ def test_deluge_legacy_condition_else_stays_compatible():
     steps = parse_deluge('if ($record.status == "Qualified") {\ncrm.addTag("Yes");\n}\nelse {\ncrm.addTag("No");\n}')
     assert steps[0]["_conditions"] == [{"field":"status","operator":"==","value":"Qualified"}]
     assert steps[1]["_conditions"][0]["expression"] == 'not ($record.status == "Qualified")'
+
+
+def test_deluge_return_step_is_conditionally_compiled():
+    steps = parse_deluge('if ($record.status == "Closed") {\nreturn;\n}\ncrm.addTag("Open");')
+    assert steps[0]["type"] == "return"
+    assert steps[0]["_conditions"] == [{"field":"status","operator":"==","value":"Closed"}]
+    assert steps[1] == {"type":"tag","value":"Open"}
