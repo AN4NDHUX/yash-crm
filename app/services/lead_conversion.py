@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select, func
 
-def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
+def convert_lead_service(item_id, payload, db, actor) -> dict[str, Any]:
     # Delayed import avoids circular imports with the FastAPI route module.
     from app.main import (
         Lead, Account, Contact, Deal, Activity, Note, Attachment, Email, Product,
