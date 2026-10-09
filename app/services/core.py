@@ -608,11 +608,48 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             except HTTPException as exc:
                 raise ValueError("CRM task validation or permissions rejected") from exc
 
+        def handle_http_task(expression, variables):
+            from app.deluge_expressions import evaluate_deluge_expression
+            from uuid import uuid4
+            context = {**dict(getattr(record, "data", None) or {}), **values}
+            try:
+                arguments = evaluate_deluge_expression(expression, context, variables)
+            except HTTPException as exc:
+                raise ValueError("Deluge invokeurl argument rejected") from exc
+            if not isinstance(arguments, dict) or any(key not in {"url", "type", "connection", "headers", "body", "parameters"} for key in arguments):
+                raise ValueError("Invalid invokeurl configuration")
+            method = arguments.get("type")
+            if method not in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
+                raise ValueError("Unsupported invokeurl method")
+            if arguments.get("body") is not None and arguments.get("parameters") is not None:
+                raise ValueError("Cannot specify both body and parameters")
+            import re
+            if not isinstance(arguments.get("connection"), str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", arguments["connection"]):
+                raise ValueError("invokeurl requires a configured connection name")
+            if not isinstance(arguments.get("url"), str) or len(arguments["url"]) > 2048:
+                raise ValueError("Invalid invokeurl URL")
+            action = {"type": "deluge_http", "connection": arguments["connection"],
+                      "url": arguments["url"], "method": method,
+                      "headers": arguments.get("headers") or {},
+                      "body": arguments.get("body", arguments.get("parameters"))}
+            delivery = WorkflowExecution(
+                organization_id=getattr(record, "organization_id", None) or function_record.organization_id,
+                owner_id=getattr(record, "owner_id", None) or function_record.owner_id,
+                rule_id=function_record.id, resource=resource, record_id=record.id,
+                event="deluge_http", status="queued", actions=[action],
+                idempotency_key="delugehttp|" + uuid4().hex,
+            )
+            db.add(delivery)
+            db.flush()
+            # Deluge HTTP execution is asynchronous in this CRM. Do not pretend
+            # that this is the remote provider's HTTP response.
+            return {"status": "queued", "execution_id": delivery.id}
+
         for step in spec:
             if isinstance(step, dict) and step.get("type") == "deluge_program":
                 from app.deluge_program import execute_deluge_program
                 context = {**dict(getattr(record, "data", None) or {}), **values}
-                execute_deluge_program(step["program"], context, handle_program_action, handle_crm_task)
+                execute_deluge_program(step["program"], context, handle_program_action, handle_crm_task, handle_http_task)
                 continue
             if not isinstance(step, dict) or str(step.get("type", "")).lower() not in allowed:
                 raise ValueError("Unsupported custom function step")
