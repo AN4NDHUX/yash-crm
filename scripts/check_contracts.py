@@ -124,7 +124,7 @@ def write_checks() -> None:
 
     # Lead conversion must create and link the account, contact and deal.
     lead = call("POST", "/api/leads", {"name": tag, "company": f"{tag} Ltd", "email": f"contract-{int(time.time())}@example.com"})
-    converted = call("POST", f"/api/leads/{lead['id']}/convert", {"deal_name": f"{tag} opportunity", "deal_amount": 1250})
+    converted = call("POST", f"/api/leads/{lead['id']}/convert", {"create_deal": True, "deal_name": f"{tag} opportunity", "deal_amount": 1250, "expected_close_date": date.today().isoformat(), "stage": "Qualification"})
     assert converted["lead"]["status"] == "Converted", converted
     assert converted["lead"]["converted_account_id"] == converted["account"]["id"], converted
     assert converted["lead"]["converted_contact_id"] == converted["contact"]["id"], converted
