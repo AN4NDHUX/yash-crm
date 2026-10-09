@@ -527,7 +527,7 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 spec = spec.get("steps")
         if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
             raise ValueError("Custom function must have 1 to 20 action steps")
-        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current", "variable_assign"}
+        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current", "variable_assign", "return"}
         local_vars = {}
         def resolve(template):
             if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
@@ -579,7 +579,9 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 if not matched:
                     continue
             resolved_step = {key: resolve(item) for key, item in step.items() if key != "_conditions"}
-            if str(resolved_step.get("type", "")).lower() == "variable_assign":
+            if str(resolved_step.get("type", "")).lower() == "return":
+                break
+            elif str(resolved_step.get("type", "")).lower() == "variable_assign":
                 name = str(resolved_step.get("name", ""))
                 if not name.isidentifier() or name.startswith("_") or name in {"record", "crm"}:
                     raise ValueError("Invalid Deluge variable name")
