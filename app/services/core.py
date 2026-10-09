@@ -597,9 +597,9 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             import re
             # The triggering record ID is available only as a CRM task argument,
             # never as a general Deluge expression or unrestricted record field.
-            fragments = re.split(r'("(?:[^"\\\\]|\\\\.)*"|\\'(?:[^\\'\\\\]|\\\\.)*\\')', expression)
+            fragments = re.split(r'("(?:[^"\\]|\\.)*")', expression)
             for index in range(0, len(fragments), 2):
-                fragments[index] = re.sub(r'\\$record\\.id\\b', str(record.id), fragments[index])
+                fragments[index] = re.sub(r'\$record\.id\b', str(record.id), fragments[index])
             safe_expression = "".join(fragments)
             context = {**dict(getattr(record, "data", None) or {}), **values}
             try:
