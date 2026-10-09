@@ -7,7 +7,7 @@ JS = (ROOT / "static/js/app.js").read_text(encoding="utf-8")
 
 
 def test_record_ui_stage_and_timeline_controls_are_connected():
-    assert 'function leadStagePanel(record)' in JS
+    assert 'function leadStagePanel(record, timeline)' in JS
     assert 'function timelineHtml(events)' in JS
     assert 'function dealProgress(record)' in JS
     assert 'data-lead-transition=' in JS
