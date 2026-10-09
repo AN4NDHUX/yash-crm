@@ -106,3 +106,27 @@ def test_zoho_crm_v8_update_record_alias_is_scoped():
     }]
     with pytest.raises(HTTPException):
         parse_deluge('zoho.crm.v8.updateRecord("Leads", 123, {"company":"Unsafe"});')
+
+
+def test_deluge_extended_map_and_list_methods():
+    evaluate = evaluate_deluge_expression
+    assert evaluate('{"name":"A"}.getKeys()') == ["name"]
+    assert evaluate('{"name":"A"}.getValues()') == ["A"]
+    assert evaluate('["b","a","b"].distinct()') == ["b", "a"]
+    assert evaluate('["b","a"].sort()') == ["a", "b"]
+    assert evaluate('["b","a"].reverse()') == ["a", "b"]
+    assert evaluate('["a","b","c"].subList(1,3)') == ["b", "c"]
+
+
+def test_deluge_string_methods_and_bounded_results():
+    evaluate = evaluate_deluge_expression
+    assert evaluate('"  Lead  ".trim().toUpperCase()') == "LEAD"
+    assert evaluate('"Lead".toLowerCase()') == "lead"
+    assert evaluate('"Qualified".startsWith("Qual")') is True
+    assert evaluate('"Qualified".endsWith("fied")') is True
+    assert evaluate('"abcabc".replaceAll("ab", "xy")') == "xycxyc"
+    assert evaluate('"Qualified".indexOf("if")') == 4
+    with pytest.raises(HTTPException):
+        evaluate('["a",2].sort()')
+    with pytest.raises(HTTPException):
+        evaluate('["a"].subList(0,2)')
