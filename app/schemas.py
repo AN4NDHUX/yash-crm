@@ -35,6 +35,12 @@ class RecordPayload(BaseModel):
     stage: str | None = None
     probability: int | None = None
     expected_close_date: date | None = None
+    create_deal: bool | None = None
+    account_name: str | None = None
+    deal_name: str | None = None
+    deal_amount: float | None = None
+    contact_role: str | None = None
+    pipeline: str | None = None
     activity_type: str | None = None
     subject: str | None = None
     title: str | None = None
