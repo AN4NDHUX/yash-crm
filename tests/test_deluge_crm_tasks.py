@@ -147,3 +147,62 @@ def test_deluge_bracket_http_creates_durable_queue():
     assert result["queued"] is True, result
     assert result["method"] == "POST", result
     assert result["connection"] == "partner", result
+
+
+def test_queued_invokeurl_is_claimed_once_by_real_worker():
+    result = app_scenario("""
+    from unittest.mock import patch
+    from app.workflow_worker import process_due
+    from app.models import WorkflowExecution
+    with TestClient(main.app, follow_redirects=False) as c:
+        signup = c.post('/api/auth/signup', json={
+            'name':'Queue Worker Test', 'organization_name':'Queue Worker Org',
+            'username':'queue.worker.test', 'email':'queue.worker.test@example.com',
+            'password':'strong-password-123'
+        })
+        out['signup'] = signup.status_code
+        source = ('response = invokeurl\\n[\\n'
+                  'url: "https://api.partner.example.com/hooks"\\n'
+                  'type: POST\\n'
+                  'connection: "partner"\\n'
+                  'body: {"source":"worker-smoke"}\\n'
+                  '];\\n')
+        fn = c.post('/api/platform/functions', json={
+            'name':'Queue End to End','runtime':'Deluge','entrypoint':'workflow',
+            'source':{'code':source},'status':'Active'
+        })
+        out['function'] = fn.status_code
+        if fn.status_code == 201:
+            rule = c.post('/api/platform/workflow_rules', json={
+                'name':'Queue Exactly Once','module':'leads','event':'create',
+                'actions':[{'type':'function','value':str(fn.json()['id'])}],
+                'status':'Active'
+            })
+            out['rule'] = rule.status_code
+            lead = c.post('/api/leads', json={'name':'Queued Outbound Lead','company':'Queue Org'})
+            out['lead'] = lead.status_code
+            seen = []
+            with patch('app.workflow_worker._send_external',
+                       side_effect=lambda action, execution: seen.append(
+                           (action.get('type'), execution.organization_id, execution.idempotency_key)
+                       )):
+                out['first_processed'] = process_due()
+                out['second_processed'] = process_due()
+            out['deliveries'] = seen
+            with main.SessionLocal() as db:
+                jobs = db.scalars(main.select(WorkflowExecution).where(
+                    WorkflowExecution.event == 'deluge_http'
+                )).all()
+                out['jobs'] = [(job.status, job.attempts) for job in jobs]
+    """)
+    assert result['signup'] in (200, 201), result
+    assert result['function'] == 201, result
+    assert result['rule'] == 201, result
+    assert result['lead'] in (200, 201), result
+    assert result['first_processed'] == 1, result
+    assert result['second_processed'] == 0, result
+    assert len(result['deliveries']) == 1, result
+    assert result['deliveries'][0][0] == 'deluge_http', result
+    assert result['deliveries'][0][1] is not None, result
+    assert result['deliveries'][0][2].startswith('delugehttp|'), result
+    assert result['jobs'] == [['completed', 1]], result
