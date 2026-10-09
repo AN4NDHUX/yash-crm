@@ -95,6 +95,7 @@ def test_deluge_crm_get_record_by_id_executes_in_function():
             if lead.status_code in (200, 201):
                 data = c.get('/api/leads/' + str(lead.json()['id'])).json()
                 out['tags'] = data.get('tags')
+                out['executions'] = [{'status': row.get('status'), 'error': row.get('error')} for row in c.get('/api/automation/executions').json()['items']][:5]
     """)
     assert result["fn"] == 201, result
     assert result["rule"] == 201, result
