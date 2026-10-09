@@ -5280,6 +5280,9 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
         if key in {"id", "created_at", "updated_at"} or model.__table__.columns.get(key) is None or value is None:
             continue
         values[key] = coerce_value(model, key, value)
+    if resource == "leads":
+        from app.services.stage_scoring import default_mapping, score_transition
+        values["lead_score"] = score_transition("", values.get("status") or "New", default_mapping())["stage_score"]
     authorize_field_values(db, resource, values, actor, "write")
     if isinstance(actor, User) and hasattr(model, "owner_id"):
         values["owner_id"] = actor.id
@@ -5360,6 +5363,9 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
     before_full = serialize(item, db, actor)
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
     incoming = payload.model_dump(exclude_unset=True)
+    if resource == "leads":
+        from app.services.stage_scoring import default_mapping, score_transition
+        incoming["lead_score"] = score_transition(str(item.status or "New"), str(incoming.get("status") or item.status or "New"), default_mapping())["stage_score"]
     authorize_field_values(db, resource, incoming, actor, "write")
     if resource == "deals":
         blueprint = enforce_blueprint_transition(db, resource, item, before_full.get("stage"), incoming.get("stage"), {**before_full, **incoming})
