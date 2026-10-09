@@ -351,9 +351,9 @@ def test_workflow_function_gallery_uses_interactive_creation_and_module_scoping(
     source = (Path(__file__).resolve().parents[1] /
               "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
     assert 'data-wf-gallery-create' in source
-    assert 'data-wf-gallery-close' in source
-    assert 'functionGalleryDialog()' in source
-    assert 'functionGallery=true' in source
+    assert 'data-wf-function-create' in source
+    assert 'Function templates' in source
+    assert 'functionPicker ? functionDialog()' in source
     assert 'prompt("Function gallery:' not in source
     assert 'functionRecords = await api("/api/platform/functions?limit=100")' in source
     assert 'fn.associations.modules.includes(draft.module)' in source
@@ -381,12 +381,12 @@ def test_workflow_function_picker_empty_state_and_search_buttons():
 
     source = (Path(__file__).resolve().parents[1] /
               "static/js/features/workflow-rules.js").read_text(encoding="utf-8")
-    assert 'data-wf-empty-gallery' in source
+    assert 'data-wf-gallery-create' in source
     assert 'data-wf-function-row' in source
     assert 'row.hidden=' in source
-    assert 'functionPicker=false;functionGallery=true;await refresh(root)' in source
-    assert 'functionPicker=false;functionConfiguration=true;await refresh(root)' in source
-    assert 'functionConfiguration=false;functionPicker=true;await refresh(root)' in source
+    assert 'data-wf-function-create' in source
+    assert 'functionPicker=false;functionEditingId=null;functionDraft=null;functionEditor=true;await refresh(root)' in source
+    assert 'data-wf-associate-function' in source
     assert 'functionSearch=event.target.value;await refresh(root)' not in source
 
 
