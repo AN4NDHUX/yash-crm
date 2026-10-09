@@ -121,3 +121,53 @@ def test_blueprint_criteria_value_select_is_bound_to_metadata():
     assert 'name="value_choice"' in js
     assert 'name="value_custom"' in js
     assert 'node.name==="field" || node.name==="operator"' in js
+
+
+def test_visual_blueprint_designer_and_transition_isolated_across_organizations():
+    result = app_scenario("""
+    with TestClient(main.app) as first:
+        signup = first.post('/api/auth/signup', json={
+            'name':'Blueprint Tenant A','organization_name':'Blueprint Tenant A Org',
+            'username':'blueprint.tenant.a','email':'blueprint.tenant.a@example.com',
+            'password':'strong-password-123'
+        })
+        out['first_signup'] = signup.status_code
+        lead = first.post('/api/leads', json={'name':'Tenant A Blueprint Lead'})
+        out['lead'] = lead.status_code
+        lead_id = lead.json()['id']
+        payload = {
+            'name':'Tenant A private stages','module':'Leads','layout_name':'Default',
+            'field_name':'status','entry_conditions':[],
+            'stages':[{'id':'new','label':'New','x':0,'y':0},
+                      {'id':'contacted','label':'Contacted','x':100,'y':0}],
+            'transitions':[{'id':'move','label':'Contact lead','from':'New',
+                            'to':'Contacted','owner_scope':'any','required':[],'after':[]}]
+        }
+        created = first.post('/api/blueprint-designer', json=payload)
+        out['created'] = created.status_code
+        blueprint_id = created.json()['id']
+        with TestClient(main.app) as second:
+            signup = second.post('/api/auth/signup', json={
+                'name':'Blueprint Tenant B','organization_name':'Blueprint Tenant B Org',
+                'username':'blueprint.tenant.b','email':'blueprint.tenant.b@example.com',
+                'password':'strong-password-123'
+            })
+            out['second_signup'] = signup.status_code
+            list_result = second.get('/api/blueprint-designer')
+            out['list'] = list_result.status_code
+            out['visible_ids'] = [row['id'] for row in list_result.json()['items']]
+            out['detail'] = second.get(f'/api/blueprint-designer/{blueprint_id}').status_code
+            out['publish'] = second.post(f'/api/blueprint-designer/{blueprint_id}/publish').status_code
+            out['edit'] = second.put(f'/api/blueprint-designer/{blueprint_id}', json=payload).status_code
+            out['transition'] = second.post(
+                f'/api/blueprint-records/leads/{lead_id}/transition',
+                json={'transition_id':'move','fields':{}}
+            ).status_code
+    """)
+    assert result['first_signup'] in (200, 201), result
+    assert result['second_signup'] in (200, 201), result
+    assert result['lead'] in (200, 201), result
+    assert result['created'] == 201, result
+    assert result['list'] == 200, result
+    assert result['visible_ids'] == [], result
+    assert all(result[key] == 404 for key in ('detail', 'publish', 'edit', 'transition')), result
