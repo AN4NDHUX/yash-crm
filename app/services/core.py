@@ -529,6 +529,10 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             raise ValueError("Custom function must have 1 to 20 action steps")
         allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit"}
         def resolve(template):
+            if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
+                from app.deluge_expressions import evaluate_deluge_expression
+                context = {**dict(getattr(record, "data", None) or {}), **values}
+                return evaluate_deluge_expression(template["$deluge_expr"], context)
             if isinstance(template, str) and template.startswith("$record."):
                 field = template[8:]
                 if not field or field.startswith("_") or "." in field:
