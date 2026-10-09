@@ -522,12 +522,16 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
         if isinstance(spec, dict):
             if str((function_record.data or {}).get("runtime", "")).lower() == "deluge":
                 from app.deluge_subset import parse_deluge
-                spec = parse_deluge(spec.get("code"))
+                try:
+                    spec = parse_deluge(spec.get("code"))
+                except HTTPException:
+                    from app.deluge_program import compile_deluge_program
+                    spec = [{"type": "deluge_program", "program": compile_deluge_program(spec.get("code"))}]
             else:
                 spec = spec.get("steps")
         if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
             raise ValueError("Custom function must have 1 to 20 action steps")
-        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current", "variable_assign", "return"}
+        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current", "variable_assign", "return", "deluge_program"}
         local_vars = {}
         def resolve(template):
             if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
@@ -545,7 +549,54 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                     raise ValueError("Protected function record field")
                 return values.get(field, getattr(record, field, None))
             return template
+        def run_resolved_step(resolved_step):
+                if str(resolved_step.get("type", "")).lower() == "return":
+                    return "return"
+                elif str(resolved_step.get("type", "")).lower() == "variable_assign":
+                    name = str(resolved_step.get("name", ""))
+                    if not name.isidentifier() or name.startswith("_") or name in {"record", "crm"}:
+                        raise ValueError("Invalid Deluge variable name")
+                    if len(local_vars) >= 40 and name not in local_vars:
+                        raise ValueError("Deluge variable limit exceeded")
+                    local_vars[name] = resolved_step.get("value")
+                elif str(resolved_step.get("type", "")).lower() == "crm_update_current":
+                    module = str(resolved_step.get("module") or "").lower().replace(" ", "_")
+                    if module != resource.lower().replace(" ", "_"):
+                        raise ValueError("CRM integration task must target the current module")
+                    fields = resolved_step.get("fields")
+                    if not isinstance(fields, dict) or not 1 <= len(fields) <= 10:
+                        raise ValueError("Invalid CRM update field map")
+                    for field, value in fields.items():
+                        _execute_workflow_action(db, {"type": "field_update", "field": field, "value": value}, resource, record, values)
+                elif str(resolved_step.get("type", "")).lower() == "webhook_queue":
+                    from uuid import uuid4
+                    # Only the separate worker performs external I/O. The destination
+                    # is exclusively WORKFLOW_WEBHOOK_URL, not script-controlled.
+                    db.add(WorkflowExecution(
+                        organization_id=getattr(record, "organization_id", None) or function_record.organization_id,
+                        owner_id=getattr(record, "owner_id", None) or function_record.owner_id,
+                        rule_id=function_record.id,
+                        resource=resource,
+                        record_id=record.id,
+                        event="deluge_outbound",
+                        status="queued",
+                        actions=[resolved_step],
+                        idempotency_key="deluge|" + uuid4().hex,
+                    ))
+                else:
+                    _execute_workflow_action(db, resolved_step, resource, record, values)
+
+        def handle_program_action(step, variables):
+            local_vars.clear()
+            local_vars.update(variables)
+            resolved_step = {key: resolve(value) for key, value in step.items() if key != "_conditions"}
+            run_resolved_step(resolved_step)
         for step in spec:
+            if isinstance(step, dict) and step.get("type") == "deluge_program":
+                from app.deluge_program import execute_deluge_program
+                context = {**dict(getattr(record, "data", None) or {}), **values}
+                execute_deluge_program(step["program"], context, handle_program_action)
+                continue
             if not isinstance(step, dict) or str(step.get("type", "")).lower() not in allowed:
                 raise ValueError("Unsupported custom function step")
             conditions = step.get("_conditions", [])
@@ -579,41 +630,8 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 if not matched:
                     continue
             resolved_step = {key: resolve(item) for key, item in step.items() if key != "_conditions"}
-            if str(resolved_step.get("type", "")).lower() == "return":
+            if run_resolved_step(resolved_step) == "return":
                 break
-            elif str(resolved_step.get("type", "")).lower() == "variable_assign":
-                name = str(resolved_step.get("name", ""))
-                if not name.isidentifier() or name.startswith("_") or name in {"record", "crm"}:
-                    raise ValueError("Invalid Deluge variable name")
-                if len(local_vars) >= 40 and name not in local_vars:
-                    raise ValueError("Deluge variable limit exceeded")
-                local_vars[name] = resolved_step.get("value")
-            elif str(resolved_step.get("type", "")).lower() == "crm_update_current":
-                module = str(resolved_step.get("module") or "").lower().replace(" ", "_")
-                if module != resource.lower().replace(" ", "_"):
-                    raise ValueError("CRM integration task must target the current module")
-                fields = resolved_step.get("fields")
-                if not isinstance(fields, dict) or not 1 <= len(fields) <= 10:
-                    raise ValueError("Invalid CRM update field map")
-                for field, value in fields.items():
-                    _execute_workflow_action(db, {"type": "field_update", "field": field, "value": value}, resource, record, values)
-            elif str(resolved_step.get("type", "")).lower() == "webhook_queue":
-                from uuid import uuid4
-                # Only the separate worker performs external I/O. The destination
-                # is exclusively WORKFLOW_WEBHOOK_URL, not script-controlled.
-                db.add(WorkflowExecution(
-                    organization_id=getattr(record, "organization_id", None) or function_record.organization_id,
-                    owner_id=getattr(record, "owner_id", None) or function_record.owner_id,
-                    rule_id=function_record.id,
-                    resource=resource,
-                    record_id=record.id,
-                    event="deluge_outbound",
-                    status="queued",
-                    actions=[resolved_step],
-                    idempotency_key="deluge|" + uuid4().hex,
-                ))
-            else:
-                _execute_workflow_action(db, resolved_step, resource, record, values)
         add_audit(db, "function_executed", resource, record.id, f"Custom function '{function_record.title}' executed")
     elif action_type in {"webhook", "webhook_queue", "email", "call", "meeting"}:
         add_audit(db, "automation_queued", resource, record.id, f"Queued workflow action '{action_type}' for external worker")
