@@ -122,7 +122,7 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
             actor_token = TENANT_ACTOR_ID.set(execution.owner_id)
             try:
                 rule = db.get(PlatformRecord, execution.rule_id)
-                if rule is None or rule.archived or rule.organization_id != execution.organization_id:
+                if rule is None or rule.archived or rule.status != "Active" or rule.organization_id != execution.organization_id:
                     raise ValueError("Workflow rule no longer belongs to this organization")
                 if legacy_owner_id is not None and (execution.owner_id != legacy_owner_id or rule.owner_id != legacy_owner_id):
                     raise ValueError("Legacy workflow does not belong to the platform owner")
