@@ -28,6 +28,8 @@ def _argument(token):
         if field.lower() in PROTECTED:
             raise HTTPException(422, "Protected record reference")
         return token
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,39}", token) and token not in {"true", "false", "null"}:
+        return {"$deluge_expr": token}
     if token.startswith("="):
         expression = token[1:].strip()
         if not expression or len(expression) > 2048:
@@ -116,20 +118,31 @@ def parse_deluge(source):
     source = _expand_literal_loops(source)
     steps = []
     condition_stack = []
+    closed_conditional = None
     for line_number, raw in enumerate(source.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("//"):
             continue
-        if line == "}":
+        if line in {"}", "} else {"}:
             if not condition_stack:
                 raise HTTPException(422, f"Line {line_number}: unexpected closing brace")
-            condition_stack.pop()
+            closed_conditional = condition_stack.pop()
+            if line == "} else {":
+                condition_stack.append({"expression": "not (" + closed_conditional["expression"] + ")"})
+                closed_conditional = None
             continue
+        if line == "else {":
+            if closed_conditional is None:
+                raise HTTPException(422, f"Line {line_number}: else requires a preceding if")
+            condition_stack.append({"expression": "not (" + closed_conditional["expression"] + ")"})
+            closed_conditional = None
+            continue
+        closed_conditional = None
         conditional = re.fullmatch(r'if\s*\(\s*(\$record\.[A-Za-z][A-Za-z0-9_]{0,79})\s*(==|!=)\s*("[^"]{0,1000}")\s*\)\s*\{', line)
         if conditional:
             field_reference, operator, literal = conditional.groups()
             _argument(field_reference)
-            condition_stack.append({"field": field_reference[8:], "operator": operator, "value": _argument(literal)})
+            condition_stack.append({"expression": field_reference + " " + operator + " " + literal})
             if len(condition_stack) > 5:
                 raise HTTPException(422, "Maximum conditional nesting is five")
             continue
@@ -145,7 +158,17 @@ def parse_deluge(source):
         if not line.endswith(";"):
             raise HTTPException(422, f"Line {line_number}: statement must end with a semicolon")
         line = line[:-1].strip()
-        if line.startswith("info "):
+        assignment = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]{0,39})\\s*=\\s*(.+)", line)
+        if assignment and assignment.group(1) not in {"record", "crm", "if", "else", "true", "false", "null"}:
+            name, expression = assignment.groups()
+            if name.startswith("_") or len(expression) > 2048:
+                raise HTTPException(422, "Invalid Deluge variable assignment")
+            try:
+                ast.parse(normalize_deluge_expression(expression), mode="eval")
+            except SyntaxError as exc:
+                raise HTTPException(422, "Invalid assignment expression") from exc
+            steps.append({"type": "variable_assign", "name": name, "value": {"$deluge_expr": expression}})
+        elif line.startswith("info "):
             steps.append({"type": "audit", "value": _argument(line[5:])})
         else:
             match = STATEMENT.fullmatch(line)
