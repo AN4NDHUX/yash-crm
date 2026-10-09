@@ -163,6 +163,14 @@ def parse_deluge(source):
         assignment = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]{0,39})\s*=\s*(.+)", line)
         if assignment and assignment.group(1) not in {"record", "crm", "if", "else", "true", "false", "null"}:
             name, expression = assignment.groups()
+            if re.match(
+                r"^zoho\.crm(?:\.v8)?\."
+                r"(?:getRecordById|getRecords|searchRecords|createRecord|updateRecord|deleteRecord)\s*\(",
+                expression.strip(),
+            ):
+                # Task expressions must go through the structured interpreter,
+                # which enforces tenant and integration-call limits.
+                raise HTTPException(422, "CRM integration expression requires structured Deluge runtime")
             if name.startswith("_") or len(expression) > 2048:
                 raise HTTPException(422, "Invalid Deluge variable assignment")
             try:
