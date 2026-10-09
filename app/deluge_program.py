@@ -16,6 +16,7 @@ MAX_NODES = 100
 MAX_DEPTH = 6
 MAX_OPERATIONS = 200
 MAX_ACTIONS = 20
+MAX_INTEGRATION_CALLS = 20
 
 
 def _lines(source):
@@ -242,6 +243,7 @@ def execute_deluge_program(program, record, action_handler, task_handler=None, h
     variables = {}
     operations = 0
     actions = 0
+    integration_calls = 0
 
     def evaluate(expression):
         try:
@@ -250,7 +252,7 @@ def execute_deluge_program(program, record, action_handler, task_handler=None, h
             raise ValueError("Deluge expression rejected") from exc
 
     def run(nodes, depth=0):
-        nonlocal operations, actions
+        nonlocal operations, actions, integration_calls
         if depth > MAX_DEPTH:
             raise ValueError("Deluge nesting budget exceeded")
         for node in nodes:
@@ -259,6 +261,9 @@ def execute_deluge_program(program, record, action_handler, task_handler=None, h
                 raise ValueError("Deluge execution budget exceeded")
             kind = node["kind"]
             if kind == "http":
+                integration_calls += 1
+                if integration_calls > MAX_INTEGRATION_CALLS:
+                    raise ValueError("Deluge HTTP integration call budget exceeded")
                 if http_handler is None:
                     raise ValueError("Deluge HTTP adapter is not configured")
                 output = http_handler(node["args"], variables)
@@ -266,6 +271,9 @@ def execute_deluge_program(program, record, action_handler, task_handler=None, h
                     variables[node["variable"]] = output
                 continue
             if kind == "crm_task":
+                integration_calls += 1
+                if integration_calls > MAX_INTEGRATION_CALLS:
+                    raise ValueError("Deluge CRM integration call budget exceeded")
                 if task_handler is None:
                     raise ValueError("CRM task adapter is not configured")
                 result = task_handler(node["task"], node["args"], variables)
