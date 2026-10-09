@@ -167,7 +167,10 @@ def execute_deluge_program(program, record, action_handler):
     actions = 0
 
     def evaluate(expression):
-        return evaluate_deluge_expression(expression, record, variables)
+        try:
+            return evaluate_deluge_expression(expression, record, variables)
+        except HTTPException as exc:
+            raise ValueError("Deluge expression rejected") from exc
 
     def run(nodes, depth=0):
         nonlocal operations, actions
