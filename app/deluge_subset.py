@@ -16,7 +16,7 @@ from app.deluge_expressions import normalize_deluge_expression
 
 MAX_BYTES = 32768
 FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
-STATEMENT = re.compile(r"^(record\.put|crm\.addTag|crm\.createTask|crm\.notify|crm\.invokeUrl|invokeurl|zoho\.crm\.updateRecord)\((.*)\)$")
+STATEMENT = re.compile(r"^(record\.put|crm\.addTag|crm\.createTask|crm\.notify|crm\.invokeUrl|invokeurl|zoho\.crm\.updateRecord|zoho\.crm\.v8\.updateRecord)\((.*)\)$")
 REFERENCE = re.compile(r"^\$record\.([A-Za-z][A-Za-z0-9_]{0,79})$")
 PROTECTED = {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}
 
@@ -166,7 +166,7 @@ def parse_deluge(source):
                 steps.append({"type": "create_task", "subject": _argument(arguments)})
             elif command in {"crm.invokeUrl", "invokeurl"}:
                 steps.append({"type": "webhook_queue", "value": _argument(arguments)})
-            elif command == "zoho.crm.updateRecord":
+            elif command in {"zoho.crm.updateRecord", "zoho.crm.v8.updateRecord"}:
                 parts = re.fullmatch(r'\s*("(?:[^"\\]|\\.)*")\s*,\s*\$record\.id\s*,\s*(\{.*\})\s*', arguments)
                 if not parts:
                     raise HTTPException(422, "CRM update must target the current record")
