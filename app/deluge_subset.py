@@ -160,7 +160,7 @@ def parse_deluge(source):
         if not line.endswith(";"):
             raise HTTPException(422, f"Line {line_number}: statement must end with a semicolon")
         line = line[:-1].strip()
-        assignment = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]{0,39})\\s*=\\s*(.+)", line)
+        assignment = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]{0,39})\s*=\s*(.+)", line)
         if assignment and assignment.group(1) not in {"record", "crm", "if", "else", "true", "false", "null"}:
             name, expression = assignment.groups()
             if name.startswith("_") or len(expression) > 2048:
