@@ -36,6 +36,10 @@ class _NoRedirect(HTTPRedirectHandler):
 
 def _send_external(action: dict, execution: WorkflowExecution) -> None:
     kind = str(action.get("type") or "").lower()
+    if kind == "deluge_http":
+        from app.deluge_http import send_deluge_http
+        send_deluge_http(action, execution)
+        return
     if kind == "email":
         recipient = str(action.get("to") or "").strip()
         approved = {x.strip().lower() for x in os.getenv("WORKFLOW_EMAIL_RECIPIENTS", "").split(",") if x.strip()}
@@ -143,7 +147,7 @@ def process_due(limit: int = 20, organization_id: int | None = None, *, report: 
                           else {column.name: getattr(record, column.name) for column in record.__table__.columns})
                 for action in execution.actions or []:
                     kind = str(action.get("type") or "").lower()
-                    if kind in {"email", "webhook", "webhook_queue"}:
+                    if kind in {"email", "webhook", "webhook_queue", "deluge_http"}:
                         _send_external(action, execution)
                     else:
                         _execute_workflow_action(db, action, execution.resource, record, values)
