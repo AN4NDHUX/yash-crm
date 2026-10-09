@@ -37,48 +37,64 @@ def _argument(token):
 
 
 def _expand_literal_loops(source):
-    """Expand small literal-list for-each blocks before parsing CRM statements.
+    """Expand bounded literal loops, including nested loops and conditional bodies.
 
-    A loop must have its opening and closing braces on separate lines.
-    Literal list values are JSON strings. Expansion is capped to 20 actions.
+    Expansion only substitutes complete $variable references, never substrings
+    within another identifier. No user-authored code is evaluated.
     """
     lines = source.splitlines()
-    result = []
-    index = 0
-    while index < len(lines):
-        line = lines[index].strip()
-        match = re.fullmatch(
-            r'for each ([A-Za-z][A-Za-z0-9_]{0,39}) in (\[.*\])\s*\{', line
-        )
-        if not match:
-            result.append(lines[index])
+
+    def expand(block, bindings, depth=0):
+        if depth > 5:
+            raise HTTPException(422, "Maximum loop nesting is five")
+        output = []
+        index = 0
+        while index < len(block):
+            line = block[index].strip()
+            match = re.fullmatch(
+                r'for each ([A-Za-z][A-Za-z0-9_]{0,39}) in (\[.*\])\s*\{', line
+            )
+            if not match:
+                rendered = block[index]
+                for name, value in bindings.items():
+                    rendered = re.sub(
+                        r'\$' + re.escape(name) + r'(?![A-Za-z0-9_])',
+                        lambda _match, v=value: json.dumps(v), rendered,
+                    )
+                output.append(rendered)
+                index += 1
+                continue
+            variable, literal = match.groups()
+            try:
+                values = json.loads(literal)
+            except ValueError as exc:
+                raise HTTPException(422, "Loop collection must be a JSON string list") from exc
+            if not isinstance(values, list) or len(values) > 20 or any(
+                not isinstance(value, str) or len(value) > 1000 for value in values
+            ):
+                raise HTTPException(422, "Loop collection must contain at most 20 strings")
+            body = []
             index += 1
-            continue
-        variable, literal = match.groups()
-        try:
-            values = json.loads(literal)
-        except ValueError as exc:
-            raise HTTPException(422, "Loop collection must be a JSON string list") from exc
-        if not isinstance(values, list) or len(values) > 20 or any(
-            not isinstance(value, str) or len(value) > 1000 for value in values
-        ):
-            raise HTTPException(422, "Loop collection must contain at most 20 strings")
-        body = []
-        index += 1
-        while index < len(lines) and lines[index].strip() != "}":
-            if "{" in lines[index] or "}" in lines[index]:
-                raise HTTPException(422, "Nested loop or condition blocks are not supported inside for each")
-            body.append(lines[index])
-            index += 1
-        if index == len(lines):
-            raise HTTPException(422, "Unclosed for each loop")
-        if len(body) * len(values) + len(result) > 100:
-            raise HTTPException(422, "Loop expansion exceeds execution budget")
-        for value in values:
-            for statement in body:
-                result.append(statement.replace("$" + variable, json.dumps(value)))
-        index += 1
-    return "\n".join(result)
+            braces = 1
+            while index < len(block) and braces:
+                current = block[index]
+                opening = current.count("{")
+                closing = current.count("}")
+                braces += opening - closing
+                if braces < 0:
+                    raise HTTPException(422, "Unexpected closing brace in loop")
+                if braces:
+                    body.append(current)
+                index += 1
+            if braces:
+                raise HTTPException(422, "Unclosed for each loop")
+            for value in values:
+                output.extend(expand(body, {**bindings, variable: value}, depth + 1))
+                if len(output) > 100:
+                    raise HTTPException(422, "Loop expansion exceeds execution budget")
+        return output
+
+    return "\n".join(expand(lines, {}))
 
 
 def parse_deluge(source):
