@@ -50,7 +50,8 @@ def evaluate_deluge_expression(source: str, record: dict | None = None, variable
         raise HTTPException(422, "Unsupported Deluge expression syntax") from exc
     if len(list(ast.walk(tree))) > MAX_NODES:
         raise HTTPException(422, "Deluge expression is too complex")
-    snapshot = copy.deepcopy(dict(record or {}))
+    snapshot = {key: copy.deepcopy(value) for key, value in dict(record or {}).items()
+                if isinstance(key, str) and not key.startswith("_") and key.lower() not in PROTECTED}
     locals_snapshot = copy.deepcopy(dict(variables or {}))
 
     def interpret(node, depth=0):
