@@ -5552,6 +5552,22 @@ def convert_lead(item_id: int, payload: RecordPayload, db: Session = Depends(get
                     if account and row.account_id is None: row.account_id = account.id
                     if row.contact_id is None: row.contact_id = contact.id
                     if deal and row.deal_id is None: row.deal_id = deal.id
+                    # Keep existing custom field values and the lead lookup intact.
+                    # Populate only declared and currently empty target lookup fields.
+                    module = db.scalar(select(MetadataModule).where(
+                        MetadataModule.api_name == row.resource,
+                        MetadataModule.organization_id == org_id))
+                    if module is not None:
+                        declared = {field.api_name for field in _custom_fields(db, module.id)}
+                        for field, reference in (
+                            ("account_id", account.id if account else None),
+                            ("contact_id", contact.id),
+                            ("deal_id", deal.id if deal else None),
+                        ):
+                            if field in declared and reference is not None and data.get(field) in (None, ""):
+                                data[field] = reference
+                        if data != (row.data or {}):
+                            row.data = data
                     if row.related_type == "leads" and row.related_id == lead.id:
                         row.related_type, row.related_id = target_type, target_id
             previous_status = lead.status
