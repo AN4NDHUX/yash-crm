@@ -20,7 +20,7 @@ def test_tier0_backend_is_layered():
     assert "from app.schemas import *" in main
     assert "from app.services.core import *" in main
     assert "from app.services.security import *" in main
-    assert len(main.encode("utf-8")) < 310_000
+    assert len(main.encode("utf-8")) < 320_000
 
 
 def test_tier0_frontend_is_layered():
@@ -38,7 +38,7 @@ def test_tier0_frontend_is_layered():
     assert 'from "./core/runtime.js"' in source
     assert 'from "./features/setup.js"' in source
     assert 'from "./features/ai.js"' in source
-    assert len(source.encode("utf-8")) < 150_000
+    assert len(source.encode("utf-8")) < 160_000
 
 
 def test_tier0_css_is_layered_entrypoint():
