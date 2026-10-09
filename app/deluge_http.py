@@ -80,12 +80,20 @@ def _oauth_token(spec):
     # Supported grant: refresh_token. Initial interactive OAuth consent happens
     # outside the worker, and is not simulated by a fake callback.
     token_url = _safe_https(spec.get("token_url"))
+    grant = spec.get("grant_type", "refresh_token")
+    if grant not in {"refresh_token", "client_credentials"}:
+        raise ValueError("Unsupported OAuth2 grant")
     fields = {
-        "grant_type": "refresh_token",
-        "refresh_token": _env_secret(spec.get("refresh_token_env")),
+        "grant_type": grant,
         "client_id": _env_secret(spec.get("client_id_env")),
         "client_secret": _env_secret(spec.get("client_secret_env")),
     }
+    if grant == "refresh_token":
+        fields["refresh_token"] = _env_secret(spec.get("refresh_token_env"))
+    if grant == "client_credentials" and spec.get("scope"):
+        if not isinstance(spec["scope"], str) or len(spec["scope"]) > 1024:
+            raise ValueError("Invalid OAuth2 connection scope")
+        fields["scope"] = spec["scope"]
     request = Request(token_url, data=urlencode(fields).encode(), method="POST",
                       headers={"Content-Type": "application/x-www-form-urlencoded"})
     with build_opener(NoRedirect()).open(request, timeout=12) as response:
