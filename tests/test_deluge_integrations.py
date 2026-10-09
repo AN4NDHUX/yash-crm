@@ -109,3 +109,42 @@ def test_deluge_runtime_assignments_and_else_execute_in_workflow():
     assert result['rule'] == 201, result
     assert result['lead'] in (200,201), result
     assert result['company'] == 'Low Score', result
+
+
+def test_structured_deluge_program_executes_through_crm():
+    result = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Deluge Program','organization_name':'Program Test Org',
+            'username':'deluge.program','email':'deluge.program@example.com',
+            'password':'strong-password-123'
+        })
+        code = ('labels = List();\n'
+                'labels.add("first");\n'
+                'labels.add("second");\n'
+                'for each label in labels {\n'
+                'if (label == "second") {\n'
+                'record.put("company", label);\n'
+                '}\n'
+                '}\n')
+        fn = c.post('/api/platform/functions', json={
+            'name':'Structured Deluge','runtime':'Deluge','entrypoint':'workflow',
+            'source':{'code':code},'status':'Active'
+        })
+        out['function'] = fn.status_code
+        if fn.status_code == 201:
+            rule = c.post('/api/platform/workflow_rules', json={
+                'name':'Run Structured Deluge','module':'leads','event':'create',
+                'actions':[{'type':'function','value':str(fn.json()['id'])}],
+                'status':'Active'
+            })
+            out['rule'] = rule.status_code
+            lead = c.post('/api/leads', json={'name':'Structured Lead','company':'Before'})
+            out['lead'] = lead.status_code
+            if lead.status_code in (200,201):
+                out['company'] = c.get('/api/leads/' + str(lead.json()['id'])).json().get('company')
+    """)
+    assert result["function"] == 201, result
+    assert result["rule"] == 201, result
+    assert result["lead"] in (200,201), result
+    assert result["company"] == "second", result
