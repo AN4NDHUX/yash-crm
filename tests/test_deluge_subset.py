@@ -79,3 +79,43 @@ def test_deluge_literal_collection_for_each_loop():
 def test_deluge_rejects_unbounded_or_invalid_collections(source):
     with pytest.raises(HTTPException):
         parse_deluge(source)
+
+
+def test_deluge_nested_bounded_collections_and_conditions():
+    source = (
+        'for each group in ["North", "South"] {\n'
+        'if ($record.status == "Qualified") {\n'
+        'for each tag in ["Hot", "Warm"] {\n'
+        'crm.addTag($tag);\n'
+        '}\n'
+        '}\n'
+        '}'
+    )
+    steps = parse_deluge(source)
+    assert len(steps) == 4
+    assert [step["value"] for step in steps] == ["Hot", "Warm", "Hot", "Warm"]
+    assert all(step["_conditions"] == [
+        {"field": "status", "operator": "==", "value": "Qualified"}
+    ] for step in steps)
+
+
+def test_deluge_loop_substitution_respects_identifier_boundaries():
+    with pytest.raises(HTTPException):
+        parse_deluge(
+            'for each item in ["safe"] {\n'
+            'crm.addTag($item_suffix);\n'
+            '}'
+        )
+
+
+def test_deluge_nested_loop_action_budget_is_enforced():
+    source = (
+        'for each outer in ["a", "b", "c", "d", "e"] {\n'
+        'for each inner in ["a", "b", "c", "d", "e"] {\n'
+        'crm.addTag($inner);\n'
+        '}\n'
+        '}'
+    )
+    with pytest.raises(HTTPException) as error:
+        parse_deluge(source)
+    assert error.value.status_code == 422
