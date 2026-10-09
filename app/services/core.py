@@ -527,13 +527,14 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 spec = spec.get("steps")
         if not isinstance(spec, list) or not 1 <= len(spec) <= 20:
             raise ValueError("Custom function must have 1 to 20 action steps")
-        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current"}
+        allowed = {"field_update", "update_field", "create_task", "task", "notification", "notify", "tag", "audit", "webhook_queue", "crm_update_current", "variable_assign"}
+        local_vars = {}
         def resolve(template):
             if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
                 from app.deluge_expressions import evaluate_deluge_expression
                 context = {**dict(getattr(record, "data", None) or {}), **values}
                 try:
-                    return evaluate_deluge_expression(template["$deluge_expr"], context)
+                    return evaluate_deluge_expression(template["$deluge_expr"], context, local_vars)
                 except HTTPException as exc:
                     raise ValueError("Deluge expression rejected") from exc
             if isinstance(template, str) and template.startswith("$record."):
@@ -557,7 +558,7 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                         from app.deluge_expressions import evaluate_deluge_expression
                         context = {**dict(getattr(record, "data", None) or {}), **values}
                         try:
-                            result = evaluate_deluge_expression(condition["expression"], context)
+                            result = evaluate_deluge_expression(condition["expression"], context, local_vars)
                         except HTTPException as exc:
                             raise ValueError("Deluge condition rejected") from exc
                         if result is not True:
@@ -578,7 +579,14 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 if not matched:
                     continue
             resolved_step = {key: resolve(item) for key, item in step.items() if key != "_conditions"}
-            if str(resolved_step.get("type", "")).lower() == "crm_update_current":
+            if str(resolved_step.get("type", "")).lower() == "variable_assign":
+                name = str(resolved_step.get("name", ""))
+                if not name.isidentifier() or name.startswith("_") or name in {"record", "crm"}:
+                    raise ValueError("Invalid Deluge variable name")
+                if len(local_vars) >= 40 and name not in local_vars:
+                    raise ValueError("Deluge variable limit exceeded")
+                local_vars[name] = resolved_step.get("value")
+            elif str(resolved_step.get("type", "")).lower() == "crm_update_current":
                 module = str(resolved_step.get("module") or "").lower().replace(" ", "_")
                 if module != resource.lower().replace(" ", "_"):
                     raise ValueError("CRM integration task must target the current module")
