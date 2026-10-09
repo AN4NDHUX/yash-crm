@@ -128,13 +128,15 @@ def parse_deluge(source):
                 raise HTTPException(422, f"Line {line_number}: unexpected closing brace")
             closed_conditional = condition_stack.pop()
             if line == "} else {":
-                condition_stack.append({"expression": "not (" + closed_conditional["expression"] + ")"})
+                predicate = closed_conditional.get("expression") or ("$record." + closed_conditional["field"] + " " + closed_conditional["operator"] + " " + json.dumps(closed_conditional["value"]))
+                condition_stack.append({"expression": "not (" + predicate + ")"})
                 closed_conditional = None
             continue
         if line == "else {":
             if closed_conditional is None:
                 raise HTTPException(422, f"Line {line_number}: else requires a preceding if")
-            condition_stack.append({"expression": "not (" + closed_conditional["expression"] + ")"})
+            predicate = closed_conditional.get("expression") or ("$record." + closed_conditional["field"] + " " + closed_conditional["operator"] + " " + json.dumps(closed_conditional["value"]))
+            condition_stack.append({"expression": "not (" + predicate + ")"})
             closed_conditional = None
             continue
         closed_conditional = None
@@ -142,7 +144,7 @@ def parse_deluge(source):
         if conditional:
             field_reference, operator, literal = conditional.groups()
             _argument(field_reference)
-            condition_stack.append({"expression": field_reference + " " + operator + " " + literal})
+            condition_stack.append({"field": field_reference[8:], "operator": operator, "value": _argument(literal)})
             if len(condition_stack) > 5:
                 raise HTTPException(422, "Maximum conditional nesting is five")
             continue
