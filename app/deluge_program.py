@@ -54,9 +54,10 @@ def compile_deluge_program(source):
     lines = _lines(source)
     position = 0
     count = 0
+    action_count = 0
 
     def read_block(depth=0, inside_loop=False):
-        nonlocal position, count
+        nonlocal position, count, action_count
         if depth > MAX_DEPTH:
             raise HTTPException(422, "Deluge nesting depth exceeded")
         result = []
@@ -144,10 +145,16 @@ def compile_deluge_program(source):
                 result.append({"kind": "mutate", "name": name, "method": method, "args": args})
                 continue
             if statement.startswith("info "):
+                action_count += 1
+                if action_count > MAX_ACTIONS:
+                    raise HTTPException(422, "Deluge CRM action budget exceeded")
                 result.append({"kind": "action", "action": parse_deluge("info = " + statement[5:] + ";")[0]})
                 continue
             # Delegate approved CRM action validation to the existing fail-closed parser.
             action = parse_deluge(line)[0]
+            action_count += 1
+            if action_count > MAX_ACTIONS:
+                raise HTTPException(422, "Deluge CRM action budget exceeded")
             result.append({"kind": "action", "action": action})
         return result, False
 
