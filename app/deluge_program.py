@@ -128,6 +128,26 @@ def compile_deluge_program(source):
             if not line.endswith(";"):
                 raise HTTPException(422, "Deluge statement must end with a semicolon")
             statement = line[:-1].strip()
+            crm_call = re.fullmatch(
+                r"(?:(?P<variable>[A-Za-z][A-Za-z0-9_]{0,39})\s*=\s*)?zoho\.crm(?:\.v8)?\."
+                r"(?P<task>getRecordById|getRecords|searchRecords|createRecord|updateRecord|deleteRecord)"
+                r"\((?P<arguments>.*)\)", statement
+            )
+            if crm_call:
+                task_name = crm_call.group("task")
+                result_name = crm_call.group("variable")
+                if result_name in RESERVED:
+                    raise HTTPException(422, "CRM task result name is reserved")
+                if task_name in {"createRecord", "updateRecord", "deleteRecord"}:
+                    action_count += 1
+                    if action_count > MAX_ACTIONS:
+                        raise HTTPException(422, "Deluge CRM action budget exceeded")
+                result.append({
+                    "kind": "crm_task", "task": task_name,
+                    "variable": result_name,
+                    "args": _validate_expression("(" + crm_call.group("arguments") + ",)"),
+                })
+                continue
             assignment = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]{0,39})\s*=\s*(.+)", statement)
             if assignment:
                 name, expression = assignment.groups()
@@ -171,7 +191,7 @@ class _Flow(Exception):
         self.kind = kind
 
 
-def execute_deluge_program(program, record, action_handler):
+def execute_deluge_program(program, record, action_handler, task_handler=None):
     """Run prevalidated statements, with strict CPU and action budgets."""
     variables = {}
     operations = 0
@@ -192,6 +212,15 @@ def execute_deluge_program(program, record, action_handler):
             if operations > MAX_OPERATIONS:
                 raise ValueError("Deluge execution budget exceeded")
             kind = node["kind"]
+            if kind == "crm_task":
+                if task_handler is None:
+                    raise ValueError("CRM task adapter is not configured")
+                result = task_handler(node["task"], node["args"], variables)
+                if node["variable"]:
+                    if node["variable"] not in variables and len(variables) >= 40:
+                        raise ValueError("Deluge variable budget exceeded")
+                    variables[node["variable"]] = result
+                continue
             if kind == "assign":
                 name = node["name"]
                 if name not in variables and len(variables) >= 40:
