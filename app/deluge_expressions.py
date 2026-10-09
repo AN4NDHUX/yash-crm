@@ -40,7 +40,7 @@ def normalize_deluge_expression(source: str) -> str:
     return "".join(quoted).strip()
 
 
-def evaluate_deluge_expression(source: str, record: dict | None = None):
+def evaluate_deluge_expression(source: str, record: dict | None = None, variables: dict | None = None):
     if not isinstance(source, str) or len(source) > MAX_EXPRESSION:
         raise HTTPException(422, "Deluge expression exceeds supported limit")
     normalized = normalize_deluge_expression(source)
@@ -51,6 +51,7 @@ def evaluate_deluge_expression(source: str, record: dict | None = None):
     if len(list(ast.walk(tree))) > MAX_NODES:
         raise HTTPException(422, "Deluge expression is too complex")
     snapshot = copy.deepcopy(dict(record or {}))
+    locals_snapshot = copy.deepcopy(dict(variables or {}))
 
     def interpret(node, depth=0):
         if depth > 20:
@@ -68,6 +69,8 @@ def evaluate_deluge_expression(source: str, record: dict | None = None):
             if not all(isinstance(key, str) for key in result):
                 raise HTTPException(422, "Map keys must be strings")
             return result
+        if isinstance(node, ast.Name) and node.id in locals_snapshot and not node.id.startswith("_"):
+            return locals_snapshot[node.id]
         if isinstance(node, ast.Name) and node.id == "record":
             return snapshot
         if isinstance(node, ast.Attribute):
