@@ -65,7 +65,7 @@ def test_oauth2_refresh_connection_injects_bearer_token(monkeypatch):
             assert request.get_header("Authorization") == "Bearer test-oauth-access-token"
             return FakeResponse(b"ok")
     with patch("app.deluge_http.build_opener", return_value=FakeOpener()):
-        assert send_deluge_http(action, SimpleNamespace(idempotency_key="oauth-key"))["status"] == "delivered"
+        assert send_deluge_http(action, SimpleNamespace(organization_id=42, idempotency_key="oauth-key"))["status"] == "delivered"
     assert len(seen) == 2
 
 
@@ -81,14 +81,14 @@ def test_deluge_http_fails_closed(monkeypatch, change):
     action = setup_connection(monkeypatch)
     action.update(change)
     with pytest.raises(ValueError):
-        send_deluge_http(action, SimpleNamespace(idempotency_key="test"))
+        send_deluge_http(action, SimpleNamespace(organization_id=42, idempotency_key="test"))
 
 
 def test_connection_secrets_are_not_from_script_headers(monkeypatch):
     action = setup_connection(monkeypatch)
     action["headers"] = {"Cookie":"example"}
     with pytest.raises(ValueError):
-        send_deluge_http(action, SimpleNamespace(idempotency_key="test"))
+        send_deluge_http(action, SimpleNamespace(organization_id=42, idempotency_key="test"))
 
 
 def test_oauth2_client_credentials_grant(monkeypatch):
@@ -109,7 +109,7 @@ def test_oauth2_client_credentials_grant(monkeypatch):
             assert request.get_header("Authorization") == "Bearer client-credentials-test-token"
             return FakeResponse(b"ok")
     with patch("app.deluge_http.build_opener", return_value=FakeOpener()):
-        assert send_deluge_http(action, SimpleNamespace(idempotency_key="client-grant"))["status"] == "delivered"
+        assert send_deluge_http(action, SimpleNamespace(organization_id=42, idempotency_key="client-grant"))["status"] == "delivered"
     assert len(requests) == 2
 
 
