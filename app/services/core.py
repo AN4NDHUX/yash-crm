@@ -550,6 +550,13 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                     raise ValueError("Invalid function condition")
                 matched = True
                 for condition in conditions:
+                    if isinstance(condition, dict) and "expression" in condition:
+                        from app.deluge_expressions import evaluate_deluge_expression
+                        context = {**dict(getattr(record, "data", None) or {}), **values}
+                        if evaluate_deluge_expression(condition["expression"], context) is not True:
+                            matched = False
+                            break
+                        continue
                     field = condition.get("field", "")
                     if not isinstance(field, str) or not field.isidentifier() or field.startswith("_") or field.lower() in {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}:
                         raise ValueError("Invalid function condition field")
