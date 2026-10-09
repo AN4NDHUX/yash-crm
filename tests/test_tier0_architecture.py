@@ -50,9 +50,10 @@ def test_tier0_css_is_layered_entrypoint():
         '@import url("./motion.css");',
         '@import url("./modules.css");',
         '@import url("./components.css");',
+        '@import url("./spacing.css");',
     ]
     assert source.splitlines() == imports
-    for name in ["foundation.css", "workspace.css", "motion.css", "modules.css", "components.css"]:
+    for name in ["foundation.css", "workspace.css", "motion.css", "modules.css", "components.css", "spacing.css"]:
         path = ROOT / "static" / "css" / name
         assert path.is_file()
         assert path.stat().st_size > 0
