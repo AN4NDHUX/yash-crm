@@ -355,6 +355,18 @@ async function renderRoute() {
       bindModule("activities");
       return;
     }
+    if (parts[0] === "leads" && parts[1] && parts[2] === "convert") {
+      setBreadcrumb("Convert Lead", "Leads");
+      content.innerHTML = await leadConvertPage(Number(parts[1]));
+      bindLeadConvertPage(Number(parts[1]));
+      return;
+    }
+    if (parts[0] === "leads" && parts[1] && parts[2] === "converted") {
+      setBreadcrumb("Lead Converted", "Leads");
+      content.innerHTML = leadConversionSuccess();
+      $("[data-conversion-go]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.conversionGo)));
+      return;
+    }
     if (MODULES[parts[0]]) {
       const resource = parts[0];
       setBreadcrumb(parts[1] ? `${MODULES[resource].singular} detail` : MODULES[resource].label);
@@ -1381,10 +1393,83 @@ function bindSettings() {
 }
 
 async function openConvertModal(id) {
-  state.modal = { resource: "leads", id, convert: true };
-  $("#modal-eyebrow").textContent = "Lead conversion"; $("#modal-title").textContent = "Convert lead"; $("#modal-submit").textContent = "Convert lead";
-  $("#modal-body").innerHTML = `<div class="form-grid"><div class="field full"><label for="convert-account">Account name</label><input class="field-input" id="convert-account" name="account_name" placeholder="Company account" /></div><div class="field"><label for="convert-deal">Create a deal</label><select class="field-select" id="convert-deal" name="create_deal"><option value="true" selected>Create deal</option></select></div><div class="field"><label for="convert-amount">Deal amount</label><input class="field-input" id="convert-amount" name="deal_amount" type="number" step="any" value="0" /></div><div class="field"><label for="convert-name">Deal name</label><input class="field-input" id="convert-name" name="deal_name" placeholder="Optional opportunity name" /></div><div class="field"><label for="convert-date">Expected close date</label><input class="field-input" id="convert-date" name="expected_close_date" type="date" /></div></div>`;
-  $("#modal-backdrop").hidden = false;
+  await navigate(`/leads/${id}/convert`);
+}
+
+async function leadConvertPage(id) {
+  const lead = await api(`/api/leads/${id}`);
+  if (lead.status === "Converted") {
+    return `<section class="card" style="padding:28px"><h2>Lead already converted</h2><p>This lead has already been converted. Additional records will not be created.</p><button class="button button-primary" data-conversion-go="/leads">Go to Leads</button></section>`;
+  }
+  const name = esc(lead.name || "Lead");
+  const company = esc(lead.company || "");
+  return `<section class="card" style="padding:0;overflow:visible;min-height:70vh">
+    <header style="padding:22px 28px;border-bottom:1px solid var(--border,#dde3ed)"><h2 style="margin:0">Convert Lead <span style="font-size:14px;color:#66758c">(${name})</span></h2></header>
+    <form id="lead-conversion-form" style="padding:26px 32px;max-width:920px">
+      <p style="margin-bottom:24px"><strong>Create New Contact</strong> <span style="color:#66758c">${name}</span></p>
+      <div class="field" style="max-width:560px;margin-bottom:22px"><label for="convert-account">Company / Account (match existing when available)</label><input class="field-input" id="convert-account" name="account_name" value="${company}" placeholder="Optional company name"></div>
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:24px;cursor:pointer"><input type="checkbox" id="convert-deal" name="create_deal" value="true"> Create a new Deal for this Contact</label>
+      <div id="convert-deal-fields" hidden style="max-width:650px;margin-bottom:26px">
+        <div class="form-grid">
+          <div class="field full"><label for="convert-name">Deal Name *</label><input class="field-input" name="deal_name" id="convert-name" value="${company || name}" placeholder="Deal name"></div>
+          <div class="field"><label for="convert-date">Closing Date *</label><input class="field-input" type="date" name="expected_close_date" id="convert-date"></div>
+          <div class="field"><label for="convert-stage">Stage *</label><select class="field-select" name="stage" id="convert-stage"><option>Qualification</option><option>Needs Analysis</option><option>Identify Decision Makers</option><option>Value Proposition</option><option>Proposal/Price Quote</option><option>Negotiation/Review</option><option>Closed Won</option><option>Closed Lost</option></select></div>
+          <div class="field"><label for="convert-pipeline">Pipeline</label><select class="field-select" name="pipeline" id="convert-pipeline"><option value="Standard">Standard</option></select></div>
+          <div class="field"><label for="convert-role">Contact Role</label><select class="field-select" name="contact_role" id="convert-role"><option>None</option><option>Developer/Evaluator</option><option>Decision Maker</option><option>Purchasing</option><option>Executive Sponsor</option><option>Engineering Lead</option><option>Economic Decision Maker</option><option>Product Management</option></select></div>
+          <div class="field"><label for="convert-amount">Deal Amount</label><input class="field-input" name="deal_amount" id="convert-amount" type="number" min="0" step="any" value="0"></div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:#66758c;margin-bottom:20px">Existing notes, activities, attachments and related records remain linked to the converted contact or deal. Matching accounts and contacts are reused.</p>
+      <div style="display:flex;gap:12px"><button class="button button-primary" type="submit" id="convert-submit">Convert</button><button class="button button-ghost" type="button" id="convert-cancel">Cancel</button></div>
+    </form>
+  </section>`;
+}
+
+function bindLeadConvertPage(id) {
+  const form = $("#lead-conversion-form");
+  if (!form) {
+    $("[data-conversion-go]")?.addEventListener("click", () => navigate("/leads"));
+    return;
+  }
+  const checkbox = $("#convert-deal");
+  const fields = $("#convert-deal-fields");
+  checkbox.addEventListener("change", () => {
+    fields.hidden = !checkbox.checked;
+    $("#convert-name").required = checkbox.checked;
+    $("#convert-date").required = checkbox.checked;
+  });
+  $("#convert-cancel").addEventListener("click", () => navigate(`/leads/${id}`));
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const submit = $("#convert-submit");
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.create_deal = checkbox.checked;
+    payload.deal_amount = checkbox.checked ? Number(payload.deal_amount || 0) : 0;
+    submit.disabled = true;
+    try {
+      const converted = await api(`/api/leads/${id}/convert`, {method:"POST",body:JSON.stringify(payload)});
+      invalidateLookups();
+      state.conversionResult = converted;
+      await navigate(`/leads/${id}/converted`);
+    } catch (error) {
+      toast("Lead conversion failed", error.message, "error");
+    } finally { submit.disabled = false; }
+  });
+}
+
+function leadConversionSuccess() {
+  const result = state.conversionResult;
+  if (!result) return `<section class="card" style="padding:28px"><h2>Conversion details unavailable</h2><button class="button button-primary" data-conversion-go="/leads">Go to Leads</button></section>`;
+  const links = [
+    ["Contact",result.contact,"contacts",result.contact?.full_name || [result.contact?.first_name,result.contact?.last_name].filter(Boolean).join(" ")],
+    ["Deal",result.deal,"deals",result.deal?.name],
+    ["Account",result.account,"accounts",result.account?.name]
+  ].filter(item=>item[1]);
+  return `<section class="card" style="padding:30px;min-height:55vh">
+    <h2>Lead converted successfully</h2><p>Conversion Details</p>
+    <div style="max-width:760px">${links.map(([label,item,resource,name])=>`<div style="display:grid;grid-template-columns:160px 1fr;padding:14px 0;border-bottom:1px solid #dde3ed"><span>${label}</span><a href="/${resource}/${item.id}" data-conversion-go="/${resource}/${item.id}">${esc(name||label)}</a></div>`).join("")}</div>
+    <button class="button button-primary" style="margin-top:26px" data-conversion-go="/leads">Go to Leads</button>
+  </section>`;
 }
 
 async function init() {
