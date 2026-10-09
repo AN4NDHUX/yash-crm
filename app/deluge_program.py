@@ -136,7 +136,7 @@ def compile_deluge_program(source):
                 result.append({"kind": "assign", "name": name, "expression": _validate_expression(expression)})
                 continue
             mutation = re.fullmatch(r"([A-Za-z][A-Za-z0-9_]{0,39})\.(add|put|remove)\((.*)\)", statement)
-            if mutation:
+            if mutation and mutation.group(1) != "record":
                 name, method, argument_text = mutation.groups()
                 if name in RESERVED:
                     raise HTTPException(422, "Reserved mutation target")
