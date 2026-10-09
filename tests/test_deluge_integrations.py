@@ -72,3 +72,40 @@ def test_deluge_invokeurl_creates_isolated_worker_job():
     assert result['lead_status'] in (200, 201), result
     assert result['queued'] is True, result
     assert result['payload'] == 'safe event', result
+
+
+def test_deluge_runtime_assignments_and_else_execute_in_workflow():
+    result = app_scenario("""
+    with TestClient(main.app, follow_redirects=False) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Deluge Condition Owner', 'organization_name':'Deluge Control Org',
+            'username':'deluge.control','email':'deluge.control@example.com',
+            'password':'strong-password-123'
+        })
+        code = ('score = $record.lead_score + 5;\\n'
+                'if (score >= 50) {\\n'
+                'crm.addTag("High Score");\\n'
+                '} else {\\n'
+                'record.put("company", "Low Score");\\n'
+                '}')
+        fn = c.post('/api/platform/functions', json={
+            'name':'Control Flow','runtime':'Deluge','entrypoint':'workflow',
+            'source':{'code':code},'status':'Active'
+        })
+        out['function'] = fn.status_code
+        if fn.status_code == 201:
+            rule = c.post('/api/platform/workflow_rules', json={
+                'name':'Control Flow On Lead','module':'leads','event':'create',
+                'actions':[{'type':'function','value':str(fn.json()['id'])}],
+                'status':'Active'
+            })
+            out['rule'] = rule.status_code
+            lead = c.post('/api/leads', json={'name':'Lower Score','company':'Original','lead_score':10})
+            out['lead'] = lead.status_code
+            if lead.status_code in (200,201):
+                out['company'] = c.get('/api/leads/'+str(lead.json()['id'])).json().get('company')
+    """)
+    assert result['function'] == 201, result
+    assert result['rule'] == 201, result
+    assert result['lead'] in (200,201), result
+    assert result['company'] == 'Low Score', result
