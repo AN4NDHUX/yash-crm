@@ -31,6 +31,8 @@ def evaluate_deluge_expression(source: str, record: dict | None = None):
     normalized = re.sub(r'\btrue\b', "True", normalized)
     normalized = re.sub(r'\bfalse\b', "False", normalized)
     normalized = re.sub(r'\bnull\b', "None", normalized)
+    normalized = normalized.replace("&&", " and ").replace("||", " or ")
+    normalized = re.sub(r"!(?!=)", " not ", normalized).strip()
     try:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError as exc:
