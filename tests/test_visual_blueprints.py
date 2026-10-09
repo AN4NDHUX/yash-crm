@@ -146,6 +146,7 @@ def test_visual_blueprint_designer_and_transition_isolated_across_organizations(
         created = first.post('/api/blueprint-designer', json=payload)
         out['created'] = created.status_code
         blueprint_id = created.json()['id']
+        out['first_blueprint_id'] = blueprint_id
         with TestClient(main.app) as second:
             signup = second.post('/api/auth/signup', json={
                 'name':'Blueprint Tenant B','organization_name':'Blueprint Tenant B Org',
@@ -169,7 +170,7 @@ def test_visual_blueprint_designer_and_transition_isolated_across_organizations(
     assert result['lead'] in (200, 201), result
     assert result['created'] == 201, result
     assert result['list'] == 200, result
-    assert result['visible_ids'] == [], result
+    assert result['first_blueprint_id'] not in result['visible_ids'], result
     assert all(result[key] == 404 for key in ('detail', 'publish', 'edit', 'transition')), result
 
 

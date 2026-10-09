@@ -105,7 +105,7 @@ def test_visual_blueprint_canvas_connection_controls_are_real():
     assert "function connectStates(fromIndex,toIndex)" in source
     assert 'data-bp-connect=' in source
     assert 'data-bp-edge=' in source
-    assert 'graphLabels()' in source
+    assert 'graphLabels(routes)' in source
     assert 'data-bp="cancel-link"' in source
     assert 'if(connectingFrom!==null){connectStates(connectingFrom,n);return;}' in source
     assert "connectStates(link.from,Number(node.dataset.bpState))" in source
