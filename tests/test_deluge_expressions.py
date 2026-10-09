@@ -95,3 +95,14 @@ def test_deluge_boolean_normalization_preserves_quoted_literals():
     assert evaluate('"false && true" == "false && true"') is True
     assert evaluate('true && "null" == "null"') is True
     assert evaluate('$record.status == "true"', {"status": "true"}) is True
+
+
+def test_zoho_crm_v8_update_record_alias_is_scoped():
+    steps = parse_deluge('zoho.crm.v8.updateRecord("Leads", $record.id, {"company":"Example"});')
+    assert steps == [{
+        "type": "crm_update_current",
+        "module": "Leads",
+        "fields": {"company": "Example"},
+    }]
+    with pytest.raises(HTTPException):
+        parse_deluge('zoho.crm.v8.updateRecord("Leads", 123, {"company":"Unsafe"});')
