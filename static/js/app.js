@@ -5,6 +5,7 @@ import { renderPricingView, bindPricingInteractions } from "./features/pricing.j
 import { state, PLATFORM_MODULE_ROUTES, $, $$, esc, titleCase, initials, formatDate, formatDateTime, formatMoney, slug, pathFor, badge, lookupName } from "./core/runtime.js";
 import { MODULES } from "./features/modules.js";
 import { createSetupFeature } from "./features/setup.js";
+import { createBlueprintFeature } from "./features/blueprints.js";
 import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
 
@@ -1000,7 +1001,7 @@ function settingsResourceConfig(resource) {
   if (resource === "attachments") return { label: "Attachments", singular: "Attachment", fields: [{ key: "name", label: "File name", required: true }, { key: "file_type", label: "File type" }, { key: "file_size", label: "File size" }, { key: "url", label: "File URL" }, { key: "related_type", label: "Related module", type: "select", options: ["leads", "contacts", "accounts", "deals"] }, { key: "related_id", label: "Related record", type: "number" }] };
   if (resource === "emails") return { label: "Emails", singular: "Email", fields: [{ key: "subject", label: "Subject", required: true }, { key: "from_email", label: "From", type: "email" }, { key: "to_email", label: "To", type: "email" }, { key: "status", label: "Status", type: "select", options: ["Draft", "Sent", "Scheduled"] }, { key: "sent_at", label: "Sent at", type: "datetime-local" }, { key: "body", label: "Message", type: "textarea", full: true }, { key: "related_type", label: "Related module", type: "select", options: ["leads", "contacts", "accounts", "deals"] }, { key: "related_id", label: "Related record", type: "number" }] };
   if (resource === "approval_processes") return { label: "Approval process", singular: "Approval rule", fields: [{ key: "name", label: "Rule name", required: true }, { key: "module", label: "Module", type: "select", options: ["Deals", "Leads", "Accounts"] }, { key: "trigger", label: "Trigger", required: true }, { key: "approver", label: "Approver", required: true }, { key: "status", label: "Status", type: "select", options: ["Active", "Inactive"] }, { key: "conditions", label: "Conditions (JSON)", type: "textarea", hint: "Example: [{\"field\":\"amount\",\"operator\":\">\",\"value\":\"100000\"}]", full: true }, { key: "steps", label: "Approval steps (JSON)", type: "textarea", hint: "Example: [{\"order\":1,\"approver\":\"Sales manager\"}]", full: true }] };
-  if (resource === "blueprints") return { label: "Blueprint", singular: "Blueprint", fields: [{ key: "name", label: "Blueprint name", required: true }, { key: "module", label: "Module", type: "select", options: ["Deals", "Leads", "Accounts"] }, { key: "entry_criteria", label: "Entry criteria", type: "textarea", full: true }, { key: "stages", label: "Stages (JSON)", type: "textarea", hint: "Example: [{\"id\":\"qualification\",\"label\":\"Qualification\"}]", full: true }, { key: "transitions", label: "Transitions (JSON)", type: "textarea", hint: "Example: [{\"from\":\"Qualification\",\"to\":\"Proposal\",\"label\":\"Create proposal\"}]", full: true }, { key: "transition_requirements", label: "Transition requirements (JSON)", type: "textarea", hint: "Example: [{\"transition\":\"Create proposal\",\"required\":[\"amount\",\"close date\"]}]", full: true }, { key: "active", label: "Active", type: "select", options: ["true", "false"] }] };
+
   return null;
 }
 
@@ -1416,25 +1417,11 @@ async function approvalSettingsView() {
   return `<section class="card settings-section"><div class="settings-section-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h2>Approval processes</h2><p>Configure ordered approval levels with approve, reject, delegate, and audit history.</p></div><button class="button button-primary button-small" data-create="approval_processes">＋ New process</button></div><div>${processes}</div></section><section class="card settings-section"><div class="settings-section-head"><h2>Approval inbox</h2><p>Actions advance only the current level; later levels remain waiting until their turn.</p></div>${requests}</section>`;
 }
 
-async function blueprintSettingsView() {
-  const data = await api("/api/blueprints?limit=100");
-  const head = `<div class="settings-section-head" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div><h2>Blueprint</h2><p>Guide records through the right stages with clear transitions and requirements.</p></div><button class="button button-primary button-small" data-create="blueprints">＋ New blueprint</button></div>`;
-  const blocks = data.items.map((bp, position) => {
-    const stages = bp.stages || [];
-    const transitions = bp.transitions || [];
-    const flow = stages.length
-      ? `<div style="margin-top:19px"><span class="eyebrow">Current flow</span><div class="blueprint-flow">${stages.map((stage, index) => `<div class="blueprint-stage"><strong>${esc(stage.label || stage.name)}</strong><small>Stage ${index + 1}</small></div>${index < stages.length - 1 ? `<span class="blueprint-arrow">→</span>` : ""}`).join("")}</div></div>`
-      : `<p class="related-empty" style="margin-top:14px">No stages defined yet. Edit this blueprint to add some.</p>`;
-    const moves = transitions.length
-      ? `<div style="margin:6px 0 16px"><span class="eyebrow">Transitions</span>${transitions.map((item) => `<p class="related-empty" style="padding:4px 0">${esc(item.from)} → ${esc(item.to)}${item.label ? ` · ${esc(item.label)}` : ""}</p>`).join("")}</div>`
-      : "";
-    return `<div style="${position ? "margin-top:26px;padding-top:22px;border-top:1px solid var(--border)" : ""}"><div class="rule-row" style="padding-top:0"><span class="related-dot">◇</span><div class="rule-info"><strong>${esc(bp.name)}</strong><small>${esc(bp.module)} · Entry: ${esc(bp.entry_criteria || "No entry criteria")}</small></div>${badge(bp.active ? "Active" : "Inactive")}<div class="rule-actions"><button class="table-action" data-edit-record="blueprints" data-id="${bp.id}">✎</button><button class="table-action" data-delete-record="blueprints" data-id="${bp.id}">⌫</button></div></div>${flow}${moves}<div class="card" style="background:var(--surface-soft);box-shadow:none"><div class="card-body"><div class="switch-row" style="padding-top:0"><div class="switch-copy"><strong>Blueprint active</strong><small>Apply this flow to new ${esc(String(bp.module || "").toLowerCase())} records.</small></div><button type="button" class="switch ${bp.active ? "on" : ""}" data-toggle-blueprint="${bp.id}" data-active="${bp.active}" aria-label="Toggle blueprint"></button></div></div></div></div>`;
-  });
-  return `<section class="card settings-section">${head}${blocks.length ? blocks.join("") : emptyState("◇", "No blueprints yet", "Create a guided stage flow for one of your modules.", `<button class="button button-primary" data-create="blueprints">New blueprint</button>`)}</section>`;
-}
+async function blueprintSettingsView() { return blueprintFeature.view(); }
 
 function bindSettings() {
   bindCustomModuleAdmin();
+  blueprintFeature?.bind();
   const setupSearch = $('[data-setup-search-input]');
   setupSearch?.addEventListener('input', () => {
     const query = setupSearch.value.trim().toLowerCase();
@@ -1551,7 +1538,9 @@ function leadConversionSuccess() {
   </section>`;
 }
 
+let blueprintFeature;
 async function init() {
+  blueprintFeature = createBlueprintFeature({api,esc,toast,renderRoute});
   aiFeature = createAiFeature({ state, MODULES, $, $$, esc, titleCase, initials, formatDate, formatDateTime, formatMoney, slug, pathFor, badge, lookupName, api, toast, pageHeader, loading, emptyState, navigate, openRecordModal, openPlatformModal, closeModal, confirmAction, fieldHtml, platformDisplay, platformTable, platformPanel, ensureLookups, ensurePlatformLookup, invalidateLookups, refreshMeta, performanceTable, renderRoute });
   setupFeature = createSetupFeature({ state, PLATFORM_MODULE_ROUTES, MODULES, $, $$, esc, titleCase, initials, formatDate, formatDateTime, formatMoney, slug, pathFor, badge, lookupName, api, toast, setBreadcrumb, activeNav, enhanceNavigation, pricingView, bindPricing, pageHeader, loading, emptyState, ensureLookups, ensurePlatformLookup, invalidateLookups, refreshMeta, ensurePlatformCatalog, ensureCustomModules, enhanceCustomModuleNavigation, greeting, applyProfile, refreshNavCount, navigate, renderRoute, teamspacesView, bindTeamspaces, dashboardView, reportResultHtml, reportEngineView, dashboardBuilderView, reportFormPayload, dashboardFormPayload, bindReportDashboard, performanceTable, attentionQueue, activityItem, bindDashboard, moduleView, activityTypeView, platformState, platformTable, platformDisplay, platformPanel, platformModuleView, tableView, kanbanView, gridView, splitView, chartView, timelineModuleView, pagination, dataIds, bulkArchiveLeads, bindModule, detailView, detailFields, relatedNavigation, relatedPlainRow, relatedPlainSection, relatedContent, dealProgress, bindDetail, fieldHtml, openRecordModal, openPlatformModal, settingsResourceConfig, readForm, submitRecord, submitPlatformRecord, submitConvert, closeModal, closeConfirm, confirmAction, deleteRecord, deletePlatformRecord, bindPlatform, bindGlobal, settingsView, profileUsersView, approvalSettingsView, blueprintSettingsView });
   bindGlobal();
