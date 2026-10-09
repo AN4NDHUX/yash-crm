@@ -113,3 +113,50 @@ record.put("status", value);
     assert actions[0][0]["field"] == "status"
     assert actions[0][0]["value"] == {"$deluge_expr": "value"}
     assert actions[0][1]["value"] == "Qualified"
+
+
+def test_zoho_crm_tasks_support_result_variables_and_bounded_invocation():
+    program = compile_deluge_program("""
+result = zoho.crm.v8.getRecordById("Leads", 12);
+matches = zoho.crm.v8.searchRecords("Leads", "(name:equals:A)");
+zoho.crm.v8.updateRecord("Leads", 12, {"company":"Updated"});
+""")
+    result = []
+    def task_handler(task, expression, variables):
+        result.append((task, expression, dict(variables)))
+        return {"id": 12, "name": "A"}
+    actions = []
+    variables = execute_deluge_program(program, {}, lambda action, v: actions.append(action), task_handler)
+    assert [task for task, _, _ in result] == ["getRecordById", "searchRecords", "updateRecord"]
+    assert variables["result"]["id"] == 12
+    assert variables["matches"]["name"] == "A"
+
+
+def test_deluge_bracket_invokeurl_never_returns_fake_http_response():
+    program = compile_deluge_program("""
+delivery = invokeurl
+[
+    url: "https://api.example.com/v1/notify"
+    type: POST
+    connection: "partner"
+    body: {"event": "new-lead"}
+];
+""")
+    result = []
+    def send(expression, variables):
+        result.append(expression)
+        return {"status": "queued", "execution_id": 47}
+    variables = execute_deluge_program(program, {}, lambda action, vars: None,
+                                      http_handler=send)
+    assert len(result) == 1
+    assert variables["delivery"] == {"status":"queued", "execution_id":47}
+
+
+@pytest.mark.parametrize("source", [
+    'x = invokeurl\n[\n url: "http://localhost"\n type: GET\n];',
+    'x = invokeurl\n[\n url: "https://example.com"\n type: GET\n connection: "partner"\n url: "https://evil.com"\n];',
+    'x = invokeurl\n[\n url: "https://example.com"\n type: GET\n connection: "partner"\n',
+])
+def test_invokeurl_rejects_missing_connection_duplicate_url_or_unclosed_map(source):
+    with pytest.raises(HTTPException):
+        compile_deluge_program(source)
