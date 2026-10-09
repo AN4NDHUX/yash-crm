@@ -752,23 +752,37 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
 def run_platform_automation(db: Session, resource: str, event: str, record: PlatformRecord, values: dict[str, Any], before_values: dict[str, Any] | None = None) -> None:
     run_record_automation(db, resource, event, record, values, before_values)
 
-def _active_blueprint(db: Session, resource: str) -> Blueprint | None:
-    aliases = {resource.lower(), resource.rstrip("s").lower(), resource.replace("_", " ").lower(), resource.rstrip("s").replace("_", " ").lower()}
-    blueprints = db.scalars(select(Blueprint).where(Blueprint.active == True, Blueprint.archived == False).order_by(Blueprint.id)).all()
-    return next((item for item in blueprints if str(item.module or "").lower() in aliases or str(item.module or "").lower().replace(" ", "_") in aliases), None)
+def _active_blueprint(db: Session, resource: str, record: Any | None = None) -> Blueprint | None:
+    from app.services.blueprint_engine import matching_blueprint
+    if record is not None:
+        return matching_blueprint(db, resource, record)
+    # Do not select another organization's Blueprint from the generic fallback.
+    org = TENANT_ORGANIZATION_ID.get()
+    if org is None:
+        return None
+    aliases = {resource.lower(), resource.rstrip("s").lower()}
+    return next((bp for bp in db.scalars(select(Blueprint).where(
+        Blueprint.organization_id == org,
+        Blueprint.active == True, Blueprint.archived == False, Blueprint.draft == False,
+    ).order_by(Blueprint.id.desc())).all() if str(bp.module or "").lower().rstrip("s") in {s.rstrip("s") for s in aliases}), None)
 
 
 def enforce_blueprint_transition(db: Session, resource: str, record: Any, from_stage: str | None, to_stage: str | None, values: dict[str, Any]) -> Blueprint | None:
     if not from_stage or not to_stage or from_stage == to_stage:
         return None
-    blueprint = _active_blueprint(db, resource)
+    blueprint = _active_blueprint(db, resource, record)
     if blueprint is None:
         return None
     transitions = blueprint.transitions or []
-    matching = next((item for item in transitions if str(item.get("from")) == str(from_stage) and str(item.get("to")) == str(to_stage)), None)
+    matching = next((step for step in transitions if isinstance(step, dict)
+                     and (step.get("from") == from_stage or step.get("common"))
+                     and step.get("to") == to_stage), None)
     if transitions and matching is None:
         raise HTTPException(422, detail={"code": "BLUEPRINT_TRANSITION_NOT_ALLOWED", "message": f"Blueprint '{blueprint.name}' does not allow {from_stage} → {to_stage}.", "from": from_stage, "to": to_stage})
-    requirements = (matching or {}).get("required") or next((item.get("required", []) for item in (blueprint.transition_requirements or []) if str(item.get("transition") or "") in {f"{from_stage} -> {to_stage}", str(to_stage)}), [])
+    if matching and matching.get("owner_scope") == "owner":
+        if record.owner_id != TENANT_ACTOR_ID.get():
+            raise HTTPException(403, detail={"code": "BLUEPRINT_OWNER_REQUIRED", "message": "Only the record owner may execute this transition."})
+    requirements = (matching or {}).get("required") or next((item.get("required", []) for item in (blueprint.transition_requirements or []) if str(item.get("transition") or "") in {f"{from_stage} -> {to_stage}", str(to_stage), str((matching or {}).get("label") or "")}), [])
     missing = [str(field) for field in requirements if values.get(str(field)) in (None, "", [])]
     if missing:
         raise HTTPException(422, detail={"code": "BLUEPRINT_REQUIREMENTS_MISSING", "message": "Complete the required fields before this transition.", "missing": missing, "from": from_stage, "to": to_stage})
@@ -778,9 +792,19 @@ def enforce_blueprint_transition(db: Session, resource: str, record: Any, from_s
 def record_blueprint_transition(db: Session, blueprint: Blueprint | None, resource: str, record_id: int, from_stage: str, to_stage: str, values: dict[str, Any], actor_id: int | None = None) -> None:
     if blueprint is None or from_stage == to_stage:
         return
-    matching = next((item for item in (blueprint.transitions or []) if str(item.get("from")) == str(from_stage) and str(item.get("to")) == str(to_stage)), {})
+    matching = next((item for item in (blueprint.transitions or [])
+                     if isinstance(item, dict) and (item.get("from") == from_stage or item.get("common")) and item.get("to") == to_stage), {})
     requirements = matching.get("required") or []
     db.add(BlueprintTransitionLog(blueprint_id=blueprint.id, module=resource, record_id=record_id, from_stage=from_stage, to_stage=to_stage, actor_id=actor_id, requirements=requirements))
+    # Only explicit supported CRM actions are permitted. No code evaluation.
+    record = db.get(RESOURCE_MAP[resource], record_id)
+    for action in matching.get("after") or []:
+        if action.get("type") == "audit":
+            add_audit(db, "blueprint_action", resource, record_id, str(action.get("value") or "Blueprint action executed")[:300], actor_id=actor_id)
+        else:
+            if action.get("type") not in {"create_task", "tag", "field_update", "notification"}:
+                raise ValueError("Unsupported Blueprint after-action")
+            _execute_workflow_action(db, action, resource, record, values)
     add_audit(db, "blueprint_transition", resource, record_id, f"Blueprint '{blueprint.name}' moved {from_stage} → {to_stage}", before={"stage": from_stage}, after={"stage": to_stage}, actor_id=actor_id)
 
 
