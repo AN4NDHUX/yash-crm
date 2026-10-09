@@ -119,14 +119,14 @@ def test_structured_deluge_program_executes_through_crm():
             'username':'deluge.program','email':'deluge.program@example.com',
             'password':'strong-password-123'
         })
-        code = ('labels = List();\n'
-                'labels.add("first");\n'
-                'labels.add("second");\n'
-                'for each label in labels {\n'
-                'if (label == "second") {\n'
-                'record.put("company", label);\n'
-                '}\n'
-                '}\n')
+        code = ('labels = List();\\n'
+                'labels.add("first");\\n'
+                'labels.add("second");\\n'
+                'for each label in labels {\\n'
+                'if (label == "second") {\\n'
+                'record.put("company", label);\\n'
+                '}\\n'
+                '}\\n')
         fn = c.post('/api/platform/functions', json={
             'name':'Structured Deluge','runtime':'Deluge','entrypoint':'workflow',
             'source':{'code':code},'status':'Active'
