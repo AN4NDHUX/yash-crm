@@ -10,14 +10,16 @@ The CRM implements a **bounded Deluge-inspired workflow subset**, not a general 
 - Explicit expression arguments prefixed by `=` for arithmetic, comparison, boolean operators, current-record references, and a limited subset of Map/List functions.
 - Read-only Map/List methods `get`, `size`, `contains`, `containsKey`, `isEmpty`, `keys`, `values`, `toString`.
 - Bounded ephemeral Map/List `put`, `add`, and `remove`. Mutating record-backed collections in expression evaluation is prohibited.
-- `zoho.crm.updateRecord("Leads", $record.id, {"status":"Qualified"})` for **current-record-only** updates with current-module verification and protected-field enforcement. This is not a cross-record update API.
-- `invokeurl("event payload")` or `crm.invokeUrl("event payload")` creates an outbound **queued webhook** to the administrator-configured `WORKFLOW_WEBHOOK_URL`, signed using `WORKFLOW_WEBHOOK_SECRET` and delivered by the separate workflow worker. These calls do **not** return HTTP responses, accept custom URL destinations, or behave like standard Zoho `invokeurl`.
+- Local workspace CRM task adapters: `zoho.crm.v8.getRecordById`, `getRecords`, `searchRecords`, `createRecord`, `updateRecord`, and `deleteRecord` on allowed modules, with organization, membership, profile, field and record-access checks. These tasks operate on CONVOSIS data, not Zoho-hosted data.
+- Legacy current-record `zoho.crm.updateRecord(..., $record.id, ...)` and `zoho.crm.v8.updateRecord` syntax remains supported.
+- `invokeurl(...)` legacy calls continue to queue the configured, signed webhook. Structured bracketed `invokeurl [url: ..., type: ..., connection: ..., body: ...]` now queues an organization-scoped HTTPS worker request, using OAuth2 refresh/client-credentials grants or administrator-configured API keys.
+- Structured `invokeurl` returns a queue receipt, not a synchronous remote HTTP response. Provider credentials must be configured by an administrator outside the script.
 
 ## Not yet supported
 - User-defined function declarations/invocation, exception handling, switch statements, unrestricted dynamic loops, complex nested Deluge task expressions, unrestricted nested Map/List mutation, full date/math/string functions and exact Zoho type coercion/return semantics. Structured blocks accept opening braces on the header line or the following line.
-- Standard multiline Zoho `invokeurl [url: ..., type: ..., connection: ...]` syntax, arbitrary methods, responses, headers and OAuth connections.
-- Zoho CRM task parity including cross-record CRUD, searchRecords, getRecords, attachments, mail, inventory operations, transactional trigger handling, and Zoho-specific error/response semantics.
-- Provider-specific connections, credential lifecycle, full tenant entitlement and API scope enforcement for outbound integrations.
+- Full Zoho invokeurl parity (synchronous remote responses, all options, files and multipart) and interactive OAuth consent / connection lifecycle. A worker-managed, connection-scoped subset is available.
+- Complete Zoho CRM task parity: advanced criteria, related records, upsert, lead conversion, inventory tasks, attachments, Zoho API request options, and Zoho-specific response/error semantics.
+- Provider-specific interactive connection management, token rotation/persistence, and exhaustive external API scopes and subscription entitlement rules.
 
 ## Production requirements
 - The separate worker must be deployed to use outbound integrations.
