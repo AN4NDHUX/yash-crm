@@ -1253,3 +1253,58 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .wf-condition-row [data-wf-operator]{grid-column:3 / 4}
 .wf-condition-row [data-wf-value]{grid-column:4 / 5}
 @media(max-width:820px){.wf-condition-row .wf-field-search,.wf-condition-row [data-wf-field]{grid-column:2 / 4}.wf-condition-row [data-wf-operator]{grid-column:2 / 3}.wf-condition-row [data-wf-value]{grid-column:2 / 4}}
+
+
+/* Lead transitions, deal stage ribbon and record audit timeline */
+.crm-lead-state .crm-stage-label,.crm-stage-label{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-faint)}
+.crm-state-body{display:flex;align-items:flex-start;gap:30px;padding:22px;flex-wrap:wrap}
+.crm-state-current{min-width:190px;display:flex;flex-direction:column;gap:9px}
+.crm-state-current>span,.crm-state-actions>span{font-size:11px;font-weight:650;color:var(--text-soft)}
+.crm-state-current>strong{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:7px;border:1px solid #b6cbfa;background:#edf3ff;color:#163c8f;font-size:14px;padding:9px 15px}
+.crm-state-actions{flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.crm-transition-options{display:flex;flex-wrap:wrap;gap:9px}
+.crm-transition-action{font:inherit;font-weight:650;font-size:12px;border:1px solid #cddbf3;border-radius:7px;background:white;color:var(--text);padding:10px 13px;cursor:pointer;min-height:38px}
+.crm-transition-action span{margin-left:8px;color:#225ac8}
+.crm-transition-action:hover{background:#edf3ff;border-color:#6d94ee}
+.crm-transition-action:disabled{opacity:.6;cursor:wait}
+.crm-state-actions>small{font-size:11px;color:var(--text-faint)}
+.crm-deal-pipeline{padding:18px 20px 20px;min-width:0}
+.crm-pipeline-header{display:flex;justify-content:space-between;gap:15px;align-items:center;margin-bottom:18px}
+.crm-pipeline-header>div{display:flex;flex-direction:column;gap:5px}
+.crm-pipeline-header>div:last-child{text-align:right}
+.crm-pipeline-header span{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--text-faint);text-transform:uppercase}
+.crm-pipeline-header strong{font-size:12px;color:var(--text)}
+.crm-pipeline-current{align-items:center;text-align:center}
+.crm-pipeline-current strong{padding:5px 10px;border-radius:7px;background:#eaf1ff;color:#1644a2}
+.crm-pipeline-track{display:flex;overflow-x:auto;padding:3px 6px 12px 0;min-width:0;scrollbar-width:thin}
+.crm-pipeline-step{position:relative;flex:1 0 132px;min-width:132px;min-height:60px;padding:10px 15px 10px 23px;margin-left:-11px;display:flex;flex-direction:column;justify-content:center;gap:6px;text-align:left;font:inherit;cursor:pointer;border:0;background:#eff3f9;color:#3d587a;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%,14px 50%);transition:background .15s}
+.crm-pipeline-step:first-child{margin-left:0;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 50%,calc(100% - 14px) 100%,0 100%)}
+.crm-pipeline-step span{font-size:12px;font-weight:700}
+.crm-pipeline-step small{font-size:10px}
+.crm-pipeline-step.is-complete{background:#dce9fc;color:#204b96}
+.crm-pipeline-step.is-current{background:#185bc9;color:white}
+.crm-pipeline-step:not(:disabled):hover{background:#b7d4fd;color:#153b89}
+.crm-pipeline-step:disabled{cursor:default}
+.crm-pipeline-step:focus-visible,.crm-transition-action:focus-visible,.crm-pipeline-lost:focus-visible{outline:3px solid #698cff;outline-offset:2px}
+.crm-pipeline-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:6px;color:var(--text-faint);font-size:11px}
+.crm-pipeline-lost{flex-shrink:0;font:inherit;font-size:11px;font-weight:700;cursor:pointer;color:#a03b44;background:#fff5f5;border:1px solid #f2b9be;border-radius:7px;padding:9px 12px}
+.crm-pipeline-lost.is-current{background:#ab2536;color:white;cursor:default}
+.crm-timeline{padding:0 20px 24px;min-height:185px}
+.crm-timeline-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--border)}
+.crm-timeline-tabs{display:flex;gap:20px}
+.crm-timeline-tab{font:inherit;border:0;border-bottom:3px solid transparent;background:transparent;padding:10px 4px;font-weight:650;font-size:12px;color:var(--text-soft);cursor:pointer}
+.crm-timeline-tab.active{border-color:#3264ef;color:var(--text)}
+.crm-timeline-filter-label{display:flex;align-items:center;gap:9px;color:var(--text-soft);font-size:11px}
+.crm-timeline-filter{font:inherit;font-size:12px;background:white;border:1px solid var(--border);border-radius:7px;padding:8px 12px;color:var(--text)}
+.crm-timeline-list{padding:12px 8px}
+.crm-timeline-list[hidden],.crm-timeline-event[hidden]{display:none!important}
+.crm-timeline-day{display:inline-block;margin:12px 0 16px;padding:6px 12px;border-radius:6px;background:#f1f4fa;border:1px solid var(--border);color:var(--text-soft);font-size:11px;font-weight:650}
+.crm-timeline-event{position:relative;display:flex;align-items:flex-start;gap:18px;padding:3px 0 24px 5px;margin-left:32px;border-left:1px solid #ccd8ea}
+.crm-timeline-dot{position:relative;left:-17px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:1px solid #cbd8ef;border-radius:50%;background:#fff;color:#5076ae;font-size:14px}
+.crm-timeline-dot.activity{color:#217c60}.crm-timeline-dot.note{color:#a46a26}
+.crm-timeline-event-body{flex:1;min-width:0;padding:5px 0 0}
+.crm-timeline-event-body strong{display:block;font-size:12px;font-weight:650;color:var(--text);line-height:1.5}
+.crm-timeline-event-body p{font-size:12px;margin:5px 0;color:var(--text-soft)}
+.crm-timeline-event-body small{display:block;margin-top:5px;color:var(--text-faint);font-size:11px}
+.crm-timeline-empty{color:var(--text-soft);padding:26px 8px}
+@media(max-width:700px){.crm-state-body{padding:16px;gap:18px}.crm-pipeline-header{flex-wrap:wrap}.crm-pipeline-current{order:3;width:100%;margin-top:4px}.crm-pipeline-track{overflow-x:auto}.crm-pipeline-footer{flex-wrap:wrap}.crm-timeline{padding:0 12px 18px}.crm-timeline-event{margin-left:14px}.crm-timeline-toolbar{align-items:flex-start}}

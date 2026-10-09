@@ -5408,6 +5408,101 @@ def delete_record(resource: str, item_id: int, db: Session = Depends(get_db), ac
     return {"ok": True, "id": item_id, "archived": hasattr(item, "archived")}
 
 
+@app.get("/api/{resource}/{item_id}/timeline")
+def record_timeline(
+    resource: str,
+    item_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    """Accessible, tenant-scoped activity and change history for a single lead or deal."""
+    if resource not in {"leads", "deals"}:
+        raise HTTPException(404, "Timeline is unavailable for this resource")
+    _require_admin_resource(resource, actor)
+    record = db.get(RESOURCE_MAP[resource], item_id)
+    if record is None or getattr(record, "archived", False) or not can_access_record(db, resource, record, actor):
+        raise HTTPException(404, "Record not found")
+    # Audit history is not the global, administrator-only /api/audit feed.
+    # Never return raw before/after snapshots, which may contain protected fields.
+    organization_id = record.organization_id
+    if organization_id is None:
+        raise HTTPException(404, "Record not found")
+    audit_rows = db.scalars(
+        select(AuditEvent).where(
+            AuditEvent.organization_id == organization_id,
+            AuditEvent.resource == resource,
+            AuditEvent.record_id == item_id,
+        ).order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc()).limit(150)
+    ).all()
+    readable = serialize(record, db, actor)
+    allowed_status = {"New", "Contacted", "Qualified", "Unqualified", "Converted"}
+    allowed_stages = set(STAGE_PROBABILITY)
+    entries: list[dict[str, Any]] = []
+    for row in audit_rows:
+        title = row.summary or "Record updated"
+        before = row.before if isinstance(row.before, dict) else {}
+        after = row.after if isinstance(row.after, dict) else {}
+        for field, allowed in (("status", allowed_status), ("stage", allowed_stages)):
+            if field not in readable or resource == "leads" and field != "status" or resource == "deals" and field != "stage":
+                continue
+            previous, updated = before.get(field), after.get(field)
+            if previous != updated and previous in allowed and updated in allowed:
+                title = f"{field.title()} changed from {previous} to {updated}"
+                break
+        audit_actor = db.get(User, row.actor_id) if row.actor_id else None
+        entries.append({
+            "id": f"audit-{row.id}", "kind": "audit",
+            "action": row.action, "title": title, "detail": "",
+            "occurred_at": row.occurred_at.isoformat(),
+            "actor_name": audit_actor.name if audit_actor else "System",
+        })
+
+    activity_rows = db.scalars(
+        select(Activity).where(
+            Activity.organization_id == organization_id,
+            Activity.related_type == resource,
+            Activity.related_id == item_id,
+            Activity.archived == False,
+        ).order_by(Activity.created_at.desc()).limit(150)
+    ).all()
+    for activity in activity_rows:
+        if not can_access_record(db, "activities", activity, actor):
+            continue
+        visible_activity = serialize(activity, db, actor)
+        entries.append({
+            "id": f"activity-{activity.id}", "kind": "activity",
+            "action": "activity",
+            "title": visible_activity.get("subject") or "Activity recorded",
+            "detail": str(visible_activity.get("activity_type") or "Activity").title()
+                      + " · " + str(visible_activity.get("status") or "Open"),
+            "occurred_at": activity.created_at.isoformat(),
+            "actor_name": visible_activity.get("owner_name") or "System",
+        })
+
+    note_rows = db.scalars(
+        select(Note).where(
+            Note.organization_id == organization_id,
+            Note.related_type == resource,
+            Note.related_id == item_id,
+            Note.archived == False,
+        ).order_by(Note.created_at.desc()).limit(100)
+    ).all()
+    for note in note_rows:
+        if not can_access_record(db, "notes", note, actor):
+            continue
+        visible_note = serialize(note, db, actor)
+        entries.append({
+            "id": f"note-{note.id}", "kind": "note",
+            "action": "note",
+            "title": visible_note.get("title") or "Note added",
+            "detail": "Note added to this record",
+            "occurred_at": note.created_at.isoformat(),
+            "actor_name": visible_note.get("owner_name") or "System",
+        })
+    entries.sort(key=lambda item: item["occurred_at"], reverse=True)
+    return {"items": entries[:300], "total": len(entries)}
+
+
 @app.get("/api/{resource}/{item_id}/related")
 def related_records(resource: str, item_id: int, db: Session = Depends(get_db), actor: User | None = Depends(current_actor)) -> dict[str, Any]:
     if resource not in RESOURCE_MAP:

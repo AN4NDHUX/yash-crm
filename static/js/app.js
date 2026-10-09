@@ -753,15 +753,14 @@ function bindModule(resource) {
 }
 
 async function detailView(resource, id) {
-  const [record, related] = await Promise.all([api(`/api/${resource}/${id}`), api(`/api/${resource}/${id}/related`)]);
-  if (resource === "leads") related.journey = await api(`/api/journey/leads/${id}`);
+  const [record, related, timeline] = await Promise.all([api(`/api/${resource}/${id}`), api(`/api/${resource}/${id}/related`), ["leads", "deals"].includes(resource) ? api(`/api/${resource}/${id}/timeline`) : Promise.resolve(null)]);
   const config = MODULES[resource];
   const title = resource === "contacts" ? record.full_name : record.name || record.subject;
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
   const details = detailFields(resource, record);
   return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
     <section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !record.converted_contact_id ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>
-    <div class="detail-record-layout"><aside class="detail-related-nav"><div class="detail-related-nav-head"><h3>Related List</h3></div>${relatedNavigation(resource, related)}</aside><section class="detail-record-main"><div class="detail-tab-strip"><button class="detail-tab active" type="button" data-detail-tab="overview">Overview</button><button class="detail-tab" type="button" data-detail-tab="timeline">Timeline</button></div><div class="detail-tab-panel" data-detail-panel="overview">${resource === "deals" ? `<section class="detail-plain-section" id="detail-section-stage_progress"><div class="detail-plain-head"><h3>Stage progress</h3></div><div class="detail-plain-body">${dealProgress(record)}</div></section>` : ""}${relatedContent(resource, related)}</div><div class="detail-tab-panel" data-detail-panel="timeline" hidden><section class="detail-plain-section" id="detail-section-timeline"><div class="detail-plain-head"><h3>Timeline</h3></div><div class="detail-plain-body"><div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p class="related-empty">No linked activity yet.</p>`}</div></div></section></div></section></div>`;
+    <div class="detail-record-layout"><aside class="detail-related-nav"><div class="detail-related-nav-head"><h3>Related List</h3></div>${relatedNavigation(resource, related, timeline)}</aside><section class="detail-record-main"><div class="detail-tab-strip"><button class="detail-tab active" type="button" data-detail-tab="overview">Overview</button><button class="detail-tab" type="button" data-detail-tab="timeline">Timeline</button></div><div class="detail-tab-panel" data-detail-panel="overview">${resource === "leads" ? leadStagePanel(record) : ""}${resource === "deals" ? `<section class="detail-plain-section" id="detail-section-stage_progress"><div class="detail-plain-head"><h3>Stage progress</h3></div><div class="detail-plain-body">${dealProgress(record)}</div></section>` : ""}${relatedContent(resource, related)}</div><div class="detail-tab-panel" data-detail-panel="timeline" hidden><section class="detail-plain-section" id="detail-section-timeline"><div class="detail-plain-head"><h3>Timeline</h3></div><div class="detail-plain-body">${(resource === "leads" || resource === "deals") ? timelineHtml(timeline?.items || []) : `<div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p class="related-empty">No linked activity yet.</p>`}</div>`}</div></section></div></section></div>`;
 }
 
 function detailFields(resource, record) {
@@ -769,17 +768,16 @@ function detailFields(resource, record) {
   if (resource === "leads") return [{ label: "Status", html: badge(record.status) }, { label: "Owner", value: owner }, { label: "Lead score", value: `${record.lead_score || 0}/100` }, { label: "Email", value: record.email }, { label: "Phone", value: record.phone }, { label: "Follow-up", value: formatDate(record.next_follow_up) }];
   if (resource === "contacts") return [{ label: "Email", value: record.email }, { label: "Phone", value: record.phone }, { label: "Job title", value: record.job_title }, { label: "Department", value: record.department }, { label: "Account", value: lookupName("accounts", record.account_id) }, { label: "Owner", value: owner }];
   if (resource === "accounts") return [{ label: "Type", value: record.type }, { label: "Industry", value: record.industry }, { label: "Employees", value: record.employees }, { label: "Website", value: record.website }, { label: "Location", value: [record.billing_city, record.billing_country].filter(Boolean).join(", ") }, { label: "Owner", value: owner }];
-  if (resource === "deals") return [{ label: "Stage", html: badge(record.stage) }, { label: "Amount", value: formatMoney(record.amount) }, { label: "Probability", value: `${record.probability || 0}%` }, { label: "Account", value: lookupName("accounts", record.account_id) }, { label: "Close date", value: formatDate(record.expected_close_date) }, { label: "Owner", value: owner }];
+  if (resource === "deals") return [{ label: "Current stage", html: badge(record.stage) }, { label: "Amount", value: formatMoney(record.amount) }, { label: "Probability", value: `${record.probability || 0}%` }, { label: "Account", value: lookupName("accounts", record.account_id) }, { label: "Close date", value: formatDate(record.expected_close_date) }, { label: "Owner", value: owner }];
   if (resource === "products") return [{ label: "SKU", value: record.sku }, { label: "Category", value: record.category }, { label: "Unit price", value: formatMoney(record.unit_price) }, { label: "Stock", value: record.stock_quantity }, { label: "Status", html: badge(record.status) }, { label: "Owner", value: owner }];
   return [{ label: "Type", value: titleCase(record.activity_type) }, { label: "Status", html: badge(record.status) }, { label: "Priority", html: badge(record.priority) }, { label: "Starts", value: formatDateTime(record.start_at) }, { label: "Due", value: formatDateTime(record.due_at) }, { label: "Owner", value: owner }, { label: "Related to", value: record.related_label }];
 }
 
-function relatedNavigation(resource, related) {
+function relatedNavigation(resource, related, timeline = null) {
   const openActivities = (related.activities || []).filter((item) => item.status !== 'Completed').length;
   const closedActivities = (related.activities || []).filter((item) => item.status === 'Completed').length;
   const connectedCount = (related.accounts || []).length + (related.contacts || []).length + (related.deals || []).length;
   const items = [
-    ['customer_journey', 'Customer journey', !!related.journey],
     ['notes', 'Notes', true, (related.notes || []).length],
     ['connected_records', 'Connected records', ['accounts', 'contacts', 'deals'].includes(resource) || connectedCount > 0, connectedCount],
     ['attachments', 'Attachments', true, (related.attachments || []).length],
@@ -788,7 +786,7 @@ function relatedNavigation(resource, related) {
     ['closed_activities', 'Closed activities', closedActivities > 0, closedActivities],
     ['custom_records', 'Custom & related modules', (related.custom_records || []).length > 0, (related.custom_records || []).length],
     ['emails', 'Emails', true, (related.emails || []).length],
-    ['timeline', 'Timeline', true, (related.activities || []).length],
+    ['timeline', 'Timeline', true, timeline ? (timeline.items || []).length : (related.activities || []).length],
   ].filter(([, , visible]) => visible);
   return `<nav class="detail-related-links">${items.map(([key, label, , count]) => `<button class="detail-related-link" type="button" data-detail-nav="${key}" data-detail-target="detail-section-${key}"><span>${esc(label)}</span>${count > 0 ? `<small>${count}</small>` : ''}</button>`).join('')}</nav>`;
 }
@@ -804,10 +802,8 @@ function relatedPlainSection(id, label, rows, createResource, emptyMessage) {
 
 function relatedContent(resource, related) {
   const sections = [];
-  if (related.journey) {
-    const stages = related.journey.stages || [];
-    sections.push(`<section class="detail-plain-section" id="detail-section-customer_journey"><div class="detail-plain-head"><h3>Customer journey</h3><span class="eyebrow">Lead to cash</span></div><div class="detail-plain-body"><div class="journey-track">${stages.map((stage) => `<span class="journey-stage ${stage.complete ? 'complete' : ''}"><i>${stage.complete ? '✓' : stage.count}</i><b>${esc(stage.label)}</b></span>`).join('')}</div><div class="journey-actions"><button class="button button-small button-ghost" data-platform-create="site_visits" data-lead-id="${related.journey.lead.id}">+ Site visit</button>${related.journey.lead.converted_deal_id ? `<button class="button button-small button-ghost" data-platform-create="quotes" data-deal-id="${related.journey.lead.converted_deal_id}">+ Quotation</button>` : ''}</div></div></section>`);
-  }
+  sections.push(relatedPlainSection('notes'
+
   sections.push(relatedPlainSection('notes', 'Notes', (related.notes || []).map((item) => relatedPlainRow(item.title, item.content || 'Open note', 'notes', item.id, false)), 'notes', 'No notes yet.'));
   const connectedRows = [];
   if (related.accounts?.length) connectedRows.push(...related.accounts.map((item) => relatedPlainRow(item.name, item.industry || item.type || 'Account', 'accounts', item.id)));
@@ -828,10 +824,57 @@ function relatedContent(resource, related) {
   return sections.join('');
 }
 
-function dealProgress(record) {
-  const stages = MODULES.deals.status;
-  return `<div class="blueprint-flow">${stages.map((stage, index) => `<div class="blueprint-stage" style="${stage === record.stage ? "border-color:#aaa6ff;background:var(--surface-indigo)" : ""}"><strong>${esc(stage)}</strong><small>${stage === record.stage ? "Current stage" : index < stages.indexOf(record.stage) ? "Completed" : "Upcoming"}</small></div>${index < stages.length - 1 ? `<span class="blueprint-arrow">→</span>` : ""}`).join("")}</div><div style="display:flex;gap:8px;flex-wrap:wrap">${stages.filter((stage) => stage !== record.stage).map((stage) => `<button class="button button-small button-ghost" data-stage-update="${record.id}" data-stage="${esc(stage)}">Move to ${esc(stage)}</button>`).join("")}</div>`;
+function leadStagePanel(record) {
+  const current = record.status || "New";
+  const choices = MODULES.leads.status.filter((status) => status !== "Converted" && status !== current);
+  const converted = current === "Converted" || !!record.converted_contact_id;
+  return `<section class="detail-plain-section crm-lead-state" id="detail-section-current_stage">
+    <div class="detail-plain-head"><h3>Current stage &amp; transitions</h3><span class="crm-stage-label">Lead process</span></div>
+    <div class="crm-state-body">
+      <div class="crm-state-current"><span>Current stage</span><strong>${esc(current)}</strong></div>
+      <div class="crm-state-actions"><span>Available transitions</span><div class="crm-transition-options">${converted
+        ? `<p class="related-empty">This lead has been converted. Its stage cannot be changed here.</p>`
+        : choices.map((status) => `<button type="button" class="crm-transition-action" data-lead-transition="${record.id}" data-status="${esc(status)}">${esc(status)} <span aria-hidden="true">→</span></button>`).join("")}
+      </div>${!converted ? `<small>Use Convert above to convert the lead and create linked records.</small>` : ""}</div>
+    </div>
+  </section>`;
 }
+
+function timelineHtml(events) {
+  const ordered = [...events].sort((a,b) => String(b.occurred_at).localeCompare(String(a.occurred_at)));
+  const renderEntries = (rows) => {
+    if (!rows.length) return `<p class="crm-timeline-empty">No record history yet.</p>`;
+    let dateKey = "";
+    return rows.map((item) => {
+      const key = String(item.occurred_at || "").slice(0,10);
+      const dayHeading = key && key !== dateKey ? `<div class="crm-timeline-day">${esc(formatDate(key))}</div>` : "";
+      dateKey = key;
+      const kind = ["activity","note"].includes(item.kind) ? item.kind : "audit";
+      const time = item.occurred_at ? formatDateTime(item.occurred_at) : "";
+      return `${dayHeading}<article class="crm-timeline-event" data-timeline-entry="${kind}"><div class="crm-timeline-dot ${kind}" aria-hidden="true">${kind === "activity" ? "✓" : kind === "note" ? "✎" : "↻"}</div><div class="crm-timeline-event-body"><strong>${esc(item.title || "Record updated")}</strong>${item.detail ? `<p>${esc(item.detail)}</p>` : ""}<small>${esc(item.actor_name || "System")} · ${esc(time)}</small></div></article>`;
+    }).join("");
+  };
+  const interactions = ordered.filter((item) => ["activity","note"].includes(item.kind));
+  return `<div class="crm-timeline"><div class="crm-timeline-toolbar"><div class="crm-timeline-tabs" role="group" aria-label="Timeline view"><button type="button" class="crm-timeline-tab active" data-timeline-kind="history" aria-pressed="true">History</button><button type="button" class="crm-timeline-tab" data-timeline-kind="interactions" aria-pressed="false">Interactions</button></div><label class="crm-timeline-filter-label">Filter <select class="crm-timeline-filter" data-timeline-filter><option value="all">All events</option><option value="audit">Record changes</option><option value="activity">Activities</option><option value="note">Notes</option></select></label></div><div data-timeline-content="history" class="crm-timeline-list">${renderEntries(ordered)}</div><div data-timeline-content="interactions" class="crm-timeline-list" hidden>${renderEntries(interactions)}</div></div>`;
+}
+
+function dealProgress(record) {
+  const stages = MODULES.deals.status.filter((stage) => stage !== "Closed Lost");
+  const current = record.stage || stages[0];
+  const selectedIndex = stages.indexOf(current);
+  const completed = current === "Closed Lost" ? stages.length - 2 : selectedIndex;
+  return `<div class="crm-deal-pipeline" aria-label="Deal stage process">
+    <div class="crm-pipeline-header">
+      <div><span>START</span><strong>${esc(formatDate(record.created_at))}</strong></div>
+      <div class="crm-pipeline-current"><span>Current stage</span><strong>${esc(current)}</strong></div>
+      <div><span>CLOSING</span><strong>${esc(formatDate(record.expected_close_date))}</strong></div>
+    </div>
+    <div class="crm-pipeline-track" role="group" aria-label="Select deal stage">${stages.map((stage,index) => `<button type="button" class="crm-pipeline-step ${current === stage ? "is-current" : index < completed ? "is-complete" : "is-upcoming"}" data-stage-update="${record.id}" data-stage="${esc(stage)}" aria-label="Move deal to ${esc(stage)}" ${current === stage ? `aria-current="step" disabled` : ""}><span>${esc(stage)}</span><small>${current === stage ? "Current stage" : index < completed ? "Completed" : "Select stage"}</small></button>`).join("")}</div>
+    <div class="crm-pipeline-footer"><span>Click a stage to update this deal. Blueprint rules and permissions still apply.</span><button type="button" class="crm-pipeline-lost ${current === "Closed Lost" ? "is-current" : ""}" data-stage-update="${record.id}" data-stage="Closed Lost" ${current === "Closed Lost" ? 'aria-current="step" disabled' : ""}>${current === "Closed Lost" ? "Closed Lost · Current stage" : "Mark Closed Lost"}</button></div>
+  </div>`;
+}
+
+function bindDetail(resource, id) {
 
 function bindDetail(resource, id) {
   $$('[data-go]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.go)));
@@ -842,7 +885,34 @@ function bindDetail(resource, id) {
   $$('[data-related-platform]').forEach(button => button.addEventListener('click', () => navigate('/' + encodeURIComponent(button.dataset.relatedPlatform))));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $("[data-convert-lead]")?.addEventListener("click", () => openConvertModal(Number(id)));
-  $$('[data-stage-update]').forEach((button) => button.addEventListener("click", async () => { try { await api(`/api/deals/${button.dataset.stageUpdate}`, { method: "PATCH", body: JSON.stringify({ stage: button.dataset.stage }) }); toast("Deal updated", `Moved to ${button.dataset.stage}`); await renderRoute(); } catch (error) { toast("Could not update deal", error.message, "error"); } }));
+  $$('[data-lead-transition]').forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await api(`/api/leads/${button.dataset.leadTransition}`, { method: "PATCH", body: JSON.stringify({ status: button.dataset.status }) });
+      toast("Lead updated", `Stage changed to ${button.dataset.status}`);
+      await renderRoute();
+    } catch (error) { button.disabled = false; toast("Lead transition failed", error.message, "error"); }
+  }));
+  $$('[data-stage-update]').forEach((button) => button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await api(`/api/deals/${button.dataset.stageUpdate}`, { method: "PATCH", body: JSON.stringify({ stage: button.dataset.stage }) });
+      toast("Deal updated", `Current stage: ${button.dataset.stage}`);
+      await renderRoute();
+    } catch (error) { button.disabled = false; toast("Deal transition failed", error.message, "error"); }
+  }));
+  $$('[data-timeline-kind]').forEach((button) => button.addEventListener("click", () => {
+    $$('[data-timeline-kind]').forEach((entry) => { entry.classList.toggle('active', entry === button); entry.setAttribute('aria-pressed', entry === button ? 'true' : 'false'); });
+    $$('[data-timeline-content]').forEach((panel) => { panel.hidden = panel.dataset.timelineContent !== button.dataset.timelineKind; });
+    const filter = $('[data-timeline-filter]');
+    if (filter) { filter.value = 'all'; filter.dispatchEvent(new Event('change')); }
+  }));
+  $('[data-timeline-filter]')?.addEventListener('change', (event) => {
+    const selected = event.target.value;
+    $$('[data-timeline-content] .crm-timeline-event').forEach((item) => {
+      item.hidden = selected !== 'all' && item.dataset.timelineEntry !== selected;
+    });
+  });
   const showDetailTab = (tab) => {
     $$('[data-detail-tab]').forEach((button) => button.classList.toggle('active', button.dataset.detailTab === tab));
     $$('[data-detail-panel]').forEach((panel) => { panel.hidden = panel.dataset.detailPanel !== tab; });
