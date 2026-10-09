@@ -171,3 +171,82 @@ def test_visual_blueprint_designer_and_transition_isolated_across_organizations(
     assert result['list'] == 200, result
     assert result['visible_ids'] == [], result
     assert all(result[key] == 404 for key in ('detail', 'publish', 'edit', 'transition')), result
+
+
+def test_field_selector_includes_all_core_fields_and_metadata_builder_fields():
+    result = app_scenario("""
+    with TestClient(main.app) as client:
+        signup = client.post('/api/auth/signup', json={
+            'name': 'Blueprint Fields Tester', 'organization_name': 'Blueprint Fields Org',
+            'username': 'blueprint.fields', 'email': 'blueprint.fields@example.com',
+            'password': 'strong-password-123'})
+        assert signup.status_code in (200, 201), signup.text
+        with main.SessionLocal() as db:
+            actor = db.scalar(main.select(main.User).where(
+                main.User.username == 'blueprint.fields'))
+            member = db.scalar(main.select(main.OrganizationMember).where(
+                main.OrganizationMember.user_id == actor.id))
+            module = main.MetadataModule(
+                organization_id=member.organization_id,
+                api_name='leads', label='Leads', plural_label='Leads', enabled=True)
+            db.add(module)
+            db.flush()
+            db.add(main.MetadataField(
+                module_id=module.id, api_name='additional_field',
+                label='Additional Field', field_type='picklist', position=1))
+            db.commit()
+        response = client.get('/api/blueprint-designer/options?module=leads')
+        out['code'] = response.status_code
+        out['fields'] = response.json()['fields']
+    """)
+    assert result['code'] == 200, result
+    by_name = {item['name']: item for item in result['fields']}
+    assert {'name', 'company', 'email', 'phone', 'status', 'source',
+            'lead_score', 'next_follow_up', 'notes', 'tags'} <= set(by_name)
+    assert by_name['status']['supported'] is True
+    assert by_name['source']['supported'] is True
+    assert by_name['email']['supported'] is False
+    assert by_name['additional_field']['label'] == 'Additional Field'
+    assert by_name['additional_field']['supported'] is False
+
+
+def test_native_source_blueprint_transitions_are_enforced():
+    result = app_scenario("""
+    with TestClient(main.app) as client:
+        signup = client.post('/api/auth/signup', json={
+            'name': 'Source Controller', 'organization_name': 'Source Controller Org',
+            'username': 'source.controller', 'email': 'source.controller@example.com',
+            'password': 'strong-password-123'})
+        assert signup.status_code in (200, 201), signup.text
+        record = client.post('/api/leads', json={
+            'name': 'Lead with alternate controller', 'source': 'Website'}).json()
+        payload = {
+            'name': 'Source-based process', 'module': 'Leads',
+            'field_name': 'source', 'layout_name': 'Default',
+            'stages': [{'label': 'Website'}, {'label': 'Referral'}],
+            'transitions': [{
+                'id': 'referral-step', 'label': 'Referral received',
+                'from': 'Website', 'to': 'Referral', 'required': [], 'after': []}]}
+        create = client.post('/api/blueprint-designer', json=payload)
+        out['create'] = create.status_code
+        out['publish'] = client.post(
+            f"/api/blueprint-designer/{create.json()['id']}/publish").status_code
+        timeline = client.get(f"/api/leads/{record['id']}/timeline").json()
+        out['field'] = timeline.get('field_name')
+        out['current'] = timeline.get('current_stage')
+        out['label'] = timeline['transition_details'][0]['label']
+        out['invalid'] = client.patch(
+            f"/api/leads/{record['id']}", json={'source': 'LinkedIn'}).status_code
+        out['transition'] = client.post(
+            f"/api/blueprint-records/leads/{record['id']}/transition",
+            json={'transition_id': 'referral-step', 'fields': {}}).status_code
+        out['updated'] = client.get(f"/api/leads/{record['id']}").json().get('source')
+    """)
+    assert result['create'] == 201, result
+    assert result['publish'] == 200, result
+    assert result['field'] == 'source', result
+    assert result['current'] == 'Website', result
+    assert result['label'] == 'Referral received', result
+    assert result['invalid'] == 422, result
+    assert result['transition'] == 200, result
+    assert result['updated'] == 'Referral', result
