@@ -89,3 +89,25 @@ def test_connection_secrets_are_not_from_script_headers(monkeypatch):
     action["headers"] = {"Cookie":"example"}
     with pytest.raises(ValueError):
         send_deluge_http(action, SimpleNamespace(idempotency_key="test"))
+
+
+def test_oauth2_client_credentials_grant(monkeypatch):
+    action = setup_connection(monkeypatch, "OAuth2")
+    config = json.loads(__import__("os").environ["DELUGE_HTTP_CONNECTIONS_JSON"])
+    config["partner"].pop("refresh_token_env")
+    config["partner"]["grant_type"] = "client_credentials"
+    config["partner"]["scope"] = "records.write"
+    monkeypatch.setenv("DELUGE_HTTP_CONNECTIONS_JSON", json.dumps(config))
+    requests = []
+    class FakeOpener:
+        def open(self, request, timeout):
+            requests.append(request)
+            if "/token" in request.full_url:
+                assert b"grant_type=client_credentials" in request.data
+                assert b"scope=records.write" in request.data
+                return FakeResponse(b'{"access_token":"client-credentials-test-token"}')
+            assert request.get_header("Authorization") == "Bearer client-credentials-test-token"
+            return FakeResponse(b"ok")
+    with patch("app.deluge_http.build_opener", return_value=FakeOpener()):
+        assert send_deluge_http(action, SimpleNamespace(idempotency_key="client-grant"))["status"] == "delivered"
+    assert len(requests) == 2
