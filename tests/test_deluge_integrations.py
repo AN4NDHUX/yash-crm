@@ -11,7 +11,7 @@ def test_deluge_zoho_current_record_update_integrates_with_rule():
             'password':'strong-password-123'
         })
         function = c.post('/api/platform/functions', json={
-            'name':'Update Current Lead','runtime':'Deluge',
+            'name':'Update Current Lead','runtime':'Deluge','entrypoint':'workflow',
             'source':{'code':'zoho.crm.updateRecord("Leads", $record.id, {"company":"Updated by Deluge"});'},
             'status':'Active'
         })
@@ -45,7 +45,7 @@ def test_deluge_invokeurl_creates_isolated_worker_job():
             'password':'strong-password-123'
         })
         function = c.post('/api/platform/functions', json={
-            'name':'Notify External','runtime':'Deluge',
+            'name':'Notify External','runtime':'Deluge','entrypoint':'workflow',
             'source':{'code':'invokeurl("safe event");'},
             'status':'Active'
         })
