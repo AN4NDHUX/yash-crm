@@ -55,3 +55,19 @@ def test_compound_deluge_if_compiles_to_checked_expression():
         {"amount": 250, "stage": "Open"},
     ) is True
     assert evaluate_deluge_expression("!false && true") is True
+
+
+def test_deluge_bounded_ephemeral_collection_mutations():
+    evaluate = evaluate_deluge_expression
+    assert evaluate('Map().put("name", "Lead").get("name")') == "Lead"
+    assert evaluate('List().add("Hot").add("Warm").size()') == 2
+    assert evaluate('["a","b"].remove(0)') == ["b"]
+    assert evaluate('{"a":1}.put("b", 2).keys()') == ["a", "b"]
+    assert evaluate('{"a":1}.values()') == [1]
+
+
+def test_deluge_record_collection_mutation_is_denied():
+    with pytest.raises(HTTPException):
+        evaluate_deluge_expression('$record.tags.add("untrusted")', {"tags": ["safe"]})
+    with pytest.raises(HTTPException):
+        evaluate_deluge_expression('$record.data.put("owner_id", 3)', {"data": {"name": "safe"}})
