@@ -5356,7 +5356,12 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
     incoming = payload.model_dump(exclude_unset=True)
     authorize_field_values(db, resource, incoming, actor, "write")
-    blueprint = enforce_blueprint_transition(db, resource, item, getattr(item, "stage", None), incoming.get("stage"), {**before_full, **incoming}) if resource == "deals" else None
+    if resource == "deals":
+        blueprint = enforce_blueprint_transition(db, resource, item, before_full.get("stage"), incoming.get("stage"), {**before_full, **incoming})
+    elif resource == "leads":
+        blueprint = enforce_blueprint_transition(db, resource, item, before_full.get("status"), incoming.get("status"), {**before_full, **incoming})
+    else:
+        blueprint = None
     for key, value in incoming.items():
         column = model.__table__.columns.get(key)
         if key in {"id", "created_at", "updated_at"} or column is None:
@@ -5375,6 +5380,8 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         item.completed_at = None
     if resource == "deals" and item.stage != before[0]:
         record_blueprint_transition(db, blueprint, resource, item_id, str(before[0] or ""), str(item.stage), serialize(item, db), actor_id=item.owner_id)
+    if resource == "leads" and item.status != before_full.get("status"):
+        record_blueprint_transition(db, blueprint, resource, item_id, str(before_full.get("status") or ""), str(item.status), serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     run_record_automation(db, resource, "update", item, serialize(item, db, actor), before_full)
     add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     db.commit()
@@ -5500,7 +5507,20 @@ def record_timeline(
             "actor_name": visible_note.get("owner_name") or "System",
         })
     entries.sort(key=lambda item: item["occurred_at"], reverse=True)
-    return {"items": entries[:300], "total": len(entries)}
+    lead_blueprint = _active_blueprint(db, "leads") if resource == "leads" else None
+    configured_transitions = bool(lead_blueprint and lead_blueprint.transitions)
+    transition_names = []
+    if configured_transitions:
+        transition_names = list(dict.fromkeys(
+            str(step.get("to") or "").strip()
+            for step in lead_blueprint.transitions
+            if isinstance(step, dict)
+            and str(step.get("from") or "").strip() == str(record.status)
+            and str(step.get("to") or "").strip() not in {"", "Converted", str(record.status)}
+        ))
+    return {"items": entries[:300], "total": len(entries),
+            "blueprint_enabled": configured_transitions,
+            "transitions": transition_names}
 
 
 @app.get("/api/{resource}/{item_id}/related")
