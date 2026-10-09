@@ -364,7 +364,7 @@ async function renderRoute() {
     if (parts[0] === "leads" && parts[1] && parts[2] === "converted") {
       setBreadcrumb("Lead Converted", "Leads");
       content.innerHTML = leadConversionSuccess();
-      $("[data-conversion-go]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.conversionGo)));
+      document.querySelectorAll("[data-conversion-go]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.conversionGo)));
       return;
     }
     if (MODULES[parts[0]]) {
