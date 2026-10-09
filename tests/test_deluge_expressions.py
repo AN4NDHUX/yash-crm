@@ -39,3 +39,19 @@ def test_deluge_expressions_fail_closed(source):
 def test_deluge_external_tasks_are_not_accidentally_executable():
     with pytest.raises(HTTPException):
         parse_deluge('invokeurl ["url":"https://example.com","type":GET];')
+
+
+def test_compound_deluge_if_compiles_to_checked_expression():
+    steps = parse_deluge(
+        'if ($record.amount > 100 && $record.stage != "Closed") {\n'
+        'crm.addTag("Priority");\n'
+        '}'
+    )
+    assert steps[0]["_conditions"] == [
+        {"expression": '$record.amount > 100 && $record.stage != "Closed"'}
+    ]
+    assert evaluate_deluge_expression(
+        steps[0]["_conditions"][0]["expression"],
+        {"amount": 250, "stage": "Open"},
+    ) is True
+    assert evaluate_deluge_expression("!false && true") is True
