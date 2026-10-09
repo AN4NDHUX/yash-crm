@@ -1,0 +1,179 @@
+export function createBlueprintFeature({api,esc,toast,renderRoute}) {
+  const $=(q,r=document)=>r.querySelector(q), $$=(q,r=document)=>[...r.querySelectorAll(q)];
+  const operators=[["is","is"],["is_not","isn't"],["contains","contains"],["not_contains","doesn't contain"],["starts_with","starts with"],["ends_with","ends with"],["is_empty","is empty"],["is_not_empty","is not empty"],["greater_than","greater than"],["less_than","less than"]];
+  const actions=[["audit","Audit message"],["create_task","Create task"],["tag","Add tag"],["notification","Notification"]];
+  let list=[],tab="Blueprints",draft=null,opts=null,step="details",side="states",phase="before",picked=null,overlay=null,drag=null;
+  const select=(name,values,value)=>`<select class="bp-control" name="${esc(name)}">${values.map(item=>{const k=Array.isArray(item)?item[0]:item,v=Array.isArray(item)?item[1]:item;return `<option value="${esc(k)}" ${k===value?"selected":""}>${esc(v)}</option>`}).join("")}</select>`;
+  async function view() {
+    list=(await api("/api/blueprint-designer")).items||[];
+    const rows=list.map(bp=>`<tr data-bp-row data-name="${esc(bp.name.toLowerCase())}" data-module="${esc(String(bp.module).toLowerCase())}" data-active="${bp.active&&!bp.draft}">
+      <td><button class="bp-link" data-bp-open="${bp.id}">${esc(bp.name)}</button></td><td>${esc(bp.module)}</td><td>${esc(bp.layout_name||"Default")}</td><td>${esc(bp.field_name||"status")}</td>
+      <td>${bp.updated_at?esc(new Date(bp.updated_at).toLocaleDateString()):"—"}</td>
+      <td><span class="bp-status ${bp.active&&!bp.draft?"published":bp.draft?"draft":"inactive"}">${bp.active&&!bp.draft?"Published":bp.draft?"Draft":"Inactive"}</span></td>
+      <td><button class="bp-toggle ${bp.active&&!bp.draft?"on":""}" aria-label="Toggle Blueprint" data-bp-toggle="${bp.id}"></button></td></tr>`).join("");
+    return `<section class="bp-shell" data-bp-app><div class="bp-tabs">${["Blueprints","Filters","Usage"].map(t=>`<button data-bp-tab="${t}" class="${tab===t?"active":""}">${t}</button>`).join("")}</div><div class="bp-board">
+      <h2>Blueprint</h2><p>Design and publish stage transitions that match your team's organizational process.</p>
+      <div class="bp-toolbar"><label class="bp-search">⌕ <input data-bp-search placeholder="Search Blueprints" aria-label="Search Blueprints"></label>
+      <button class="button button-primary" data-bp-open="new">＋ Create Blueprint</button></div>
+      ${tab==="Filters"?`<div class="bp-filters"><label>Module ${select("bp-module-filter",[["all","All modules"],["leads","Leads"],["deals","Deals"]],"all")}</label><label>Status ${select("bp-status-filter",[["all","All statuses"],["true","Published"],["false","Draft / Inactive"]],"all")}</label></div>`:""}
+      ${tab==="Usage"?`<p class="bp-usage">${list.length} configured · ${list.filter(x=>x.active&&!x.draft).length} published. Transition counts can be viewed through the Blueprint history API.</p>`:""}
+      <div class="bp-table-wrap"><table class="bp-table"><thead><tr><th>Blueprint</th><th>Module</th><th>Layout</th><th>Field</th><th>Last modified</th><th>Status</th><th>Active</th></tr></thead><tbody>${rows||'<tr><td colspan="7">No blueprints yet. Create a Blueprint to begin.</td></tr>'}</tbody></table></div></div></section>`;
+  }
+  function bind() {
+    const root=$("[data-bp-app]"); if(!root)return;
+    $$("[data-bp-tab]",root).forEach(b=>b.onclick=()=>{tab=b.dataset.bpTab;renderRoute()});
+    $$("[data-bp-open]",root).forEach(b=>b.onclick=()=>open(b.dataset.bpOpen==="new"?null:Number(b.dataset.bpOpen)));
+    const filt=()=>{const text=($("[data-bp-search]",root)?.value||"").toLowerCase(),m=$('[name="bp-module-filter"]',root)?.value||"all",s=$('[name="bp-status-filter"]',root)?.value||"all";$$("[data-bp-row]",root).forEach(row=>row.hidden=!(row.dataset.name.includes(text)&&(m==="all"||m===row.dataset.module)&&(s==="all"||s===row.dataset.active)))};
+    $("[data-bp-search]",root)?.addEventListener("input",filt);$$(".bp-filters select",root).forEach(x=>x.addEventListener("change",filt));
+    $$("[data-bp-toggle]",root).forEach(b=>b.onclick=async()=>{b.disabled=true;try{const bp=list.find(r=>r.id===Number(b.dataset.bpToggle));await api(`/api/blueprint-designer/${bp.id}/${bp.active&&!bp.draft?"deactivate":"publish"}`,{method:"POST"});toast("Blueprint updated","The published process has been updated.");await renderRoute()}catch(e){toast("Blueprint update failed",e.message,"error");b.disabled=false;}});
+  }
+  async function open(id=null) {
+    try {
+      draft=id?await api(`/api/blueprint-designer/${id}`):{name:"",module:"Leads",layout_name:"Default",field_name:"status",description:"",entry_conditions:[],stages:[],transitions:[],continuous:false};
+      draft.module=String(draft.module||"Leads").toLowerCase()==="deals"?"deals":"leads";
+      opts=await api(`/api/blueprint-designer/options?module=${draft.module}`);
+      draft.entry_conditions=draft.entry_conditions||[];
+      draft.stages=(draft.stages||[]).map((s,i)=>({...s,label:s.label||s.name||`State ${i+1}`,x:Number(s.x??130+i%3*210),y:Number(s.y??130+Math.floor(i/3)*140)}));
+      draft.transitions=(draft.transitions||[]).map((t,i)=>({...t,id:String(t.id??i),after:t.after||[],required:t.required||[]}));
+      step="details";side="states";phase="before";picked=null;
+      overlay=document.createElement("div");overlay.className="bp-overlay";document.body.appendChild(overlay);
+      overlay.addEventListener("click",click);overlay.addEventListener("change",change);overlay.addEventListener("submit",submit);
+      overlay.addEventListener("pointerdown",pointerDown);overlay.addEventListener("pointermove",pointerMove);overlay.addEventListener("pointerup",pointerUp);
+      overlay.addEventListener("dragstart",e=>{const node=e.target.closest("[data-bp-palette]");if(node)e.dataTransfer.setData("text/plain",node.dataset.bpPalette)});
+      overlay.addEventListener("dragover",e=>{if(e.target.closest("[data-bp-canvas]"))e.preventDefault()});
+      overlay.addEventListener("drop",e=>{const c=e.target.closest("[data-bp-canvas]");if(!c)return;e.preventDefault();const label=e.dataTransfer.getData("text/plain"),rect=c.getBoundingClientRect();if(label)addState(label,e.clientX-rect.left,e.clientY-rect.top)});
+      render();
+    } catch(e){toast("Cannot open Blueprint designer",e.message,"error")}
+  }
+  const close=()=>{overlay?.remove();overlay=null};
+  function render(){if(overlay)overlay.innerHTML=step==="details"?basic():studio()}
+  function criteria() {return draft.entry_conditions.map((c,i)=>`<div class="bp-condition" data-bp-condition="${i}"><span>${i+1}</span>${select("field",opts.criteria_fields,c.field)}${select("operator",operators,c.operator)}<input name="value" class="bp-control" value="${esc(c.value??"")}" placeholder="Value"><button data-bp="remove-condition" data-index="${i}" type="button" aria-label="Remove">×</button></div>`).join("")}
+  function basic(){
+    return `<div class="bp-shade"></div><section class="bp-wizard" role="dialog" aria-modal="true" aria-label="Create new Blueprint"><header><h2>${draft.id?"Edit":"Create new"} Blueprint</h2><button data-bp="close" class="bp-close" aria-label="Close">×</button></header>
+      <form data-bp-details><div class="bp-wizard-content"><label class="bp-row"><span>Blueprint name *</span><input class="bp-control" name="name" maxlength="160" required value="${esc(draft.name||"")}" placeholder="Process name"></label>
+      <label class="bp-row"><span>Module</span>${select("module",[["leads","Leads"],["deals","Deals"]],draft.module)}</label>
+      <label class="bp-row"><span>Choose layout</span>${select("layout_name",opts.layouts,draft.layout_name||"Default")}</label>
+      <label class="bp-row"><span>Choose field</span>${select("field_name",opts.fields.map(f=>[f.name,f.label]),draft.field_name||opts.fields[0].name)}</label>
+      <div class="bp-criteria"><h3>Define criteria for records associated with this Blueprint</h3><p>Leave blank to include every record in this module and layout.</p>${criteria()}<button data-bp="add-condition" class="bp-text-button" type="button">＋ Add condition</button></div>
+      <label class="bp-row"><span>Description</span><textarea class="bp-control" name="description" rows="3">${esc(draft.description||"")}</textarea></label>
+      <label class="bp-checkbox"><input type="checkbox" name="continuous" ${draft.continuous?"checked":""}> Continuous process</label></div><footer><button type="button" class="button button-ghost" data-bp="close">Cancel</button><button type="submit" class="button button-primary">Next →</button></footer></form></section>`;
+  }
+  function capture(){
+    const form=$("[data-bp-details]",overlay);if(!form)return false;
+    if(!form.reportValidity())return false;
+    draft.name=form.elements.name.value.trim();draft.module=form.elements.module.value;
+    draft.layout_name=form.elements.layout_name.value;draft.field_name=form.elements.field_name.value;
+    draft.description=form.elements.description.value;draft.continuous=form.elements.continuous.checked;
+    draft.entry_conditions=$$("[data-bp-condition]",form).map(row=>({field:$('[name="field"]',row).value,operator:$('[name="operator"]',row).value,value:$('[name="value"]',row).value}));
+    return true;
+  }
+  function graph() {
+    const names=Object.fromEntries(draft.stages.map(x=>[x.label,x]));
+    const paths=draft.transitions.map((t,i)=>{const a=names[t.from],b=names[t.to];if(!a||!b)return"";const x1=a.x+145,y1=a.y+20,x2=b.x,y2=b.y+20,c=(x1+x2)/2;return `<path d="M${x1} ${y1} C${c} ${y1},${c} ${y2},${x2} ${y2}" fill="none" stroke="${picked?.type==="edge"&&picked.index===i?"#2363e8":"#8795af"}" stroke-width="2" marker-end="url(#bp-arrow)"/>`}).join("");
+    return `<svg class="bp-lines" viewBox="0 0 1000 670" preserveAspectRatio="none"><defs><marker id="bp-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8795af"/></marker></defs>${paths}</svg>`;
+  }
+  function studio(){
+    const chips=draft.stages.map((s,i)=>`<button type="button" class="bp-node ${picked?.type==="state"&&picked.index===i?"selected":""}" style="left:${s.x}px;top:${s.y}px" data-bp-state="${i}">${esc(s.label)}</button>`).join("");
+    const palette=opts.initial_states.filter(s=>!draft.stages.some(x=>x.label===s)).map(s=>`<button type="button" draggable="true" class="bp-state-chip" data-bp-palette="${esc(s)}" data-bp-add-state="${esc(s)}">⠿ ${esc(s)}</button>`).join("");
+    return `<section class="bp-studio" role="dialog" aria-modal="true" aria-label="Blueprint visual designer"><header><button data-bp="back" class="bp-text-button">← Details</button><h2>${esc(draft.name)}</h2><span class="bp-status draft">Designer</span><button data-bp="close" class="bp-close">×</button></header>
+      <div class="bp-studio-grid"><main class="bp-canvas-scroll"><div class="bp-canvas" data-bp-canvas>${graph()}<div class="bp-start">Start</div>${chips}${!draft.stages.length?'<p class="bp-empty-canvas">Drag states here or add them from the right panel.</p>':""}</div></main>
+      <aside class="bp-inspector"><div class="bp-inspector-tabs"><button data-bp-side="states" class="${side==="states"?"active":""}">Info and States</button><button data-bp-side="transitions" class="${side==="transitions"?"active":""}">Transitions</button></div><div class="bp-inspector-content">${side==="states"?`
+        <h3>${esc(draft.name)}</h3><p>Module: ${esc(draft.module)} · Layout: ${esc(draft.layout_name)} · Field: ${esc(draft.field_name)}</p>
+        <label class="bp-checkbox"><input type="checkbox" data-bp-continuous ${draft.continuous?"checked":""}> Continuous</label>
+        <h4>Available States</h4><div class="bp-chip-list">${palette}</div><div class="bp-add-row"><input class="bp-control" data-bp-new-state maxlength="80" placeholder="Custom state name"><button data-bp="add-custom" class="button button-ghost">＋ Add</button></div>
+        <h4>Process States (${draft.stages.length})</h4>${draft.stages.map((s,i)=>`<button class="bp-state-chip" data-bp-state="${i}">${esc(s.label)}</button>`).join("")}
+        ${picked?.type==="state"?`<div class="bp-editor"><label>State name<input class="bp-control" data-bp-rename value="${esc(draft.stages[picked.index]?.label||"")}"></label><button class="bp-danger" data-bp="delete-state">Delete state</button></div>`:""}
+      `:`
+        <h3>Transitions</h3><p>Connect states, configure permissions and required fields, and add supported actions.</p>
+        <button data-bp="add-edge" class="button button-primary" ${draft.stages.length<2?"disabled":""}>＋ New Transition</button>
+        <div class="bp-edge-list">${draft.transitions.map((e,i)=>`<button data-bp-edge="${i}" class="${picked?.type==="edge"&&picked.index===i?"active":""}"><strong>${esc(e.label)}</strong><small>${esc(e.from)} → ${esc(e.to)}</small></button>`).join("")}</div>
+        ${picked?.type==="edge"?edgeEditor():"<p>Select a transition to configure its Before, During and After phases.</p>"}
+      `}</div></aside></div><footer class="bp-studio-footer"><button class="button button-ghost" data-bp="close">Cancel</button><div><button class="button button-ghost" data-bp="save">Save as Draft</button><button class="button button-primary" data-bp="publish">Publish Blueprint</button></div></footer></section>`;
+  }
+  function edgeEditor(){
+    const e=draft.transitions[picked.index],stages=draft.stages.map(x=>x.label);
+    if(!e)return "";
+    return `<div class="bp-editor"><h4>Edit transition</h4><label>Label<input class="bp-control" data-bp-edge-label value="${esc(e.label)}"></label>
+    <label>From ${select("from",stages,e.from)}</label><label>To ${select("to",stages,e.to)}</label>
+    <div class="bp-phase-tabs">${["before","during","after"].map(p=>`<button data-bp-phase="${p}" class="${phase===p?"active":""}">${p.toUpperCase()}</button>`).join("")}</div>
+    ${phase==="before"?`<label>Eligible owners ${select("owner_scope",[["any","Users with edit permission"],["owner","Record owner only"]],e.owner_scope||"any")}</label><label class="bp-checkbox"><input type="checkbox" name="common" ${e.common?"checked":""}> Common transition</label>`:
+    phase==="during"?`<label>Instruction<textarea class="bp-control" data-bp-message rows="3">${esc(e.message||"")}</textarea></label><h4>Required fields</h4>${opts.criteria_fields.filter(f=>f!==draft.field_name).map(f=>`<label class="bp-checkbox"><input type="checkbox" data-bp-required="${esc(f)}" ${(e.required||[]).includes(f)?"checked":""}> ${esc(f)}</label>`).join("")}`:
+    `<h4>After actions</h4>${(e.after||[]).map((act,i)=>`<div class="bp-after-row"><span>${esc(act.type)}</span><input class="bp-control" data-bp-action-value="${i}" value="${esc(act.value||"")}"><button data-bp-delete-action="${i}">×</button></div>`).join("")}
+    <div class="bp-add-row">${select("action_type",actions,"create_task")}<input class="bp-control" data-bp-action-new placeholder="Task / tag / message"><button data-bp="add-action" class="button button-ghost">Add</button></div><small>Actions run through CRM permissions. External integrations are configured separately.</small>`}
+    <button data-bp="delete-edge" class="bp-danger">Delete transition</button></div>`;
+  }
+  function addState(label,x,y){
+    label=String(label||"").trim();if(!label||draft.stages.some(s=>s.label===label))return toast("Duplicate state","Use a unique state name.","error");
+    const i=draft.stages.length;
+    draft.stages.push({id:"s-"+(i+1),label,x:Math.max(8,Math.min(830,Math.round(x??110+(i%3)*210))),y:Math.max(10,Math.min(590,Math.round(y??120+Math.floor(i/3)*135)))});
+    picked={type:"state",index:i};side="states";render();
+  }
+  async function save(publish){
+    const btn=$(`[data-bp="${publish?"publish":"save"}"]`,overlay);if(btn)btn.disabled=true;
+    try {
+      const body=JSON.stringify(draft);
+      const record=await api(draft.id?`/api/blueprint-designer/${draft.id}`:"/api/blueprint-designer",{method:draft.id?"PUT":"POST",body});
+      draft.id=record.id;
+      if(publish)await api(`/api/blueprint-designer/${draft.id}/publish`,{method:"POST"});
+      toast(publish?"Blueprint published":"Draft saved",publish?"Matching records now show the configured transitions.":"This draft does not affect live records.");
+      close();await renderRoute();
+    }catch(e){if(btn)btn.disabled=false;toast("Could not save Blueprint",e.message,"error")}
+  }
+  function submit(event){if(!event.target.matches("[data-bp-details]"))return;event.preventDefault();if(capture()){step="designer";render()}}
+  async function change(event){
+    const node=event.target;
+    if(step==="details"&&node.name==="module"){
+      const next=node.value;if(draft.module===next)return;
+      if(draft.stages.length&&!window.confirm("Changing module clears the existing process. Continue?"))return render();
+      draft.module=next;draft.field_name=next==="deals"?"stage":"status";draft.layout_name="Default";draft.stages=[];draft.transitions=[];draft.entry_conditions=[];
+      opts=await api(`/api/blueprint-designer/options?module=${next}`);render();return;
+    }
+    if(step!=="designer")return;
+    if(node.matches("[data-bp-continuous]"))draft.continuous=node.checked;
+    if(node.matches("[data-bp-rename]")&&picked?.type==="state"){
+      const old=draft.stages[picked.index].label,v=node.value.trim();
+      if(v&&!draft.stages.some((s,i)=>i!==picked.index&&s.label===v)){draft.stages[picked.index].label=v;draft.transitions.forEach(t=>{if(t.from===old)t.from=v;if(t.to===old)t.to=v});render()}
+    }
+    if(picked?.type!=="edge")return;
+    const e=draft.transitions[picked.index];
+    if(["from","to","owner_scope"].includes(node.name))e[node.name]=node.value;
+    if(node.name==="common")e.common=node.checked;
+    if(node.matches("[data-bp-edge-label]"))e.label=node.value.trim();
+    if(node.matches("[data-bp-message]"))e.message=node.value;
+    if(node.matches("[data-bp-required]"))e.required=$$("[data-bp-required]:checked",overlay).map(n=>n.dataset.bpRequired);
+    if(node.matches("[data-bp-action-value]"))e.after[Number(node.dataset.bpActionValue)].value=node.value;
+  }
+  function click(event){
+    const t=event.target.closest("[data-bp],[data-bp-add-state],[data-bp-state],[data-bp-edge],[data-bp-side],[data-bp-phase],[data-bp-delete-action]");if(!t)return;
+    const action=t.dataset.bp;
+    if(action==="close")return close();
+    if(action==="back"){step="details";render();return}
+    if(action==="save")return save(false);
+    if(action==="publish")return save(true);
+    if(action==="add-condition"){if(!capture())return;draft.entry_conditions.push({field:opts.criteria_fields[0],operator:"is",value:""});render();return}
+    if(action==="remove-condition"){if(!capture())return;draft.entry_conditions.splice(Number(t.dataset.index),1);render();return}
+    if(t.dataset.bpAddState)return addState(t.dataset.bpAddState);
+    if(action==="add-custom")return addState($("[data-bp-new-state]",overlay)?.value);
+    if(t.dataset.bpState!==undefined){picked={type:"state",index:Number(t.dataset.bpState)};side="states";render();return}
+    if(t.dataset.bpEdge!==undefined){picked={type:"edge",index:Number(t.dataset.bpEdge)};side="transitions";render();return}
+    if(t.dataset.bpSide){side=t.dataset.bpSide;render();return}
+    if(t.dataset.bpPhase){phase=t.dataset.bpPhase;render();return}
+    if(action==="delete-state"&&picked?.type==="state"){const name=draft.stages[picked.index].label;draft.stages.splice(picked.index,1);draft.transitions=draft.transitions.filter(e=>e.from!==name&&e.to!==name);picked=null;render();return}
+    if(action==="add-edge"&&draft.stages.length>1){
+      const i=draft.transitions.length,a=draft.stages[0].label,b=draft.stages[1].label;
+      draft.transitions.push({id:"t-"+(i+1),label:"Move to "+b,from:a,to:b,owner_scope:"any",required:[],message:"",after:[]});
+      picked={type:"edge",index:i};side="transitions";render();return;
+    }
+    if(action==="delete-edge"&&picked?.type==="edge"){draft.transitions.splice(picked.index,1);picked=null;render();return}
+    if(action==="add-action"&&picked?.type==="edge"){
+      const value=$("[data-bp-action-new]",overlay)?.value.trim(),type=$('[name="action_type"]',overlay)?.value;
+      if(!value)return toast("Value required","Provide an action message.","error");
+      draft.transitions[picked.index].after.push({type,value});render();return;
+    }
+    if(t.dataset.bpDeleteAction!==undefined&&picked?.type==="edge"){draft.transitions[picked.index].after.splice(Number(t.dataset.bpDeleteAction),1);render()}
+  }
+  function pointerDown(e){const node=e.target.closest(".bp-node[data-bp-state]");if(!node||e.button!==0)return;const i=Number(node.dataset.bpState),s=draft.stages[i];drag={i,node,startX:e.clientX,startY:e.clientY,x:s.x,y:s.y}}
+  function pointerMove(e){if(!drag)return;const s=draft.stages[drag.i];s.x=Math.max(8,Math.min(830,Math.round(drag.x+e.clientX-drag.startX)));s.y=Math.max(10,Math.min(590,Math.round(drag.y+e.clientY-drag.startY)));drag.node.style.left=s.x+"px";drag.node.style.top=s.y+"px"}
+  function pointerUp(){if(drag){drag=null;render()}}
+  return {view,bind};
+}
