@@ -779,17 +779,17 @@ function relatedNavigation(resource, related) {
   const connectedCount = (related.accounts || []).length + (related.contacts || []).length + (related.deals || []).length;
   const items = [
     ['customer_journey', 'Customer journey', !!related.journey],
-    ['notes', 'Notes', true],
-    ['connected_records', 'Connected records', ['accounts', 'contacts', 'deals'].includes(resource) || connectedCount > 0],
-    ['attachments', 'Attachments', true],
-    ['products', 'Products', true],
+    ['notes', 'Notes', true, (related.notes || []).length],
+    ['connected_records', 'Connected records', ['accounts', 'contacts', 'deals'].includes(resource) || connectedCount > 0, connectedCount],
+    ['attachments', 'Attachments', true, (related.attachments || []).length],
+    ['products', 'Products', true, (related.products || []).length],
     ['open_activities', 'Open activities', true, openActivities],
     ['closed_activities', 'Closed activities', closedActivities > 0, closedActivities],
     ['custom_records', 'Custom & related modules', (related.custom_records || []).length > 0, (related.custom_records || []).length],
-    ['emails', 'Emails', true],
-    ['timeline', 'Timeline', true],
+    ['emails', 'Emails', true, (related.emails || []).length],
+    ['timeline', 'Timeline', true, (related.activities || []).length],
   ].filter(([, , visible]) => visible);
-  return `<nav class="detail-related-links">${items.map(([key, label, , count]) => `<button class="detail-related-link" type="button" data-detail-nav="${key}" data-detail-target="detail-section-${key}"><span>${esc(label)}</span>${count != null ? `<small>${count}</small>` : ''}</button>`).join('')}</nav>`;
+  return `<nav class="detail-related-links">${items.map(([key, label, , count]) => `<button class="detail-related-link" type="button" data-detail-nav="${key}" data-detail-target="detail-section-${key}"><span>${esc(label)}</span>${count > 0 ? `<small>${count}</small>` : ''}</button>`).join('')}</nav>`;
 }
 
 function relatedPlainRow(title, meta, resource, id, navigable = true) {
@@ -904,6 +904,15 @@ async function openRecordModal(resource, id = null, preset = {}) {
   $("#modal-title").textContent = id ? `Update ${config.singular.toLowerCase()}` : `Create ${config.singular.toLowerCase()}`;
   $("#modal-submit").textContent = id ? "Save changes" : resource === "users" ? "Send invitation" : `Create ${config.singular.toLowerCase()}`;
   $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.map((field) => fieldHtml(field, record[field.key])).join("")}</div>`;
+  if (resource === "attachments" && !id) {
+    $("#modal-body").insertAdjacentHTML("afterbegin", '<div class="field full" style="margin-bottom:16px"><label for="attachment-upload-file">Upload file *</label><input class="field-input" id="attachment-upload-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg" required /><small>Maximum 10 MB</small></div>');
+    $("#attachment-upload-file").addEventListener("change", event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const set = (key, value) => { const element = $("#modal-body").querySelector('[name="' + key + '"]'); if (element) element.value = value; };
+      set("name", file.name); set("file_type", file.type || "File"); set("file_size", String(file.size));
+    });
+  }
   $("#modal-backdrop").hidden = false;
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
 }
@@ -963,7 +972,24 @@ async function submitRecord(event) {
   try {
     const data = readForm(event.currentTarget);
     submit.disabled = true;
-    if (resource === "users" && !id) {
+    if (resource === "attachments" && !id) {
+      const upload = $("#attachment-upload-file")?.files?.[0];
+      if (!upload) throw new Error("Select a file to upload.");
+      if (upload.size > 10000000) throw new Error("Maximum attachment size is 10 MB.");
+      const body = new FormData();
+      body.append("file", upload); body.append("name", String(data.name || upload.name));
+      if (data.related_type) body.append("related_type", data.related_type);
+      if (data.related_id) body.append("related_id", String(data.related_id));
+      const response = await fetch("/api/documents/upload", { method: "POST", body, credentials: "same-origin" });
+      const raw = await response.text();
+      let doc = {}; try { doc = JSON.parse(raw); } catch { /* handled below */ }
+      if (!response.ok) throw new Error(doc.detail || "Upload failed (" + response.status + ")");
+      data.name = String(data.name || upload.name);
+      data.file_type = String(data.file_type || upload.type || "File").slice(0, 80);
+      data.file_size = String(upload.size);
+      data.url = "/api/documents/" + doc.id + "/download";
+      await api("/api/attachments", { method: "POST", body: JSON.stringify(data) });
+    } else     if (resource === "users" && !id) {
       await api("/api/admin/users/invite", { method: "POST", body: JSON.stringify(data) });
     } else {
       await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
