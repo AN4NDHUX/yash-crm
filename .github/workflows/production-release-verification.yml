@@ -1,0 +1,66 @@
+name: Production Release Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: "Exact deployed Git commit (at least 7 characters)"
+        required: true
+        type: string
+      expected_migration:
+        description: "Expected production Alembic revision (for example 0026_visual_blueprints)"
+        required: true
+        type: string
+      mode:
+        description: "Read-only revision verification or full credential-backed smoke checks"
+        required: true
+        default: readiness
+        type: choice
+        options:
+          - readiness
+          - full
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify production release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate expected revision input
+        env:
+          EXPECTED_APP_REVISION: ${{ inputs.expected_commit }}
+          EXPECTED_MIGRATION_REVISION: ${{ inputs.expected_migration }}
+        run: |
+          python - <<'PY'
+          import os, re
+          commit = os.environ["EXPECTED_APP_REVISION"]
+          migration = os.environ["EXPECTED_MIGRATION_REVISION"]
+          assert re.fullmatch(r"[0-9a-fA-F]{7,40}", commit), "Supply a valid Git commit SHA"
+          assert re.fullmatch(r"[A-Za-z0-9_]{1,96}", migration), "Supply a valid Alembic revision"
+          PY
+      - name: Check live health, commit, and migration
+        env:
+          PRODUCTION_BASE_URL: https://yashcrm-production.up.railway.app
+          EXPECTED_APP_REVISION: ${{ inputs.expected_commit }}
+          EXPECTED_MIGRATION_REVISION: ${{ inputs.expected_migration }}
+        run: python -c 'import json; from scripts.verify_production import verify_public_readiness; print(json.dumps(verify_public_readiness(), sort_keys=True))'
+      - name: Credential-backed production checks
+        if: inputs.mode == 'full'
+        env:
+          PRODUCTION_BASE_URL: https://yashcrm-production.up.railway.app
+          EXPECTED_APP_REVISION: ${{ inputs.expected_commit }}
+          EXPECTED_MIGRATION_REVISION: ${{ inputs.expected_migration }}
+          PRODUCTION_ADMIN_USERNAME: ${{ secrets.PRODUCTION_ADMIN_USERNAME }}
+          PRODUCTION_ADMIN_PASSWORD: ${{ secrets.PRODUCTION_ADMIN_PASSWORD }}
+          PRODUCTION_SMOKE_USER_A_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_A_IDENTIFIER }}
+          PRODUCTION_SMOKE_USER_A_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_USER_A_PASSWORD }}
+          PRODUCTION_SMOKE_USER_B_IDENTIFIER: ${{ secrets.PRODUCTION_SMOKE_USER_B_IDENTIFIER }}
+          PRODUCTION_SMOKE_USER_B_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_USER_B_PASSWORD }}
+        run: python scripts/verify_production.py
