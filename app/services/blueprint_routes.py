@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from fastapi import Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.sql.sqltypes import String as SQLString
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Blueprint, PlatformRecord, User
@@ -16,9 +17,13 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
     # remain readable so existing automations and Blueprint transition history survive.
     @app.get("/api/blueprint-designer/options")
     def blueprint_designer_options(module: str = "leads", db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+        """Expose field-specific criteria values from the current organization's records."""
         from app.services.blueprint_engine import FIELDS, CRITERIA_FIELDS
+        from app.services.core import STAGE_PROBABILITY
+        from app.models import Lead, Deal
+
         organization, _ = _require_organization_admin(db, actor)
-        module = module.lower()
+        module = module.lower().strip()
         if module not in FIELDS:
             raise HTTPException(422, "Choose Leads or Deals")
         layouts = ["Default"]
@@ -28,12 +33,55 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
         )).all():
             if str((row.data or {}).get("module", "")).lower().rstrip("s") == module.rstrip("s"):
                 layouts.append(row.title)
-        from app.services.core import STAGE_PROBABILITY
-        return {"fields": [{"name": FIELDS[module], "label": "Lead Status" if module == "leads" else "Deal Stage"}],
-                "criteria_fields": sorted(CRITERIA_FIELDS[module]), "layouts": list(dict.fromkeys(layouts)),
-                "initial_states": ["New", "Contacted", "Qualified", "Unqualified"] if module == "leads" else list(STAGE_PROBABILITY)}
-    
-    
+
+        defaults = {
+            "leads": {
+                "status": ["New", "Contacted", "Qualified", "Unqualified", "Converted"],
+                "source": ["Website", "Referral", "LinkedIn", "Event", "Outbound", "Other"],
+            },
+            "deals": {
+                "stage": list(STAGE_PROBABILITY),
+                "status": ["Open", "Won", "Lost"],
+            },
+        }
+        label_overrides = {
+            "lead_score": "Lead Score", "source": "Lead Source" if module == "leads" else "Source",
+            "stage": "Deal Stage", "status": "Lead Status" if module == "leads" else "Deal Status",
+        }
+        model = Lead if module == "leads" else Deal
+        criteria_meta = {}
+        for field in sorted(CRITERIA_FIELDS[module]):
+            column = getattr(model, field)
+            is_numeric = not isinstance(column.property.columns[0].type, SQLString)
+            values = list(defaults[module].get(field, []))
+            statement = (
+                select(column)
+                .where(model.organization_id == organization.id, model.archived == False, column.is_not(None))
+                .distinct()
+                .order_by(column)
+                .limit(100)
+            )
+            for observed in db.scalars(statement).all():
+                if observed is None or str(observed).strip() == "":
+                    continue
+                value = str(observed)
+                if value not in values:
+                    values.append(value)
+            criteria_meta[field] = {
+                "label": label_overrides.get(field, field.replace("_", " ").title()),
+                "type": "number" if is_numeric else "select" if field in defaults[module] else "text",
+                "options": values[:120],
+                "allow_custom": field not in defaults[module],
+            }
+        return {
+            "fields": [{"name": FIELDS[module], "label": "Lead Status" if module == "leads" else "Deal Stage"}],
+            "criteria_fields": sorted(CRITERIA_FIELDS[module]),
+            "criteria_meta": criteria_meta,
+            "layouts": list(dict.fromkeys(layouts)),
+            "initial_states": defaults["leads"]["status"][:4] if module == "leads" else list(STAGE_PROBABILITY),
+        }
+
+
     @app.get("/api/blueprint-designer")
     def blueprint_designer_list(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
         organization, _ = _require_organization_admin(db, actor)

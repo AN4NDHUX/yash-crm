@@ -48,7 +48,28 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
   }
   const close=()=>{overlay?.remove();overlay=null};
   function render(){if(overlay)overlay.innerHTML=step==="details"?basic():studio()}
-  function criteria() {return draft.entry_conditions.map((c,i)=>`<div class="bp-condition" data-bp-condition="${i}"><span>${i+1}</span>${select("field",opts.criteria_fields,c.field)}${select("operator",operators,c.operator)}<input name="value" class="bp-control" value="${esc(c.value??"")}" placeholder="Value"><button data-bp="remove-condition" data-index="${i}" type="button" aria-label="Remove">×</button></div>`).join("")}
+  function criteriaValue(condition) {
+    const field = condition.field;
+    const meta = opts?.criteria_meta?.[field] || {options:[],type:"text",allow_custom:true};
+    const missingValue = ["is_empty","is_not_empty"].includes(condition.operator);
+    const options = (meta.options || []).map(value=>String(value));
+    const saved = String(condition.value ?? "");
+    const isCustom = !!saved && !options.includes(saved) && meta.allow_custom;
+    const selected = isCustom ? "__custom__" : saved;
+    const prompt = missingValue ? "Not required" : "Select value";
+    const choices = [["",prompt],...options.map(value=>[value,value])];
+    if (saved && !options.includes(saved) && !meta.allow_custom) choices.push([saved,saved]);
+    if (meta.allow_custom) choices.push(["__custom__","＋ Enter custom value"]);
+    return `<div class="bp-value-control">
+      ${select("value_choice",choices,selected).replace('name="value_choice"','name="value_choice" aria-label="Value for '+esc(field)+'"')}
+      ${meta.allow_custom ? `<input class="bp-control bp-custom-value" type="${meta.type==="number"?"number":"text"}" step="any" name="value_custom" value="${esc(isCustom?saved:"")}" placeholder="${meta.type==="number"?"Enter number":"Enter custom value"}" ${isCustom&&!missingValue?"":"hidden"}>` : ""}
+    </div>`;
+  }
+  function criteria() {return draft.entry_conditions.map((c,i)=>`<div class="bp-condition" data-bp-condition="${i}"><span>${i+1}</span>
+    ${select("field",opts.criteria_fields.map(field=>[field,opts?.criteria_meta?.[field]?.label||field]),c.field)}
+    ${select("operator",operators,c.operator)}
+    ${criteriaValue(c)}
+    <button data-bp="remove-condition" data-index="${i}" type="button" aria-label="Remove">×</button></div>`).join("")}
   function basic(){
     return `<div class="bp-shade"></div><section class="bp-wizard" role="dialog" aria-modal="true" aria-label="Create new Blueprint"><header><h2>${draft.id?"Edit":"Create new"} Blueprint</h2><button data-bp="close" class="bp-close" aria-label="Close">×</button></header>
       <form data-bp-details><div class="bp-wizard-content"><label class="bp-row"><span>Blueprint name *</span><input class="bp-control" name="name" maxlength="160" required value="${esc(draft.name||"")}" placeholder="Process name"></label>
@@ -65,7 +86,13 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     draft.name=form.elements.name.value.trim();draft.module=form.elements.module.value;
     draft.layout_name=form.elements.layout_name.value;draft.field_name=form.elements.field_name.value;
     draft.description=form.elements.description.value;draft.continuous=form.elements.continuous.checked;
-    draft.entry_conditions=$$("[data-bp-condition]",form).map(row=>({field:$('[name="field"]',row).value,operator:$('[name="operator"]',row).value,value:$('[name="value"]',row).value}));
+    draft.entry_conditions=$$("[data-bp-condition]",form).map(row=>{
+      const field=$('[name="field"]',row).value,operator=$('[name="operator"]',row).value;
+      const choice=$('[name="value_choice"]',row).value;
+      const value=["is_empty","is_not_empty"].includes(operator) ? "" :
+        choice==="__custom__" ? ($('[name="value_custom"]',row)?.value||"") : choice;
+      return {field,operator,value};
+    });
     return true;
   }
   function graph(){
@@ -150,6 +177,28 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
   function submit(event){if(!event.target.matches("[data-bp-details]"))return;event.preventDefault();if(capture()){step="designer";render()}}
   async function change(event){
     const node=event.target;
+    if(step==="details" && node.closest("[data-bp-condition]")) {
+      const row=node.closest("[data-bp-condition]");
+      const index=Number(row.dataset.bpCondition);
+      if(node.name==="value_choice"){
+        const custom=node.value==="__custom__";
+        const input=$('[name="value_custom"]',row);
+        if(input){input.hidden=!custom;input.required=custom;if(custom)input.focus();}
+        return;
+      }
+      if(node.name==="field" || node.name==="operator"){
+        const previous=draft.entry_conditions.map(c=>({...c}));
+        // Capture without blocking change on an incomplete criteria row.
+        draft.entry_conditions=$$("[data-bp-condition]",overlay).map((r,i)=>{
+          const field=$('[name="field"]',r).value, operator=$('[name="operator"]',r).value;
+          const choice=$('[name="value_choice"]',r).value;
+          const value=choice==="__custom__"?$('[name="value_custom"]',r)?.value||"":choice;
+          return {field,operator,value:previous[i]?.field!==field||["is_empty","is_not_empty"].includes(operator)?"":value};
+        });
+        render();
+        return;
+      }
+    }
     if(step==="details"&&node.name==="module"){
       const next=node.value;if(draft.module===next)return;
       if(draft.stages.length&&!window.confirm("Changing module clears the existing process. Continue?"))return render();
