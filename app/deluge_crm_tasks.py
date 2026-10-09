@@ -166,7 +166,7 @@ def run_crm_task(db, name: str, args: list, *, source_resource: str):
         raise ValueError("Record ID is required")
     action = "delete" if name == "deleteRecord" else "update"
     _require(db, actor, module, action)
-    record = _one(db, module, model, org, actor, args[1], "delete" if action == "delete" else "edit")
+    record = _one(db, module, model, org, actor, args[1], "delete" if action == "delete" else "update")
     if name == "deleteRecord":
         if "archived" not in model.__table__.columns:
             raise ValueError("Module does not support safe deletion")
