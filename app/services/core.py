@@ -578,7 +578,23 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                 if not matched:
                     continue
             resolved_step = {key: resolve(item) for key, item in step.items() if key != "_conditions"}
-            _execute_workflow_action(db, resolved_step, resource, record, values)
+            if str(resolved_step.get("type", "")).lower() == "webhook_queue":
+                from uuid import uuid4
+                # Only the separate worker performs external I/O. The destination
+                # is exclusively WORKFLOW_WEBHOOK_URL, not script-controlled.
+                db.add(WorkflowExecution(
+                    organization_id=getattr(record, "organization_id", None) or function_record.organization_id,
+                    owner_id=getattr(record, "owner_id", None) or function_record.owner_id,
+                    rule_id=function_record.id,
+                    resource=resource,
+                    record_id=record.id,
+                    event="deluge_outbound",
+                    status="queued",
+                    actions=[resolved_step],
+                    idempotency_key="deluge|" + uuid4().hex,
+                ))
+            else:
+                _execute_workflow_action(db, resolved_step, resource, record, values)
         add_audit(db, "function_executed", resource, record.id, f"Custom function '{function_record.title}' executed")
     elif action_type in {"webhook", "webhook_queue", "email", "call", "meeting"}:
         add_audit(db, "automation_queued", resource, record.id, f"Queued workflow action '{action_type}' for external worker")
