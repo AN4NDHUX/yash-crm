@@ -1,3 +1,4 @@
+import { installAttachmentPicker, createAttachmentFromFile } from "./features/attachments.js";
 import { requestJson } from "./core/http.js";
 import { renderPricingView, bindPricingInteractions } from "./features/pricing.js?v=20261008-convosis-ui-v2";
 
@@ -904,15 +905,7 @@ async function openRecordModal(resource, id = null, preset = {}) {
   $("#modal-title").textContent = id ? `Update ${config.singular.toLowerCase()}` : `Create ${config.singular.toLowerCase()}`;
   $("#modal-submit").textContent = id ? "Save changes" : resource === "users" ? "Send invitation" : `Create ${config.singular.toLowerCase()}`;
   $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.map((field) => fieldHtml(field, record[field.key])).join("")}</div>`;
-  if (resource === "attachments" && !id) {
-    $("#modal-body").insertAdjacentHTML("afterbegin", '<div class="field full" style="margin-bottom:16px"><label for="attachment-upload-file">Upload file *</label><input class="field-input" id="attachment-upload-file" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg" required /><small>Maximum 10 MB</small></div>');
-    $("#attachment-upload-file").addEventListener("change", event => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      const set = (key, value) => { const element = $("#modal-body").querySelector('[name="' + key + '"]'); if (element) element.value = value; };
-      set("name", file.name); set("file_type", file.type || "File"); set("file_size", String(file.size));
-    });
-  }
+  if (resource === "attachments" && !id) installAttachmentPicker($("#modal-body"));
   $("#modal-backdrop").hidden = false;
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
 }
@@ -973,23 +966,8 @@ async function submitRecord(event) {
     const data = readForm(event.currentTarget);
     submit.disabled = true;
     if (resource === "attachments" && !id) {
-      const upload = $("#attachment-upload-file")?.files?.[0];
-      if (!upload) throw new Error("Select a file to upload.");
-      if (upload.size > 10000000) throw new Error("Maximum attachment size is 10 MB.");
-      const body = new FormData();
-      body.append("file", upload); body.append("name", String(data.name || upload.name));
-      if (data.related_type) body.append("related_type", data.related_type);
-      if (data.related_id) body.append("related_id", String(data.related_id));
-      const response = await fetch("/api/documents/upload", { method: "POST", body, credentials: "same-origin" });
-      const raw = await response.text();
-      let doc = {}; try { doc = JSON.parse(raw); } catch { /* handled below */ }
-      if (!response.ok) throw new Error(doc.detail || "Upload failed (" + response.status + ")");
-      data.name = String(data.name || upload.name);
-      data.file_type = String(data.file_type || upload.type || "File").slice(0, 80);
-      data.file_size = String(upload.size);
-      data.url = "/api/documents/" + doc.id + "/download";
-      await api("/api/attachments", { method: "POST", body: JSON.stringify(data) });
-    } else     if (resource === "users" && !id) {
+      await createAttachmentFromFile(event.currentTarget, data, api);
+    } else if (resource === "users" && !id) {
       await api("/api/admin/users/invite", { method: "POST", body: JSON.stringify(data) });
     } else {
       await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
