@@ -62,3 +62,37 @@ def test_timeline_records_stage_changes_and_rejects_cross_tenant_access():
     assert out['unknown_resource'] == 404
     assert out['missing_record'] == 404
     assert out['other_tenant'] == {'lead': 404, 'deal': 404}
+
+
+def test_lead_blueprint_transitions_are_listed_and_enforced():
+    out = app_scenario("""
+    with TestClient(main.app) as client:
+        registered = client.post('/api/auth/signup', json={
+            'name':'Blueprint Lead Owner','organization_name':'Lead Stage Policy Org',
+            'username':'blueprint.lead','email':'blueprint.lead@example.com',
+            'password':'strong-password-123'})
+        assert registered.status_code in (200,201), registered.text
+        lead = client.post('/api/leads', json={'name':'Blueprint controlled lead'}).json()
+        with main.SessionLocal() as db:
+            db.add(main.Blueprint(
+                organization_id=lead['organization_id'],
+                name='Lead Stage Rules', module='Leads',
+                active=True, archived=False,
+                transitions=[{'from':'New','to':'Contacted'},
+                             {'from':'Contacted','to':'Qualified'}],
+            ))
+            db.commit()
+        initial = client.get(f"/api/leads/{lead['id']}/timeline")
+        out['configured'] = initial.json().get('blueprint_enabled')
+        out['first_options'] = initial.json().get('transitions')
+        out['blocked'] = client.patch(f"/api/leads/{lead['id']}", json={'status':'Qualified'}).status_code
+        out['accepted'] = client.patch(f"/api/leads/{lead['id']}", json={'status':'Contacted'}).status_code
+        out['next_options'] = client.get(f"/api/leads/{lead['id']}/timeline").json().get('transitions')
+        out['current_status'] = client.get(f"/api/leads/{lead['id']}").json().get('status')
+    """)
+    assert out['configured'] is True, out
+    assert out['first_options'] == ['Contacted'], out
+    assert out['blocked'] == 422, out
+    assert out['accepted'] == 200, out
+    assert out['current_status'] == 'Contacted', out
+    assert out['next_options'] == ['Qualified'], out
