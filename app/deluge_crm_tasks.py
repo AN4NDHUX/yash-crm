@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.database import TENANT_ORGANIZATION_ID, TENANT_ACTOR_ID
 from app.models import OrganizationMember, User
-from app.services.core import RESOURCE_MAP, serialize, _execute_workflow_action, coerce_value
+from app.services.core import RESOURCE_MAP, serialize, _execute_workflow_action, coerce_value, add_audit
 from app.services.security import (
     can_access_record, authorize_field_values, _profile_action_allowed,
     _enforce_record_limit,
@@ -148,9 +148,18 @@ def run_crm_task(db, name: str, args: list, *, source_resource: str):
         if "owner_id" in model.__table__.columns:
             data["owner_id"] = actor.id
         data["organization_id"] = org
+        required = [
+            col.name for col in model.__table__.columns
+            if not col.primary_key and not col.nullable and col.default is None
+            and col.server_default is None and col.name not in data
+        ]
+        if required:
+            raise ValueError("CRM createRecord missing required fields: " + ", ".join(required[:10]))
         record = model(**data)
         db.add(record)
         db.flush()
+        add_audit(db, "deluge_crm_create", module, record.id,
+                  "Deluge integration created a CRM record")
         return {"id": record.id, "status": "success"}
 
     if len(args) < 2:
@@ -163,6 +172,8 @@ def run_crm_task(db, name: str, args: list, *, source_resource: str):
             raise ValueError("Module does not support safe deletion")
         record.archived = True
         db.flush()
+        add_audit(db, "deluge_crm_delete", module, record.id,
+                  "Deluge integration archived a CRM record")
         return {"id": record.id, "status": "success"}
 
     if len(args) < 3:
@@ -173,4 +184,6 @@ def run_crm_task(db, name: str, args: list, *, source_resource: str):
         _execute_workflow_action(db, {"type": "field_update", "field": field, "value": value},
                                  module, record, fields)
     db.flush()
+    add_audit(db, "deluge_crm_update", module, record.id,
+              "Deluge integration updated " + ", ".join(sorted(fields)))
     return {"id": record.id, "status": "success"}
