@@ -175,3 +175,13 @@ while (counter < 21) {
         execute_deluge_program(program, {}, lambda action, vars: None,
             lambda task, args, vars: calls.append(task))
     assert len(calls) == 20
+
+
+def test_assigned_crm_task_uses_structured_dispatch_not_legacy_expression():
+    from app.deluge_subset import parse_deluge
+    source = 'fetched = zoho.crm.v8.getRecordById("Leads", $record.id);'
+    with pytest.raises(HTTPException, match="structured"):
+        parse_deluge(source)
+    program = compile_deluge_program(source)
+    assert program[0]["kind"] == "crm_task"
+    assert program[0]["task"] == "getRecordById"
