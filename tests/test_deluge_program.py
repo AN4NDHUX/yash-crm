@@ -160,3 +160,18 @@ delivery = invokeurl
 def test_invokeurl_rejects_missing_connection_duplicate_url_or_unclosed_map(source):
     with pytest.raises(HTTPException):
         compile_deluge_program(source)
+
+
+def test_integration_tasks_in_loops_have_runtime_budget():
+    program = compile_deluge_program("""
+counter = 0;
+while (counter < 21) {
+    counter = counter + 1;
+    zoho.crm.v8.getRecords("Leads");
+}
+""")
+    calls = []
+    with pytest.raises(ValueError, match="integration call budget"):
+        execute_deluge_program(program, {}, lambda action, vars: None,
+            lambda task, args, vars: calls.append(task))
+    assert len(calls) == 20
