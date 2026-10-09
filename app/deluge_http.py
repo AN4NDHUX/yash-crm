@@ -52,7 +52,7 @@ def _env_secret(reference):
     return value
 
 
-def _connection(name):
+def _connection(name, organization_id):
     if not isinstance(name, str) or not NAME.fullmatch(name):
         raise ValueError("Connection name must be a safe identifier")
     try:
@@ -61,7 +61,12 @@ def _connection(name):
         raise ValueError("Server connection catalog is invalid") from error
     if not isinstance(raw, dict) or len(raw) > 100:
         raise ValueError("Server connection catalog is invalid")
-    spec = raw.get(name)
+    if type(organization_id) is not int or organization_id <= 0:
+        raise ValueError("Deluge connection requires an organization")
+    workspace = raw.get(str(organization_id))
+    if not isinstance(workspace, dict):
+        raise ValueError("No connections are configured for this workspace")
+    spec = workspace.get(name)
     if not isinstance(spec, dict) or spec.get("enabled") is not True:
         raise ValueError("Connection is not enabled for Deluge execution")
     _safe_https(spec.get("url"))
@@ -113,7 +118,7 @@ def send_deluge_http(action, execution):
     """Deliver a queued request. Never return response data to a workflow variable."""
     if action.get("type") != "deluge_http":
         raise ValueError("Invalid Deluge HTTP action")
-    spec = _connection(action.get("connection"))
+    spec = _connection(action.get("connection"), getattr(execution, "organization_id", None))
     requested = _safe_https(action.get("url"))
     if requested != spec["url"]:
         raise ValueError("Request URL is not allowed by this connection")
