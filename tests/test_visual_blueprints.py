@@ -66,3 +66,58 @@ def test_visual_blueprint_draft_publish_and_tenant_safe_transition():
     assert out['current'] == 'Contacted', out
     assert out['next_choices'] == [], out
     assert out['mismatched_record'] in (404, 409), out
+
+def test_criteria_options_are_field_specific_and_organization_scoped():
+    out = app_scenario("""
+    with TestClient(main.app) as first:
+        signup = first.post('/api/auth/signup', json={
+            'name':'Criteria First','organization_name':'Criteria First Org',
+            'username':'criteria.first','email':'criteria.first@example.com',
+            'password':'strong-password-123'})
+        assert signup.status_code in (200, 201), signup.text
+        lead = first.post('/api/leads', json={
+            'name':'Criteria Test Lead','company':'Aster Dynamics Unique',
+            'source':'Partner Event'} )
+        assert lead.status_code in (200, 201), lead.text
+        lead_meta_response = first.get('/api/blueprint-designer/options?module=leads')
+        out['lead_code'] = lead_meta_response.status_code
+        out['first_lead'] = lead_meta_response.json()
+        deal_meta_response = first.get('/api/blueprint-designer/options?module=deals')
+        out['deal_code'] = deal_meta_response.status_code
+        out['first_deal'] = deal_meta_response.json()
+        invalid = first.get('/api/blueprint-designer/options?module=contacts')
+        out['invalid'] = invalid.status_code
+    with TestClient(main.app) as second:
+        signup = second.post('/api/auth/signup', json={
+            'name':'Criteria Second','organization_name':'Criteria Second Org',
+            'username':'criteria.second','email':'criteria.second@example.com',
+            'password':'strong-password-123'})
+        assert signup.status_code in (200, 201), signup.text
+        options_response = second.get('/api/blueprint-designer/options?module=leads')
+        out['second_code'] = options_response.status_code
+        out['second_values'] = options_response.json()['criteria_meta']['company']['options']
+    """)
+    assert out['lead_code'] == 200 and out['deal_code'] == 200, out
+    assert out['invalid'] == 422, out
+    lead = out['first_lead']['criteria_meta']
+    deal = out['first_deal']['criteria_meta']
+    assert lead['status']['type'] == 'select', out
+    assert {'New', 'Contacted', 'Qualified', 'Unqualified'} <= set(lead['status']['options']), out
+    assert {'Website', 'Referral', 'LinkedIn'} <= set(lead['source']['options']), out
+    assert 'Partner Event' in lead['source']['options'], out
+    assert lead['company']['allow_custom'] is True, out
+    assert 'Aster Dynamics Unique' in lead['company']['options'], out
+    assert lead['lead_score']['type'] == 'number', out
+    assert {'Qualification', 'Proposal', 'Closed Won'} <= set(deal['stage']['options']), out
+    assert deal['status']['type'] == 'select', out
+    assert out['second_code'] == 200, out
+    assert 'Aster Dynamics Unique' not in out['second_values'], out
+
+
+def test_blueprint_criteria_value_select_is_bound_to_metadata():
+    js = (ROOT / "static/js/features/blueprints.js").read_text(encoding="utf-8")
+    assert 'criteriaValue(condition)' in js
+    assert 'opts?.criteria_meta?.[field]' in js
+    assert 'name="value_choice"' in js
+    assert 'name="value_custom"' in js
+    assert 'node.name==="field" || node.name==="operator"' in js

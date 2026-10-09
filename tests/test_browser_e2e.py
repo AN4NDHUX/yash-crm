@@ -317,6 +317,22 @@ def test_browser_blueprint_connect_states_and_publish():
                 page.locator('[data-bp-open="new"]').wait_for(timeout=15000)
                 page.locator('[data-bp-open="new"]').click()
                 page.locator('[data-bp-details] input[name="name"]').fill("Browser Connected Process")
+                page.locator('[data-bp="add-condition"]').click()
+                condition = page.locator('[data-bp-condition="0"]')
+                condition.locator('select[name="field"]').select_option("status")
+                values = condition.locator('select[name="value_choice"]')
+                assert "Contacted" in values.locator("option").all_text_contents()
+                values.select_option("New")
+                assert condition.locator('select[name="value_choice"]').input_value() == "New"
+                condition.locator('select[name="field"]').select_option("company")
+                values = condition.locator('select[name="value_choice"]')
+                assert "＋ Enter custom value" in values.locator("option").all_text_contents()
+                values.select_option("__custom__")
+                condition.locator('input[name="value_custom"]').fill("Custom Enterprise")
+                assert condition.locator('input[name="value_custom"]').is_visible()
+                # Restore a real picklist value and ensure the custom-input mode clears.
+                condition.locator('select[name="field"]').select_option("status")
+                condition.locator('select[name="value_choice"]').select_option("New")
                 page.locator('[data-bp-details] button[type="submit"]').click()
                 page.locator('[data-bp-canvas]').wait_for()
                 for label in ("New", "Contacted", "Qualified"):
@@ -354,7 +370,10 @@ def test_browser_blueprint_connect_states_and_publish():
                     const res = await fetch('/api/blueprint-designer');
                     return res.ok && (await res.json()).items.some(item =>
                         item.name === 'Browser Connected Process' && item.active &&
-                        !item.draft && item.transitions.length === 2 &&
+                        !item.draft && item.entry_conditions.length === 1 &&
+                        item.entry_conditions[0].field === 'status' &&
+                        item.entry_conditions[0].value === 'New' &&
+                        item.transitions.length === 2 &&
                         item.transitions[0].label === 'Establish contact' &&
                         item.transitions[0].from === 'New' &&
                         item.transitions[0].to === 'Contacted' &&
