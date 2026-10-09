@@ -81,3 +81,23 @@ fields = record.keys();
 count = fields.size();
 """, {"organization_id": 8, "password": "secret", "name": "Visible"})
     assert vars["count"] == 1
+
+
+def test_separate_braces_and_else_if_blocks():
+    actions, variables = execute("""
+score = 10;
+if (score > 50)
+{
+  crm.addTag("High");
+}
+else if (score > 5)
+{
+  crm.addTag("Medium");
+}
+else
+{
+  crm.addTag("Low");
+}
+""")
+    assert len(actions) == 1
+    assert actions[0][0]["value"] == "Medium"
