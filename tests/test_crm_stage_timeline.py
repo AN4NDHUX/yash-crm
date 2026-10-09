@@ -1,5 +1,6 @@
 """CRM lead state, deal ribbon and timeline contracts."""
 from pathlib import Path
+import re
 from test_workflow_rule_builder import app_scenario
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -7,11 +8,13 @@ JS = (ROOT / "static/js/app.js").read_text(encoding="utf-8")
 
 
 def test_record_ui_stage_and_timeline_controls_are_connected():
-    assert 'function leadStagePanel(record, timeline)' in JS
+    assert re.search(r'function\s+leadStagePanel\s*\(\s*record\s*,\s*timeline\s*\)', JS)
     assert 'function timelineHtml(events)' in JS
     assert 'function dealProgress(record)' in JS
     assert 'data-lead-transition=' in JS
     assert 'data-stage-update=' in JS
+    assert 'data-blueprint-move=' in JS
+    assert 'blueprintDealProgress(record,timeline)' in JS
     assert 'data-timeline-kind=' in JS
     assert 'data-timeline-filter' in JS
     assert '/timeline' in JS
@@ -96,3 +99,15 @@ def test_lead_blueprint_transitions_are_listed_and_enforced():
     assert out['accepted'] == 200, out
     assert out['current_status'] == 'Contacted', out
     assert out['next_options'] == ['Qualified'], out
+
+def test_visual_blueprint_canvas_connection_controls_are_real():
+    source = (ROOT / "static/js/features/blueprints.js").read_text(encoding="utf-8")
+    assert "function connectStates(fromIndex,toIndex)" in source
+    assert 'data-bp-connect=' in source
+    assert 'data-bp-edge=' in source
+    assert 'graphLabels()' in source
+    assert 'data-bp="cancel-link"' in source
+    assert 'if(connectingFrom!==null){connectStates(connectingFrom,n);return;}' in source
+    assert "connectStates(link.from,Number(node.dataset.bpState))" in source
+    assert "draft.transitions.some(e=>e.from===from&&e.to===to)" in source
+    assert "if(fromIndex===toIndex)" in source

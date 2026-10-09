@@ -2,7 +2,7 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
   const $=(q,r=document)=>r.querySelector(q), $$=(q,r=document)=>[...r.querySelectorAll(q)];
   const operators=[["is","is"],["is_not","isn't"],["contains","contains"],["not_contains","doesn't contain"],["starts_with","starts with"],["ends_with","ends with"],["is_empty","is empty"],["is_not_empty","is not empty"],["greater_than","greater than"],["less_than","less than"]];
   const actions=[["audit","Audit message"],["create_task","Create task"],["tag","Add tag"],["notification","Notification"]];
-  let list=[],tab="Blueprints",draft=null,opts=null,step="details",side="states",phase="before",picked=null,overlay=null,drag=null;
+  let list=[],tab="Blueprints",draft=null,opts=null,step="details",side="states",phase="before",picked=null,overlay=null,drag=null,connectingFrom=null,connectorDrag=null;
   const select=(name,values,value)=>`<select class="bp-control" name="${esc(name)}">${values.map(item=>{const k=Array.isArray(item)?item[0]:item,v=Array.isArray(item)?item[1]:item;return `<option value="${esc(k)}" ${k===value?"selected":""}>${esc(v)}</option>`}).join("")}</select>`;
   async function view() {
     list=(await api("/api/blueprint-designer")).items||[];
@@ -35,7 +35,7 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
       draft.entry_conditions=draft.entry_conditions||[];
       draft.stages=(draft.stages||[]).map((s,i)=>({...s,label:s.label||s.name||`State ${i+1}`,x:Number(s.x??130+i%3*210),y:Number(s.y??130+Math.floor(i/3)*140)}));
       draft.transitions=(draft.transitions||[]).map((t,i)=>({...t,id:String(t.id??i),after:t.after||[],required:t.required||[]}));
-      step="details";side="states";phase="before";picked=null;
+      step="details";side="states";phase="before";picked=null;connectingFrom=null;connectorDrag=null;
       overlay=document.createElement("div");overlay.className="bp-overlay";document.body.appendChild(overlay);
       overlay.addEventListener("click",click);overlay.addEventListener("change",change);overlay.addEventListener("submit",submit);
       overlay.addEventListener("pointerdown",pointerDown);overlay.addEventListener("pointermove",pointerMove);overlay.addEventListener("pointerup",pointerUp);
@@ -67,16 +67,31 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     draft.entry_conditions=$$("[data-bp-condition]",form).map(row=>({field:$('[name="field"]',row).value,operator:$('[name="operator"]',row).value,value:$('[name="value"]',row).value}));
     return true;
   }
-  function graph() {
-    const names=Object.fromEntries(draft.stages.map(x=>[x.label,x]));
-    const paths=draft.transitions.map((t,i)=>{const a=names[t.from],b=names[t.to];if(!a||!b)return"";const x1=a.x+145,y1=a.y+20,x2=b.x,y2=b.y+20,c=(x1+x2)/2;return `<path d="M${x1} ${y1} C${c} ${y1},${c} ${y2},${x2} ${y2}" fill="none" stroke="${picked?.type==="edge"&&picked.index===i?"#2363e8":"#8795af"}" stroke-width="2" marker-end="url(#bp-arrow)"/>`}).join("");
-    return `<svg class="bp-lines" viewBox="0 0 1000 670" preserveAspectRatio="none"><defs><marker id="bp-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#8795af"/></marker></defs>${paths}</svg>`;
-  }
-  function studio(){
-    const chips=draft.stages.map((s,i)=>`<button type="button" class="bp-node ${picked?.type==="state"&&picked.index===i?"selected":""}" style="left:${s.x}px;top:${s.y}px" data-bp-state="${i}">${esc(s.label)}</button>`).join("");
+  function graph(){
+  const names=Object.fromEntries(draft.stages.map(x=>[x.label,x]));
+  const paths=draft.transitions.map((t,i)=>{
+    const a=names[t.from],b=names[t.to];if(!a||!b)return "";
+    const x1=a.x+145,y1=a.y+21,x2=b.x,y2=b.y+21;
+    const bend=Math.max(45,Math.min(130,Math.abs(x2-x1)*0.45));
+    const d=`M ${x1} ${y1} C ${x1+bend} ${y1}, ${x2-bend} ${y2}, ${x2} ${y2}`;
+    return `<path class="bp-edge-path ${picked?.type==="edge"&&picked.index===i?"selected":""}" d="${d}" fill="none" stroke-width="2.5" marker-end="url(#bp-arrow)" />`;
+  }).join("");
+  return `<svg class="bp-lines" width="1000" height="670" viewBox="0 0 1000 670" aria-hidden="true"><defs><marker id="bp-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#3575e3"/></marker></defs>${paths}<path class="bp-link-preview" d="" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="7 5" /></svg>`;
+}
+  function graphLabels(){
+  const names=Object.fromEntries(draft.stages.map(x=>[x.label,x]));
+  return draft.transitions.map((t,i)=>{
+    const a=names[t.from],b=names[t.to];if(!a||!b)return "";
+    const cx=(a.x+145+b.x)/2,cy=(a.y+b.y)/2+21;
+    return `<button type="button" class="bp-edge-label ${picked?.type==="edge"&&picked.index===i?"selected":""}" style="left:${cx}px;top:${cy}px" data-bp-edge="${i}" title="${esc(t.from)} → ${esc(t.to)}">${esc(t.label||t.to)}</button>`;
+  }).join("");
+}
+
+    function studio(){
+    const chips=draft.stages.map((s,i)=>`<div class="bp-node ${picked?.type==="state"&&picked.index===i?"selected":""} ${connectingFrom===i?"link-source":""}" role="button" tabindex="0" aria-label="State ${esc(s.label)}" style="left:${s.x}px;top:${s.y}px" data-bp-state="${i}"><span>${esc(s.label)}</span><button class="bp-connect-handle" type="button" data-bp-connect="${i}" aria-label="Connect from ${esc(s.label)}" title="Connect ${esc(s.label)} to another state">＋</button></div>`).join("");
     const palette=opts.initial_states.filter(s=>!draft.stages.some(x=>x.label===s)).map(s=>`<button type="button" draggable="true" class="bp-state-chip" data-bp-palette="${esc(s)}" data-bp-add-state="${esc(s)}">⠿ ${esc(s)}</button>`).join("");
     return `<section class="bp-studio" role="dialog" aria-modal="true" aria-label="Blueprint visual designer"><header><button data-bp="back" class="bp-text-button">← Details</button><h2>${esc(draft.name)}</h2><span class="bp-status draft">Designer</span><button data-bp="close" class="bp-close">×</button></header>
-      <div class="bp-studio-grid"><main class="bp-canvas-scroll"><div class="bp-canvas" data-bp-canvas>${graph()}<div class="bp-start">Start</div>${chips}${!draft.stages.length?'<p class="bp-empty-canvas">Drag states here or add them from the right panel.</p>':""}</div></main>
+      <div class="bp-studio-grid"><main class="bp-canvas-scroll"><div class="bp-canvas" data-bp-canvas>${graph()}${graphLabels()}<div class="bp-start">Start</div><div class="bp-canvas-hint">${connectingFrom===null ? "Connect states: click the + on a state, then click the destination state. Drag nodes to arrange the flow." : `Connecting from ${esc(draft.stages[connectingFrom]?.label||"")} — select a destination state or ` + `<button type="button" data-bp="cancel-link">Cancel</button>`}</div>${chips}${!draft.stages.length?'<p class="bp-empty-canvas">Drag states here or add them from the right panel.</p>':""}</div></main>
       <aside class="bp-inspector"><div class="bp-inspector-tabs"><button data-bp-side="states" class="${side==="states"?"active":""}">Info and States</button><button data-bp-side="transitions" class="${side==="transitions"?"active":""}">Transitions</button></div><div class="bp-inspector-content">${side==="states"?`
         <h3>${esc(draft.name)}</h3><p>Module: ${esc(draft.module)} · Layout: ${esc(draft.layout_name)} · Field: ${esc(draft.field_name)}</p>
         <label class="bp-checkbox"><input type="checkbox" data-bp-continuous ${draft.continuous?"checked":""}> Continuous</label>
@@ -85,7 +100,7 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
         ${picked?.type==="state"?`<div class="bp-editor"><label>State name<input class="bp-control" data-bp-rename value="${esc(draft.stages[picked.index]?.label||"")}"></label><button class="bp-danger" data-bp="delete-state">Delete state</button></div>`:""}
       `:`
         <h3>Transitions</h3><p>Connect states, configure permissions and required fields, and add supported actions.</p>
-        <button data-bp="add-edge" class="button button-primary" ${draft.stages.length<2?"disabled":""}>＋ New Transition</button>
+        <button data-bp="add-edge" class="button button-primary" ${draft.stages.length<2?"disabled":""}>＋ Connect two states</button>
         <div class="bp-edge-list">${draft.transitions.map((e,i)=>`<button data-bp-edge="${i}" class="${picked?.type==="edge"&&picked.index===i?"active":""}"><strong>${esc(e.label)}</strong><small>${esc(e.from)} → ${esc(e.to)}</small></button>`).join("")}</div>
         ${picked?.type==="edge"?edgeEditor():"<p>Select a transition to configure its Before, During and After phases.</p>"}
       `}</div></aside></div><footer class="bp-studio-footer"><button class="button button-ghost" data-bp="close">Cancel</button><div><button class="button button-ghost" data-bp="save">Save as Draft</button><button class="button button-primary" data-bp="publish">Publish Blueprint</button></div></footer></section>`;
@@ -102,6 +117,18 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     <div class="bp-add-row">${select("action_type",actions,"create_task")}<input class="bp-control" data-bp-action-new placeholder="Task / tag / message"><button data-bp="add-action" class="button button-ghost">Add</button></div><small>Actions run through CRM permissions. External integrations are configured separately.</small>`}
     <button data-bp="delete-edge" class="bp-danger">Delete transition</button></div>`;
   }
+  function connectStates(fromIndex,toIndex){
+  if(fromIndex===toIndex) {toast("Choose a different state","A transition must connect two distinct states.","error");return;}
+  const from=draft.stages[fromIndex]?.label,to=draft.stages[toIndex]?.label;
+  if(!from||!to)return;
+  if(draft.transitions.some(e=>e.from===from&&e.to===to)) {
+    toast("Already connected",`${from} → ${to} already has a transition.`,"error");connectingFrom=null;render();return;
+  }
+  const index=draft.transitions.length;
+  const maxId=Math.max(0,...draft.transitions.map(t=>Number(String(t.id||"").replace(/^t-/,""))||0));
+  draft.transitions.push({id:`t-${maxId+1}`,label:`Move to ${to}`,from,to,owner_scope:"any",required:[],message:"",after:[]});
+  connectingFrom=null;connectorDrag=null;picked={type:"edge",index};side="transitions";phase="before";render();
+}
   function addState(label,x,y){
     label=String(label||"").trim();if(!label||draft.stages.some(s=>s.label===label))return toast("Duplicate state","Use a unique state name.","error");
     const i=draft.stages.length;
@@ -136,7 +163,7 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     }
     if(picked?.type!=="edge")return;
     const e=draft.transitions[picked.index];
-    if(["from","to","owner_scope"].includes(node.name))e[node.name]=node.value;
+    if(["from","to","owner_scope"].includes(node.name)){e[node.name]=node.value;if(node.name!=="owner_scope")render();}
     if(node.name==="common")e.common=node.checked;
     if(node.matches("[data-bp-edge-label]"))e.label=node.value.trim();
     if(node.matches("[data-bp-message]"))e.message=node.value;
@@ -144,8 +171,10 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     if(node.matches("[data-bp-action-value]"))e.after[Number(node.dataset.bpActionValue)].value=node.value;
   }
   function click(event){
-    const t=event.target.closest("[data-bp],[data-bp-add-state],[data-bp-state],[data-bp-edge],[data-bp-side],[data-bp-phase],[data-bp-delete-action]");if(!t)return;
+    const t=event.target.closest("[data-bp],[data-bp-add-state],[data-bp-state],[data-bp-edge],[data-bp-side],[data-bp-phase],[data-bp-delete-action],[data-bp-connect]");if(!t)return;
     const action=t.dataset.bp;
+    if(t.dataset.bpConnect!==undefined){const n=Number(t.dataset.bpConnect);if(connectingFrom===null){connectingFrom=n;render();}else{connectStates(connectingFrom,n);}return;}
+    if(action==="cancel-link"){connectingFrom=null;render();return;}
     if(action==="close")return close();
     if(action==="back"){step="details";render();return}
     if(action==="save")return save(false);
@@ -154,16 +183,12 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     if(action==="remove-condition"){if(!capture())return;draft.entry_conditions.splice(Number(t.dataset.index),1);render();return}
     if(t.dataset.bpAddState)return addState(t.dataset.bpAddState);
     if(action==="add-custom")return addState($("[data-bp-new-state]",overlay)?.value);
-    if(t.dataset.bpState!==undefined){picked={type:"state",index:Number(t.dataset.bpState)};side="states";render();return}
+    if(t.dataset.bpState!==undefined){const n=Number(t.dataset.bpState);if(connectingFrom!==null){connectStates(connectingFrom,n);return;}picked={type:"state",index:n};side="states";render();return}
     if(t.dataset.bpEdge!==undefined){picked={type:"edge",index:Number(t.dataset.bpEdge)};side="transitions";render();return}
     if(t.dataset.bpSide){side=t.dataset.bpSide;render();return}
     if(t.dataset.bpPhase){phase=t.dataset.bpPhase;render();return}
     if(action==="delete-state"&&picked?.type==="state"){const name=draft.stages[picked.index].label;draft.stages.splice(picked.index,1);draft.transitions=draft.transitions.filter(e=>e.from!==name&&e.to!==name);picked=null;render();return}
-    if(action==="add-edge"&&draft.stages.length>1){
-      const i=draft.transitions.length,a=draft.stages[0].label,b=draft.stages[1].label;
-      draft.transitions.push({id:"t-"+(i+1),label:"Move to "+b,from:a,to:b,owner_scope:"any",required:[],message:"",after:[]});
-      picked={type:"edge",index:i};side="transitions";render();return;
-    }
+    if(action==="add-edge"&&draft.stages.length>1){connectingFrom=null;render();return;}
     if(action==="delete-edge"&&picked?.type==="edge"){draft.transitions.splice(picked.index,1);picked=null;render();return}
     if(action==="add-action"&&picked?.type==="edge"){
       const value=$("[data-bp-action-new]",overlay)?.value.trim(),type=$('[name="action_type"]',overlay)?.value;
@@ -172,8 +197,51 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     }
     if(t.dataset.bpDeleteAction!==undefined&&picked?.type==="edge"){draft.transitions[picked.index].after.splice(Number(t.dataset.bpDeleteAction),1);render()}
   }
-  function pointerDown(e){const node=e.target.closest(".bp-node[data-bp-state]");if(!node||e.button!==0)return;const i=Number(node.dataset.bpState),s=draft.stages[i];drag={i,node,startX:e.clientX,startY:e.clientY,x:s.x,y:s.y}}
-  function pointerMove(e){if(!drag)return;const s=draft.stages[drag.i];s.x=Math.max(8,Math.min(830,Math.round(drag.x+e.clientX-drag.startX)));s.y=Math.max(10,Math.min(590,Math.round(drag.y+e.clientY-drag.startY)));drag.node.style.left=s.x+"px";drag.node.style.top=s.y+"px"}
-  function pointerUp(){if(drag){drag=null;render()}}
-  return {view,bind};
+  function pointerDown(e){
+  if(e.button!==0)return;
+  const handle=e.target.closest("[data-bp-connect]");
+  if(handle){
+    const from=Number(handle.dataset.bpConnect),stage=draft.stages[from];
+    connectorDrag={from,startX:e.clientX,startY:e.clientY,x:stage.x+145,y:stage.y+21,moved:false};
+    return;
+  }
+  if(connectingFrom!==null)return;
+  const node=e.target.closest(".bp-node[data-bp-state]");if(!node)return;
+  const i=Number(node.dataset.bpState),s=draft.stages[i];
+  drag={i,node,startX:e.clientX,startY:e.clientY,x:s.x,y:s.y,moved:false};
+}
+  function pointerMove(e){
+  if(connectorDrag){
+    const link=connectorDrag;
+    if(Math.hypot(e.clientX-link.startX,e.clientY-link.startY)>7)link.moved=true;
+    const canvas=$("[data-bp-canvas]",overlay),preview=$(".bp-link-preview",canvas);
+    if(canvas&&preview&&link.moved){
+      const rect=canvas.getBoundingClientRect();
+      const x2=Math.min(999,Math.max(0,e.clientX-rect.left)),y2=Math.min(669,Math.max(0,e.clientY-rect.top));
+      preview.setAttribute("d",`M ${link.x} ${link.y} L ${x2} ${y2}`);
+    }
+    return;
+  }
+  if(!drag)return;
+  const dx=e.clientX-drag.startX,dy=e.clientY-drag.startY;
+  if(Math.hypot(dx,dy)>4)drag.moved=true;
+  if(!drag.moved)return;
+  const s=draft.stages[drag.i];s.x=Math.max(8,Math.min(830,Math.round(drag.x+dx)));
+  s.y=Math.max(10,Math.min(590,Math.round(drag.y+dy)));
+  drag.node.style.left=s.x+"px";drag.node.style.top=s.y+"px";
+}
+  function pointerUp(e){
+  if(connectorDrag){
+    const link=connectorDrag;connectorDrag=null;
+    if(link.moved){
+      const node=e.target.closest(".bp-node[data-bp-state]");
+      if(node){connectStates(link.from,Number(node.dataset.bpState));return;}
+      connectingFrom=link.from;render();return;
+    }
+    return; // Click handler starts the connection.
+  }
+  if(drag){const moved=drag.moved;drag=null;if(moved)render();}
+}
+
+    return {view,bind};
 }

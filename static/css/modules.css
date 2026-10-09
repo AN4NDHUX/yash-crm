@@ -1383,3 +1383,16 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .bp-shell button:focus-visible,.bp-overlay button:focus-visible{outline:2px solid #4574df;outline-offset:2px}
 @media(max-width:900px){.bp-studio-grid{grid-template-columns:minmax(0,1fr) 300px}.bp-board{padding:20px}.bp-overlay{align-items:flex-start}}
 @media(max-width:680px){.bp-studio{height:98vh;width:100vw}.bp-studio-grid{grid-template-columns:1fr;grid-template-rows:minmax(220px,1fr) minmax(240px,40%)}.bp-inspector{border-left:0;border-top:1px solid #dce5f1}.bp-row{grid-template-columns:1fr;gap:5px;padding:6px 0}.bp-condition{grid-template-columns:25px 1fr 1fr;grid-auto-rows:auto}.bp-condition input{grid-column:2/4}.bp-studio-footer .button{font-size:11px;padding:9px}.bp-tabs{gap:14px}}
+
+/* Connect Blueprint states directly on the canvas; clickable edge labels. */
+.bp-canvas-hint{position:absolute;left:200px;top:24px;z-index:2;max-width:690px;font-size:12px;line-height:1.5;color:#536a90;background:rgba(255,255,255,.94);border:1px solid #d7e5fc;padding:9px 13px;border-radius:9px;box-shadow:0 2px 9px #1c46841c}
+.bp-canvas-hint button{border:0;background:transparent;color:#1c5acb;text-decoration:underline;cursor:pointer;font-weight:700}
+.bp-node{display:flex;justify-content:center;align-items:center;gap:5px;padding:9px 16px;cursor:grab;overflow:visible}
+.bp-node.link-source{outline:3px solid #2a72e6;outline-offset:3px;background:#eaf3ff}
+.bp-connect-handle{position:absolute;z-index:4;right:-14px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:27px;height:27px;padding:0;border:2px solid #4e81e5;border-radius:50%;background:#fff;color:#225acb;font-size:19px;font-weight:800;line-height:1;cursor:crosshair;box-shadow:0 1px 7px #1a47863d}
+.bp-connect-handle:hover,.bp-connect-handle:focus-visible{background:#2d65d2;color:#fff}
+.bp-lines{width:1000px;height:670px;pointer-events:none}
+.bp-edge-path{stroke:#3575e3}
+.bp-edge-path.selected{stroke:#173db2;stroke-width:3.5px}
+.bp-edge-label{position:absolute;z-index:3;transform:translate(-50%,-50%);max-width:140px;min-width:72px;padding:5px 8px;border-radius:5px;border:1px solid #bfd3f4;background:#fff;color:#2451a6;font-size:10px;font-weight:700;cursor:pointer;box-shadow:0 1px 7px #00000012;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bp-edge-label:hover,.bp-edge-label.selected{border-color:#2563eb;background:#e7f0ff;color:#123d96}
