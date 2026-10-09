@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 MAX_BYTES = 32768
 FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,79}$")
-STATEMENT = re.compile(r"^(record\.put|crm\.addTag|crm\.createTask|crm\.notify)\((.*)\)$")
+STATEMENT = re.compile(r"^(record\\.put|crm\\.addTag|crm\\.createTask|crm\\.notify|crm\\.invokeUrl|invokeurl)\\((.*)\\)$")
 REFERENCE = re.compile(r"^\$record\.([A-Za-z][A-Za-z0-9_]{0,79})$")
 PROTECTED = {"password", "password_hash", "organization_id", "id", "owner_id", "created_by"}
 
@@ -162,6 +162,8 @@ def parse_deluge(source):
                 steps.append({"type": "tag", "value": _argument(arguments)})
             elif command == "crm.createTask":
                 steps.append({"type": "create_task", "subject": _argument(arguments)})
+            elif command in {"crm.invokeUrl", "invokeurl"}:
+                steps.append({"type": "webhook_queue", "value": _argument(arguments)})
             else:
                 steps.append({"type": "notification", "value": _argument(arguments)})
         if condition_stack:
