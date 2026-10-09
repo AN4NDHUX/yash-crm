@@ -1403,3 +1403,26 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .bp-value-control .bp-custom-value[hidden]{display:none!important}
 .bp-value-control .bp-custom-value:not([hidden]){border-color:#9bb9fc;background:#fbfdff}
 @media(max-width:680px){.bp-condition>.bp-value-control{grid-column:2/4}}
+
+/* Blueprint connector refinement: quiet directional paths, aligned labels, focus states */
+.bp-canvas-scroll{background-color:#f9fbff;background-image:radial-gradient(#d4def0 .8px,transparent .8px);background-size:22px 22px}
+.bp-studio{border-radius:14px}
+.bp-studio>header{background:linear-gradient(180deg,#fff,#fbfcff)}
+.bp-canvas-hint{left:235px;top:18px;max-width:625px;border:1px solid #e0e8f6;background:rgba(255,255,255,.95);box-shadow:0 3px 16px #1a43800c;padding:8px 12px;font-weight:500}
+.bp-start{left:36px;top:42px;width:135px;height:62px;border:1px dashed #8cb5ee;background:#f0f7ff;color:#3270bb;border-radius:32px;font-size:10px;letter-spacing:1.2px}
+.bp-node{width:145px;height:44px;min-height:44px;border:1px solid #c5d3e9;border-radius:9px;background:#fff;box-shadow:0 3px 13px #203c6e0d;font-weight:700;color:#30415d;transition:border-color .12s,box-shadow .12s}
+.bp-node:hover,.bp-node.selected{border:1px solid #3976df;box-shadow:0 4px 18px #306be522}
+.bp-node.link-source{border-color:#2a6fda;background:#eef5ff;outline:2px solid #bed5ff;outline-offset:2px}
+.bp-connect-handle{width:22px;height:22px;right:-11px;top:50%;font-size:16px;border:1.5px solid #84a8e8;background:#fff;color:#235fc2;box-shadow:0 2px 8px #2159ac20;transition:background .12s,transform .12s}
+.bp-connect-handle:hover,.bp-connect-handle:focus-visible{transform:translateY(-50%) scale(1.08);background:#2667d3;border-color:#2667d3;color:white}
+.bp-lines{z-index:0;pointer-events:none;overflow:visible}
+.bp-entry-path{stroke:#aec3de;stroke-width:1.5;fill:none}
+.bp-edge-path{stroke:#8ba3ca;stroke-width:1.75;fill:none;stroke-linecap:round}
+.bp-edge-path.selected{stroke:#2e65c9;stroke-width:2.6}
+.bp-edge-label{min-width:0;max-width:156px;padding:5px 11px;border:1px solid #d8e3f2;border-radius:999px;background:#fff;color:#46618c;font-size:10.5px;box-shadow:0 2px 9px #17335c12;font-weight:650}
+.bp-edge-label:hover,.bp-edge-label.selected{background:#ebf3ff;color:#1550ab;border-color:#92b7f2;box-shadow:0 4px 12px #2e6cc422}
+.bp-controller-select{display:flex;flex-direction:column;gap:5px;padding:6px 0}
+.bp-controller-select small{font-size:10.5px;color:#7183a0}
+.bp-controller-select optgroup{font-weight:700}
+.bp-controller-select option:disabled{color:#8a96aa}
+@media(prefers-reduced-motion:reduce){.bp-node,.bp-connect-handle{transition:none}}

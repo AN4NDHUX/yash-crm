@@ -4,6 +4,19 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
   const actions=[["audit","Audit message"],["create_task","Create task"],["tag","Add tag"],["notification","Notification"]];
   let list=[],tab="Blueprints",draft=null,opts=null,step="details",side="states",phase="before",picked=null,overlay=null,drag=null,connectingFrom=null,connectorDrag=null;
   const select=(name,values,value)=>`<select class="bp-control" name="${esc(name)}">${values.map(item=>{const k=Array.isArray(item)?item[0]:item,v=Array.isArray(item)?item[1]:item;return `<option value="${esc(k)}" ${k===value?"selected":""}>${esc(v)}</option>`}).join("")}</select>`;
+  function stateFieldSelect(value) {
+    const fields=opts?.fields||[];
+    const enabled=fields.filter(f=>f.supported);
+    const unavailable=fields.filter(f=>!f.supported);
+    const option=(f,disabled=false)=>`<option value="${esc(f.name)}" ${f.name===value?"selected":""} ${disabled?"disabled":""} title="${esc(f.reason||"")}">${esc(f.label)}${disabled?" — not a state field":""}</option>`;
+    return `<select class="bp-control" name="field_name" aria-label="Choose Blueprint state field">
+      <optgroup label="Editable picklist fields">${enabled.map(f=>option(f)).join("")}</optgroup>
+      <optgroup label="Other module fields (view only)">${unavailable.map(f=>option(f,true)).join("")}</optgroup>
+    </select>`;
+  }
+  function paletteStates() {
+    return opts?.state_values?.[draft.field_name] || opts?.criteria_meta?.[draft.field_name]?.options || opts?.initial_states || [];
+  }
   async function view() {
     list=(await api("/api/blueprint-designer")).items||[];
     const rows=list.map(bp=>`<tr data-bp-row data-name="${esc(bp.name.toLowerCase())}" data-module="${esc(String(bp.module).toLowerCase())}" data-active="${bp.active&&!bp.draft}">
@@ -75,7 +88,7 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
       <form data-bp-details><div class="bp-wizard-content"><label class="bp-row"><span>Blueprint name *</span><input class="bp-control" name="name" maxlength="160" required value="${esc(draft.name||"")}" placeholder="Process name"></label>
       <label class="bp-row"><span>Module</span>${select("module",[["leads","Leads"],["deals","Deals"]],draft.module)}</label>
       <label class="bp-row"><span>Choose layout</span>${select("layout_name",opts.layouts,draft.layout_name||"Default")}</label>
-      <label class="bp-row"><span>Choose field</span>${select("field_name",opts.fields.map(f=>[f.name,f.label]),draft.field_name||opts.fields[0].name)}</label>
+      <label class="bp-row"><span>Choose field</span><div class="bp-controller-select">${stateFieldSelect(draft.field_name||opts.fields.find(f=>f.supported)?.name)}<small>All fields are listed. Only picklists can control process states.</small></div></label>
       <div class="bp-criteria"><h3>Define criteria for records associated with this Blueprint</h3><p>Leave blank to include every record in this module and layout.</p>${criteria()}<button data-bp="add-condition" class="bp-text-button" type="button">＋ Add condition</button></div>
       <label class="bp-row"><span>Description</span><textarea class="bp-control" name="description" rows="3">${esc(draft.description||"")}</textarea></label>
       <label class="bp-checkbox"><input type="checkbox" name="continuous" ${draft.continuous?"checked":""}> Continuous process</label></div><footer><button type="button" class="button button-ghost" data-bp="close">Cancel</button><button type="submit" class="button button-primary">Next →</button></footer></form></section>`;
@@ -96,30 +109,56 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
     return true;
   }
   function graph(){
-  const names=Object.fromEntries(draft.stages.map(x=>[x.label,x]));
-  const paths=draft.transitions.map((t,i)=>{
-    const a=names[t.from],b=names[t.to];if(!a||!b)return "";
-    const x1=a.x+145,y1=a.y+21,x2=b.x,y2=b.y+21;
-    const bend=Math.max(45,Math.min(130,Math.abs(x2-x1)*0.45));
-    const d=`M ${x1} ${y1} C ${x1+bend} ${y1}, ${x2-bend} ${y2}, ${x2} ${y2}`;
-    return `<path class="bp-edge-path ${picked?.type==="edge"&&picked.index===i?"selected":""}" d="${d}" fill="none" stroke-width="2.5" marker-end="url(#bp-arrow)" />`;
-  }).join("");
-  return `<svg class="bp-lines" width="1000" height="670" viewBox="0 0 1000 670" aria-hidden="true"><defs><marker id="bp-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="#3575e3"/></marker></defs>${paths}<path class="bp-link-preview" d="" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="7 5" /></svg>`;
-}
-  function graphLabels(){
-  const names=Object.fromEntries(draft.stages.map(x=>[x.label,x]));
-  return draft.transitions.map((t,i)=>{
-    const a=names[t.from],b=names[t.to];if(!a||!b)return "";
-    const cx=(a.x+145+b.x)/2,cy=(a.y+b.y)/2+21;
-    return `<button type="button" class="bp-edge-label ${picked?.type==="edge"&&picked.index===i?"selected":""}" style="left:${cx}px;top:${cy}px" data-bp-edge="${i}" title="${esc(t.from)} → ${esc(t.to)}">${esc(t.label||t.to)}</button>`;
-  }).join("");
-}
+    const nodes=Object.fromEntries(draft.stages.map((state,index)=>[state.label,{...state,index}]));
+    const routes=draft.transitions.map((edge,index)=>{
+      const a=nodes[edge.from],b=nodes[edge.to];if(!a||!b)return null;
+      const w=145,h=42,ac={x:a.x+w/2,y:a.y+h/2},bc={x:b.x+w/2,y:b.y+h/2};
+      const dx=bc.x-ac.x,dy=bc.y-ac.y;
+      // Use the closest facing sides so links never cross through a state card.
+      let x1,y1,x2,y2,c1x,c1y,c2x,c2y;
+      if(Math.abs(dx)>=Math.abs(dy)*0.85){
+        const dir=dx>=0?1:-1;
+        x1=ac.x+dir*w/2;y1=ac.y;x2=bc.x-dir*w/2;y2=bc.y;
+        const distance=Math.max(40,Math.abs(x2-x1)*0.5);
+        c1x=x1+dir*distance;c1y=y1;c2x=x2-dir*distance;c2y=y2;
+      }else{
+        const dir=dy>=0?1:-1;
+        x1=ac.x;y1=ac.y+dir*h/2;x2=bc.x;y2=bc.y-dir*h/2;
+        const distance=Math.max(35,Math.abs(y2-y1)*0.5);
+        c1x=x1;c1y=y1+dir*distance;c2x=x2;c2y=y2-dir*distance;
+      }
+      const d=`M${x1} ${y1} C${c1x} ${c1y},${c2x} ${c2y},${x2} ${y2}`;
+      // Midpoint of the Bezier keeps labels aligned with their actual routes.
+      const midX=(x1+3*c1x+3*c2x+x2)/8;
+      const midY=(y1+3*c1y+3*c2y+y2)/8;
+      return {d,midX,midY,edge,index};
+    }).filter(Boolean);
+    return routes;
+  }
+  function graphSvg(routes) {
+    const first=draft.stages[0];
+    const x=first?.x+72.5,y=first?.y;
+    const entry=first?`<path class="bp-entry-path" d="M170 72 Q${Math.min(250,x)} 72,${x} ${Math.max(0,y-8)}" stroke-dasharray="5 6"/>`:"";
+    return `<svg class="bp-lines" width="1000" height="670" viewBox="0 0 1000 670" aria-hidden="true">
+      <defs><marker id="bp-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7 Z" fill="#6684b9"/></marker></defs>
+      ${entry}
+      ${routes.map(route=>`<path class="bp-edge-path ${picked?.type==="edge"&&picked.index===route.index?"selected":""}" d="${route.d}" marker-end="url(#bp-arrow)" />`).join("")}
+      <path class="bp-link-preview" d="" stroke="#2368dd" stroke-width="2" stroke-dasharray="6 5" fill="none" />
+    </svg>`;
+  }
+  function graphLabels(routes){
+    return routes.map(route=>`<button type="button" class="bp-edge-label ${picked?.type==="edge"&&picked.index===route.index?"selected":""}"
+      style="left:${Math.max(75,Math.min(920,route.midX))}px;top:${Math.max(65,Math.min(610,route.midY-12-(route.index%2)*6))}px"
+      data-bp-edge="${route.index}" aria-label="Edit transition ${esc(route.edge.label || route.edge.to)}"
+      title="${esc(route.edge.from)} → ${esc(route.edge.to)}">${esc(route.edge.label||route.edge.to)}</button>`).join("");
+  }
 
     function studio(){
+    const routes=graph();
     const chips=draft.stages.map((s,i)=>`<div class="bp-node ${picked?.type==="state"&&picked.index===i?"selected":""} ${connectingFrom===i?"link-source":""}" role="button" tabindex="0" aria-label="State ${esc(s.label)}" style="left:${s.x}px;top:${s.y}px" data-bp-state="${i}"><span>${esc(s.label)}</span><button class="bp-connect-handle" type="button" data-bp-connect="${i}" aria-label="Connect from ${esc(s.label)}" title="Connect ${esc(s.label)} to another state">＋</button></div>`).join("");
-    const palette=opts.initial_states.filter(s=>!draft.stages.some(x=>x.label===s)).map(s=>`<button type="button" draggable="true" class="bp-state-chip" data-bp-palette="${esc(s)}" data-bp-add-state="${esc(s)}">⠿ ${esc(s)}</button>`).join("");
+    const palette=paletteStates().filter(s=>!draft.stages.some(x=>x.label===s)).map(s=>`<button type="button" draggable="true" class="bp-state-chip" data-bp-palette="${esc(s)}" data-bp-add-state="${esc(s)}">⠿ ${esc(s)}</button>`).join("");
     return `<section class="bp-studio" role="dialog" aria-modal="true" aria-label="Blueprint visual designer"><header><button data-bp="back" class="bp-text-button">← Details</button><h2>${esc(draft.name)}</h2><span class="bp-status draft">Designer</span><button data-bp="close" class="bp-close">×</button></header>
-      <div class="bp-studio-grid"><main class="bp-canvas-scroll"><div class="bp-canvas" data-bp-canvas>${graph()}${graphLabels()}<div class="bp-start">Start</div><div class="bp-canvas-hint">${connectingFrom===null ? "Connect states: click the + on a state, then click the destination state. Drag nodes to arrange the flow." : connectingFrom===-1 ? `Select a source state to start connecting. ` + `<button type="button" data-bp="cancel-link">Cancel</button>` : `Connecting from ${esc(draft.stages[connectingFrom]?.label||"")} — select a destination state or ` + `<button type="button" data-bp="cancel-link">Cancel</button>`}</div>${chips}${!draft.stages.length?'<p class="bp-empty-canvas">Drag states here or add them from the right panel.</p>':""}</div></main>
+      <div class="bp-studio-grid"><main class="bp-canvas-scroll"><div class="bp-canvas" data-bp-canvas>${graphSvg(routes)}${graphLabels(routes)}<div class="bp-start"><span>START</span></div><div class="bp-canvas-hint">${connectingFrom===null ? "Connect states: click the + on a state, then click the destination state. Drag nodes to arrange the flow." : connectingFrom===-1 ? `Select a source state to start connecting. ` + `<button type="button" data-bp="cancel-link">Cancel</button>` : `Connecting from ${esc(draft.stages[connectingFrom]?.label||"")} — select a destination state or ` + `<button type="button" data-bp="cancel-link">Cancel</button>`}</div>${chips}${!draft.stages.length?'<p class="bp-empty-canvas">Drag states here or add them from the right panel.</p>':""}</div></main>
       <aside class="bp-inspector"><div class="bp-inspector-tabs"><button data-bp-side="states" class="${side==="states"?"active":""}">Info and States</button><button data-bp-side="transitions" class="${side==="transitions"?"active":""}">Transitions</button></div><div class="bp-inspector-content">${side==="states"?`
         <h3>${esc(draft.name)}</h3><p>Module: ${esc(draft.module)} · Layout: ${esc(draft.layout_name)} · Field: ${esc(draft.field_name)}</p>
         <label class="bp-checkbox"><input type="checkbox" data-bp-continuous ${draft.continuous?"checked":""}> Continuous</label>
@@ -198,6 +237,16 @@ export function createBlueprintFeature({api,esc,toast,renderRoute}) {
         render();
         return;
       }
+    }
+    if(step==="details"&&node.name==="field_name"){
+      const next=node.value;
+      if(next===draft.field_name)return;
+      if(draft.stages.length&&!window.confirm("Changing the controlling field clears the existing states and connections. Continue?")){
+        node.value=draft.field_name;return;
+      }
+      draft.field_name=next;
+      draft.stages=[];draft.transitions=[];picked=null;connectingFrom=null;
+      return;
     }
     if(step==="details"&&node.name==="module"){
       const next=node.value;if(draft.module===next)return;
