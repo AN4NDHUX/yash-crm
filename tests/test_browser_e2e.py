@@ -319,7 +319,9 @@ def test_browser_blueprint_connect_states_and_publish():
                 page.locator('[data-bp-details] input[name="name"]').fill("Browser Connected Process")
                 field_select = page.locator('[data-bp-details] select[name="field_name"]')
                 assert field_select.locator('option').count() >= 8
-                assert field_select.locator('option[value="email"]').is_disabled()
+                email_option = field_select.locator('option[value="email"]')
+                assert email_option.get_attribute("disabled") is not None
+                assert email_option.evaluate("(option) => option.disabled") is True
                 field_select.select_option("source")
                 page.locator('[data-bp-details] button[type="submit"]').click()
                 page.locator('[data-bp-add-state="Website"]').wait_for(timeout=12000)
