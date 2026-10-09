@@ -131,6 +131,15 @@ def parse_deluge(source):
             if len(condition_stack) > 5:
                 raise HTTPException(422, "Maximum conditional nesting is five")
             continue
+        expression_conditional = re.fullmatch(r'if\\s*\\((.+)\\)\\s*\\{', line)
+        if expression_conditional:
+            expression = expression_conditional.group(1).strip()
+            if len(expression) > 2048:
+                raise HTTPException(422, "Conditional expression exceeds limit")
+            condition_stack.append({"expression": expression})
+            if len(condition_stack) > 5:
+                raise HTTPException(422, "Maximum conditional nesting is five")
+            continue
         if not line.endswith(";"):
             raise HTTPException(422, f"Line {line_number}: statement must end with a semicolon")
         line = line[:-1].strip()
