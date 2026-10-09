@@ -93,6 +93,17 @@ def compile_deluge_program(source):
                     key, expression = pair.groups()
                     if key not in {"url", "type", "connection", "headers", "body", "parameters"} or key in options:
                         raise HTTPException(422, "Unsupported or duplicate invokeurl option")
+                    if key == "url" and expression.startswith(('"', "'")):
+                        import ast
+                        from app.deluge_http import _safe_https
+                        try:
+                            target_url = ast.literal_eval(expression)
+                        except (SyntaxError, ValueError) as exc:
+                            raise HTTPException(422, "Invalid invokeurl URL literal") from exc
+                        try:
+                            _safe_https(target_url)
+                        except ValueError as exc:
+                            raise HTTPException(422, "invokeurl URL must be trusted HTTPS") from exc
                     if key == "type" and expression in {"GET", "POST", "PUT", "PATCH", "DELETE"}:
                         expression = repr(expression)
                     options[key] = _validate_expression(expression)
