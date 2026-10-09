@@ -5521,6 +5521,7 @@ def record_timeline(
             "blueprint_enabled": bool(bp), "blueprint_id": bp.id if bp else None,
             "blueprint_name": bp.name if bp else None, "current_stage": current_state,
             "field_name": field_name, "transition_details": choices,
+            "blueprint_states": [str(s.get("label") or s.get("name") or "") for s in (bp.stages or []) if isinstance(s, dict)] if bp else [],
             "transitions": list(dict.fromkeys(choice["to"] for choice in choices))}
 
 
