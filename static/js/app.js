@@ -834,7 +834,7 @@ function leadStagePanel(record, timeline) {
       <div class="crm-state-current"><span>Current stage</span><strong>${esc(current)}</strong></div>
       <div class="crm-state-actions"><span>Available transitions</span><div class="crm-transition-options">${converted
         ? `<p class="related-empty">This lead has been converted. Its stage cannot be changed here.</p>`
-        : choices.map((status) => `<button type="button" class="crm-transition-action" data-lead-transition="${record.id}" data-status="${esc(status)}">${esc(status)} <span aria-hidden="true">→</span></button>`).join("")}
+        : choices.length ? choices.map((status) => `<button type="button" class="crm-transition-action" data-lead-transition="${record.id}" data-status="${esc(status)}">${esc(status)} <span aria-hidden="true">→</span></button>`).join("") : `<p class="related-empty">No transitions available from this stage.</p>`}
       </div>${!converted ? `<small>${timeline?.blueprint_enabled ? "Only configured Blueprint transitions are available." : "Use Convert above to convert the lead and create linked records."}</small>` : ""}</div>
     </div>
   </section>`;
