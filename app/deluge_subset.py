@@ -170,6 +170,8 @@ def parse_deluge(source):
             except SyntaxError as exc:
                 raise HTTPException(422, "Invalid assignment expression") from exc
             steps.append({"type": "variable_assign", "name": name, "value": {"$deluge_expr": expression}})
+        elif line == "return" or line.startswith("return "):
+            steps.append({"type": "return"})
         elif line.startswith("info "):
             steps.append({"type": "audit", "value": _argument(line[5:])})
         else:
