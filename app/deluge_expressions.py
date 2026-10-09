@@ -22,7 +22,7 @@ COMPARE = {
     ast.Eq: operator.eq, ast.NotEq: operator.ne, ast.Lt: operator.lt,
     ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
 }
-ALLOWED_METHODS = {"get", "size", "containsKey", "contains", "isEmpty", "toString", "put", "add", "remove", "keys", "values"}
+ALLOWED_METHODS = {"get", "size", "containsKey", "contains", "isEmpty", "toString", "put", "add", "remove", "keys", "values", "getKeys", "getValues", "distinct", "sort", "reverse", "subList", "toUpperCase", "toLowerCase", "trim", "startsWith", "endsWith", "replaceAll", "indexOf"}
 
 
 
@@ -161,6 +161,39 @@ def evaluate_deluge_expression(source: str, record: dict | None = None):
                         if isinstance(target, list) and type(args[0]) is int and 0 <= args[0] < len(target):
                             target.pop(args[0])
                             return target
+                if method in {"getKeys", "getValues"} and isinstance(target, dict) and not args:
+                    return list(target.keys() if method == "getKeys" else target.values())
+                if method == "distinct" and isinstance(target, list) and not args:
+                    unique = []
+                    for item in target:
+                        if item not in unique:
+                            unique.append(item)
+                    return unique
+                if method == "reverse" and isinstance(target, list) and not args:
+                    return list(reversed(target))
+                if method == "sort" and isinstance(target, list) and not args:
+                    if not all(type(item) is str for item in target) and not all(type(item) in {int, float} for item in target):
+                        raise HTTPException(422, "List sort requires uniform strings or numbers")
+                    return sorted(target)
+                if method == "subList" and isinstance(target, list) and len(args) == 2 and all(type(a) is int for a in args):
+                    start, end = args
+                    if not 0 <= start <= end <= len(target):
+                        raise HTTPException(422, "Invalid list slice")
+                    return target[start:end]
+                if isinstance(target, str):
+                    if method in {"toUpperCase", "toLowerCase", "trim"} and not args:
+                        return {"toUpperCase": str.upper, "toLowerCase": str.lower, "trim": str.strip}[method](target)
+                    if method in {"startsWith", "endsWith"} and len(args) == 1 and isinstance(args[0], str):
+                        return target.startswith(args[0]) if method == "startsWith" else target.endswith(args[0])
+                    if method == "indexOf" and len(args) == 1 and isinstance(args[0], str):
+                        return target.find(args[0])
+                    if method == "replaceAll" and len(args) == 2 and all(isinstance(a, str) for a in args):
+                        if not args[0]:
+                            raise HTTPException(422, "Empty replacement pattern")
+                        result = target.replace(args[0], args[1])
+                        if len(result) > 1000:
+                            raise HTTPException(422, "Expression result too large")
+                        return result
                 if method in {"keys", "values"} and isinstance(target, dict) and not args:
                     return list(target.keys() if method == "keys" else target.values())
                 if method == "size" and not args and isinstance(target, (dict, list, str)):
