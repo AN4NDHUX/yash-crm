@@ -785,6 +785,7 @@ function relatedNavigation(resource, related) {
     ['products', 'Products', true],
     ['open_activities', 'Open activities', true, openActivities],
     ['closed_activities', 'Closed activities', closedActivities > 0, closedActivities],
+    ['custom_records', 'Custom & related modules', (related.custom_records || []).length > 0, (related.custom_records || []).length],
     ['emails', 'Emails', true],
     ['timeline', 'Timeline', true],
   ].filter(([, , visible]) => visible);
@@ -817,6 +818,11 @@ function relatedContent(resource, related) {
   sections.push(relatedPlainSection('open_activities', 'Open activities', (related.activities || []).filter((item) => item.status !== 'Completed').map((item) => relatedPlainRow(item.subject, `${titleCase(item.activity_type)} · ${formatDateTime(item.due_at)}`, 'activities', item.id)), 'activities', 'No open activities yet.'));
   const closedActivities = (related.activities || []).filter((item) => item.status === 'Completed').map((item) => relatedPlainRow(item.subject, `${titleCase(item.activity_type)} · completed ${formatDateTime(item.updated_at || item.due_at)}`, 'activities', item.id));
   if (closedActivities.length) sections.push(relatedPlainSection('closed_activities', 'Closed activities', closedActivities, 'activities', 'No closed activities yet.'));
+  if ((related.custom_records || []).length) {
+    sections.push(relatedPlainSection('custom_records', 'Custom & related modules',
+      related.custom_records.map(item => `<button class="detail-related-row" type="button" data-related-platform="${esc(item.resource)}" data-id="${Number(item.id)}"><span class="detail-related-row-copy"><strong>${esc(item.title || 'Related record')}</strong><small>${esc(item.resource)} · ${esc(item.status || '')}</small></span><span class="detail-related-row-action">›</span></button>`),
+      null, 'No custom records.'));
+  }
   sections.push(relatedPlainSection('emails', 'Emails', (related.emails || []).map((item) => relatedPlainRow(item.subject, `${item.status} · ${item.to_email || 'No recipient'}`, 'emails', item.id, false)), 'emails', 'No email yet.'));
   return sections.join('');
 }
@@ -832,6 +838,7 @@ function bindDetail(resource, id) {
   $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, { related_type: resource, related_id: id })));
   $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate, null, { lead_id: button.dataset.leadId ? Number(button.dataset.leadId) : null, deal_id: button.dataset.dealId ? Number(button.dataset.dealId) : null })));
+  $$('[data-related-platform]').forEach(button => button.addEventListener('click', () => navigate('/' + encodeURIComponent(button.dataset.relatedPlatform))));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $("[data-convert-lead]")?.addEventListener("click", () => openConvertModal(Number(id)));
   $$('[data-stage-update]').forEach((button) => button.addEventListener("click", async () => { try { await api(`/api/deals/${button.dataset.stageUpdate}`, { method: "PATCH", body: JSON.stringify({ stage: button.dataset.stage }) }); toast("Deal updated", `Moved to ${button.dataset.stage}`); await renderRoute(); } catch (error) { toast("Could not update deal", error.message, "error"); } }));
