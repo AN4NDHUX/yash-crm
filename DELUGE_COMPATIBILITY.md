@@ -14,7 +14,7 @@ The CRM implements a **bounded Deluge-inspired workflow subset**, not a general 
 - `invokeurl("event payload")` or `crm.invokeUrl("event payload")` creates an outbound **queued webhook** to the administrator-configured `WORKFLOW_WEBHOOK_URL`, signed using `WORKFLOW_WEBHOOK_SECRET` and delivered by the separate workflow worker. These calls do **not** return HTTP responses, accept custom URL destinations, or behave like standard Zoho `invokeurl`.
 
 ## Not yet supported
-- User-defined function declarations/invocation, exception handling, switch statements, unrestricted dynamic loops, complex nested Deluge task expressions, unrestricted nested Map/List mutation, full date/math/string functions and exact Zoho type coercion/return semantics. Structured blocks currently require header and opening brace on the same line.
+- User-defined function declarations/invocation, exception handling, switch statements, unrestricted dynamic loops, complex nested Deluge task expressions, unrestricted nested Map/List mutation, full date/math/string functions and exact Zoho type coercion/return semantics. Structured blocks accept opening braces on the header line or the following line.
 - Standard multiline Zoho `invokeurl [url: ..., type: ..., connection: ...]` syntax, arbitrary methods, responses, headers and OAuth connections.
 - Zoho CRM task parity including cross-record CRUD, searchRecords, getRecords, attachments, mail, inventory operations, transactional trigger handling, and Zoho-specific error/response semantics.
 - Provider-specific connections, credential lifecycle, full tenant entitlement and API scope enforcement for outbound integrations.
