@@ -178,3 +178,97 @@ def test_browser_signup_login_and_module_navigation():
                 server.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 server.kill()
+
+
+def test_browser_lead_transitions_deal_stage_and_timeline():
+    """Exercise real clicks and persisted stage changes in Chromium."""
+    port = free_port()
+    base = f"http://127.0.0.1:{port}"
+    with tempfile.TemporaryDirectory() as tmp:
+        env = os.environ.copy()
+        env.update({
+            "APP_ENV": "development",
+            "DATABASE_URL": f"sqlite:///{tmp}/record-stage-browser.db",
+            "ENABLE_AUTH": "true",
+            "APP_USERNAME": "admin",
+            "APP_PASSWORD": "supersecretpass123",
+            "ADMIN_EMAIL": "admin@example.com",
+            "ADMIN_NAME": "Administrator",
+            "SEED_DEMO_DATA": "false",
+            "PYTHONPATH": str(ROOT),
+        })
+        server = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app",
+             "--host", "127.0.0.1", "--port", str(port)],
+            cwd=ROOT, env=env, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True,
+        )
+        try:
+            wait_for_server(base)
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page(viewport={"width": 1440, "height": 900})
+                page.goto(base + "/signup")
+                page.fill("#name", "Stage Browser User")
+                page.fill("#organization-name", "Stage Browser Organization")
+                page.fill("#username", "stage.browser")
+                page.fill("#signup-email", "stage.browser@example.com")
+                page.fill("#password", "browser-password-123")
+                page.fill("#confirm-password", "browser-password-123")
+                page.click("#submit-button")
+                page.wait_for_url("**/dashboard", timeout=15000)
+                records = page.evaluate("""async () => {
+                    const status = await fetch('/api/ai/status');
+                    const token = (await status.json()).csrf_token;
+                    const create = async (resource, data) => {
+                        const r = await fetch('/api/' + resource, {
+                            method: 'POST', credentials: 'same-origin',
+                            headers: {'Content-Type':'application/json','X-Yash-CSRF':token},
+                            body: JSON.stringify(data)
+                        });
+                        return {status:r.status, data: await r.json()};
+                    };
+                    return {
+                        lead: await create('leads', {name:'Browser Lead Stage'}),
+                        deal: await create('deals', {name:'Browser Deal Stage'})
+                    };
+                }""")
+                assert records["lead"]["status"] in (200, 201), records
+                assert records["deal"]["status"] in (200, 201), records
+                lead_id = records["lead"]["data"]["id"]
+                deal_id = records["deal"]["data"]["id"]
+
+                page.goto(base + f"/leads/{lead_id}")
+                page.locator('[data-lead-transition][data-status="Contacted"]').wait_for()
+                assert page.get_by_text("Customer journey").count() == 0
+                page.locator('[data-lead-transition][data-status="Contacted"]').click()
+                page.wait_for_function("""async id => {
+                    const r = await fetch('/api/leads/' + id);
+                    return r.ok && (await r.json()).status === 'Contacted';
+                }""", lead_id)
+                page.locator('[data-detail-tab="timeline"]').click()
+                page.locator('[data-timeline-kind="history"]').wait_for()
+                assert page.get_by_text("Status changed from New to Contacted").count() >= 1
+                page.locator('[data-timeline-kind="interactions"]').click()
+                assert page.locator('[data-timeline-content="interactions"]').is_visible()
+                page.locator('[data-timeline-kind="history"]').click()
+
+                page.goto(base + f"/deals/{deal_id}")
+                page.locator('[data-stage-update][data-stage="Proposal"]').wait_for()
+                page.locator('[data-stage-update][data-stage="Proposal"]').click()
+                page.wait_for_function("""async id => {
+                    const r = await fetch('/api/deals/' + id);
+                    return r.ok && (await r.json()).stage === 'Proposal';
+                }""", deal_id)
+                page.locator('.crm-pipeline-step.is-current').wait_for()
+                assert "Proposal" in page.locator('.crm-pipeline-step.is-current').inner_text()
+                page.locator('[data-detail-tab="timeline"]').click()
+                assert page.get_by_text("Stage changed from Qualification to Proposal").count() >= 1
+                browser.close()
+        finally:
+            server.terminate()
+            try:
+                server.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.communicate(timeout=5)
