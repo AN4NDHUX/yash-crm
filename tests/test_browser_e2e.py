@@ -246,6 +246,7 @@ def test_browser_lead_transitions_deal_stage_and_timeline():
                     const r = await fetch('/api/leads/' + id);
                     return r.ok && (await r.json()).status === 'Contacted';
                 }""", arg=lead_id)
+                page.locator('.crm-state-current strong').filter(has_text="Contacted").wait_for(timeout=12000)
                 page.locator('[data-detail-tab="timeline"]').click()
                 page.locator('[data-timeline-kind="history"]').wait_for()
                 assert page.get_by_text("Status changed from New to Contacted").count() >= 1
@@ -260,7 +261,7 @@ def test_browser_lead_transitions_deal_stage_and_timeline():
                     const r = await fetch('/api/deals/' + id);
                     return r.ok && (await r.json()).stage === 'Proposal';
                 }""", arg=deal_id)
-                page.locator('.crm-pipeline-step.is-current').wait_for()
+                page.locator('.crm-pipeline-step.is-current').filter(has_text="Proposal").wait_for(timeout=12000)
                 assert "Proposal" in page.locator('.crm-pipeline-step.is-current').inner_text()
                 page.locator('[data-detail-tab="timeline"]').click()
                 assert page.get_by_text("Stage changed from Qualification to Proposal").count() >= 1
