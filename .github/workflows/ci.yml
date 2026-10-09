@@ -62,6 +62,20 @@ jobs:
           APP_USERNAME: admin
           APP_PASSWORD: supersecretpass123
           SEED_DEMO_DATA: "false"
+      - name: Verify independent workflow worker prerequisites
+        id: worker_check
+        run: python -m scripts.check_worker_readiness
+        env:
+          APP_ENV: production
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/yashcrm_ci
+          ENABLE_AUTH: "true"
+          ALLOWED_HOSTS: localhost
+          ADMIN_EMAIL: admin@example.com
+          ADMIN_NAME: Administrator
+          APP_USERNAME: admin
+          APP_PASSWORD: supersecretpass123
+          SEED_DEMO_DATA: "false"
+
       - name: Critical populated module smoke
         run: pytest -q tests/test_full_module_smoke.py --timeout=120
 
@@ -89,6 +103,7 @@ jobs:
         env:
           DEPENDENCY_SCAN_OUTCOME: ${{ steps.dependency_scan.outcome }}
           MIGRATION_OUTCOME: ${{ steps.migrations.outcome }}
+          WORKER_OUTCOME: ${{ steps.worker_check.outcome }}
           BROWSER_OUTCOME: ${{ steps.browser.outcome }}
           REGRESSION_OUTCOME: ${{ steps.regression.outcome }}
         with:
@@ -96,6 +111,7 @@ jobs:
             const checks = [
               ['ci/dependency-security', process.env.DEPENDENCY_SCAN_OUTCOME],
               ['ci/postgresql-migrations', process.env.MIGRATION_OUTCOME],
+              ['ci/workflow-worker-readiness', process.env.WORKER_OUTCOME],
               ['ci/chromium-browser-e2e', process.env.BROWSER_OUTCOME],
               ['ci/full-crm-regression', process.env.REGRESSION_OUTCOME]
             ];
