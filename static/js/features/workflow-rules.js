@@ -139,21 +139,6 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
       <div class="field full"><label>Tag or task subject</label><input class="field-input" data-wf-declarative-value maxlength="250" value="${esc(declarativeEditor?.value || "")}"/></div>
     </div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-declarative-cancel>Cancel</button><button type="button" class="button button-primary" data-wf-declarative-save>Save changes</button></footer>
   </div></div>`;
-  const functionGalleryDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Function Gallery" style="max-width:760px;width:min(94vw,760px)">
-    <header><h2>Function Gallery</h2><p>Choose an approved CRM function for ${esc(draft.module)}. Gallery functions can run without arbitrary script execution.</p></header>
-    <div style="display:grid;gap:12px;padding:16px">
-      ${galleryTemplates.map((item,index)=>`<div class="wf-details-card"><h3>${esc(item.name)}</h3><p>${esc(item.description)}</p><button type="button" class="button button-primary" data-wf-gallery-create="${index}">Create and associate</button></div>`).join("")}
-    </div><footer class="wf-editor-footer"><button type="button" class="button" data-wf-gallery-close>Back</button></footer>
-  </div></div>`;
-  const configureFunctionDialog = () => `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Configure Function" style="max-width:680px;width:min(92vw,680px)">
-    <header><h2>Configure Function</h2><p>Choose how to configure your workflow function.</p></header>
-    <div style="display:grid;gap:12px;padding:16px">
-      <button type="button" class="button" data-wf-function-method="gallery"><strong>Gallery</strong> — Browse preconfigured examples</button>
-      <button type="button" class="button" data-wf-function-method="existing"><strong>Functions</strong> — Use an existing organization function</button>
-      <button type="button" class="button" data-wf-function-method="create"><strong>Write your own</strong> — Create a function in Developer Hub</button>
-    </div>
-    <footer class="wf-editor-footer"><button type="button" class="button" data-wf-function-config-close>Cancel</button></footer>
-  </div></div>`;
   const functionDialog = () => {
     const eligible = customFunctions.filter(fn => {
       const modules = fn.associations?.modules;
@@ -203,7 +188,7 @@ export function createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, s
     if (step === 3) body = `<section class="wf-stage"><div class="wf-stage-marker">ACTION</div><div class="wf-stage-content"><h3>Immediate actions</h3><p>Choose actions executed when the rule matches. External delivery actions are queued for configured integrations.</p>
       ${actionRows()}<button type="button" class="button button-small" data-wf-open-function>Browse Functions</button><button class="button button-small" data-wf-add-action>+ Add action</button><div class="field"><label>Schedule execution (optional)</label><input type="datetime-local" class="field-input" data-wf-scheduled-for value="${esc((draft.scheduled_for || "").slice(0,16))}"/><small>Scheduled actions remain queued until a worker or authorized user runs them.</small></div></div></section>`;
     if (step === 0) return `<div class="wf-rule-overlay"><div class="wf-rule-dialog" role="dialog" aria-modal="true" aria-label="Create New Rule">${body}<footer class="wf-editor-footer"><button class="button" type="button" data-wf-back-step>Cancel</button><button class="button button-primary" type="button" data-wf-next>Next</button></footer></div></div>`;
-    return `${declarativeEditor ? declarativeEditorDialog() : functionEditor ? functionEditorDialog() : functionGallery ? functionGalleryDialog() : functionConfiguration ? configureFunctionDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
+    return `${declarativeEditor ? declarativeEditorDialog() : functionEditor ? functionEditorDialog() : functionPicker ? functionDialog() : ""}<section class="wf-editor">${heading}<div class="wf-progress">${stepLabels.map((label,i)=>`<span class="${i===step?"active":""}">${i+1}. ${label}</span>`).join("")}</div>${body}
       <footer class="wf-editor-footer"><button class="button" data-wf-back-step type="button">${step===0?"Cancel":"Previous"}</button>
       <button class="button button-primary" data-wf-next type="button">${step===3?"Save Rule":"Next"}</button></footer></section>`;
   };
