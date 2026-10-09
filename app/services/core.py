@@ -532,7 +532,10 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             if isinstance(template, dict) and set(template) == {"$deluge_expr"}:
                 from app.deluge_expressions import evaluate_deluge_expression
                 context = {**dict(getattr(record, "data", None) or {}), **values}
-                return evaluate_deluge_expression(template["$deluge_expr"], context)
+                try:
+                    return evaluate_deluge_expression(template["$deluge_expr"], context)
+                except HTTPException as exc:
+                    raise ValueError("Deluge expression rejected") from exc
             if isinstance(template, str) and template.startswith("$record."):
                 field = template[8:]
                 if not field or field.startswith("_") or "." in field:
@@ -553,7 +556,11 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
                     if isinstance(condition, dict) and "expression" in condition:
                         from app.deluge_expressions import evaluate_deluge_expression
                         context = {**dict(getattr(record, "data", None) or {}), **values}
-                        if evaluate_deluge_expression(condition["expression"], context) is not True:
+                        try:
+                            result = evaluate_deluge_expression(condition["expression"], context)
+                        except HTTPException as exc:
+                            raise ValueError("Deluge condition rejected") from exc
+                        if result is not True:
                             matched = False
                             break
                         continue
