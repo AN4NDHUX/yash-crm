@@ -48,4 +48,4 @@ def reject_duplicate(db, resource, values, *, exclude_id=None):
         stmt = stmt.where(model.id != exclude_id)
     existing = db.scalar(stmt.limit(1))
     if existing is not None:
-        raise HTTPException(409, f"Duplicate {resource.rstrip('s')} exists (record #{existing}). Link or update the existing record instead.")
+        raise HTTPException(409, f"A matching {resource.rstrip('s')} already exists. Link or update the existing record instead.")
