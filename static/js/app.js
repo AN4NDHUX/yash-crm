@@ -12,6 +12,7 @@ import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
 import { createTeamspacesFeature } from "./features/teamspaces.js";
 import { createDashboardSupport } from "./features/dashboard-support.js";
+import { createPlatformDetailFeature } from "./features/platform-detail.js";
 import { createContextActions } from "./features/context-actions.js";
 import { createQuoteDetails } from "./features/quote-details.js";
 import { renderPlatformTable } from "./features/platform-table.js";
@@ -108,7 +109,7 @@ async function ensureLookups() {
       ? (result.value?.items || [])
       : [];
   });
-  // Lookups enrich labels and forms; they are not allowed to block route rendering.
+
   state.lookups.loaded = true;
 }
 
@@ -117,8 +118,8 @@ async function ensurePlatformLookup(resource) {
   try {
     state.platformLookups[resource] = (await api(`/api/platform/${resource}?limit=100&sort=name_asc`)).items || [];
   } catch (error) {
-    // Lookup data is supplementary. A broken related-module lookup must not blank
-    // the entire current module; keep the form usable and surface the API error
+
+
     // only if the user actually needs that lookup.
     state.platformLookups[resource] = [];
   }
@@ -177,21 +178,21 @@ function applyProfile() {
   const isOwnerAdmin = profile.owner_console_access === true;
   const isAdministrator = role.toLowerCase() === "administrator";
 
-  // Administrative navigation is hidden by default in the HTML and is exposed
-  // only to authenticated CRM administrators. Backend authorization remains the
-  // source of truth; this prevents normal users from seeing dead-end admin UI.
+
+
+
   document.querySelectorAll("[data-admin-only]").forEach((node) => {
     node.hidden = !isAdministrator;
     node.setAttribute("aria-hidden", String(!isAdministrator));
   });
 
-  // Bottom-left identity always represents the current authenticated account.
+
   $$(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
   $$(".user-mini strong").forEach((node) => { node.textContent = username; });
   $$(".user-mini-role").forEach((node) => { node.textContent = role; });
   $$(".user-mini-plan").forEach((node) => { node.textContent = planName; });
 
-  // These controls belong exclusively to the APP_USERNAME platform owner.
+
   const topProfile = $("#top-profile");
   const ownerButton = $("#owner-console-button");
   if (topProfile) {
@@ -220,7 +221,8 @@ async function refreshNavCount() {
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
 const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MODULES});
-const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $$ });
+const { platformDetailView, bindPlatformDetail } = createPlatformDetailFeature({ api, state, esc, formatDateTime, formatMoney, navigate, openPlatformModal, deletePlatformRecord, selectAll: $ });
+const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $ });
 const quoteDetails = createQuoteDetails({ api, esc, badge, formatDate, formatDateTime, formatMoney, lookupName, navigate, openPlatformModal, deletePlatformRecord, toast, renderRoute });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
 const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
@@ -233,7 +235,7 @@ async function navigate(path, replace = false) {
 }
 
 async function renderRoute() {
-  // Support the legacy /app prefix used by existing CONVOSIS CRM bookmarks.
+
   const route = window.location.pathname.replace(/^\/app(?=\/|$)/, "") || "/dashboard";
   state.route = route;
   activeNav(route);
@@ -368,12 +370,17 @@ async function renderRoute() {
         content.innerHTML = `<div class="card empty-state"><span class="empty-icon">!</span><h3>${esc(titleCase(resource))} is temporarily unavailable</h3><p>CONVOSIS CRM could not load the module catalog. Please retry without leaving this module.</p><div style="margin-top:16px"><button class="button button-primary" data-retry>Retry module</button></div></div>`;
         return;
       }
-      if (resource === "quotes" && parts[1]) {
+      if (parts[1]) {
         const id = Number(parts[1]);
-        if (parts.length !== 2 || !Number.isSafeInteger(id) || id <= 0) return navigate("/quotes", true);
-        setBreadcrumb("Quote detail", "Quotes");
-        content.innerHTML = await quoteDetails.view(id);
-        quoteDetails.bind(id);
+        if (parts.length !== 2 || !Number.isSafeInteger(id) || id <= 0) return navigate(`/${resource}`, true);
+        setBreadcrumb(`${state.platformCatalog.resources[resource].singular} detail`, state.platformCatalog.resources[resource].label);
+        if (resource === "quotes") {
+          content.innerHTML = await quoteDetails.view(id);
+          quoteDetails.bind(id);
+        } else {
+          content.innerHTML = await platformDetailView(resource, id);
+          bindPlatformDetail(resource, id);
+        }
         return;
       }
       setBreadcrumb(state.platformCatalog.resources[resource].label);
@@ -416,8 +423,13 @@ async function renderRoute() {
     if (state.platformCatalog.resources[parts[0]]) {
       const resource = parts[0];
       setBreadcrumb(state.platformCatalog.resources[resource].label);
-      content.innerHTML = await platformModuleView(resource);
-      bindPlatform(resource);
+      if (parts[1] && /^\\d+$/.test(parts[1])) {
+        content.innerHTML = await platformDetailView(resource, Number(parts[1]));
+        bindPlatformDetail(resource, Number(parts[1]));
+      } else {
+        content.innerHTML = await platformModuleView(resource);
+        bindPlatform(resource);
+      }
       return;
     }
     await navigate("/dashboard", true);
@@ -1032,6 +1044,7 @@ function fieldHtml(field, value = "") {
   const type = field.type || "text";
   const id = `field-${field.key}`;
   const required = field.required ? "required" : "";
+  const isNumberField = ["record_number","quote_number","order_number","po_number","invoice_number"].includes(field.key);
   const hint = field.hint ? `<small style="font-size:10px;color:var(--text-faint)">${esc(field.hint)}</small>` : "";
   let input = "";
   if (type === "file") {
@@ -1060,7 +1073,7 @@ function fieldHtml(field, value = "") {
     if (type === "date" && rendered) rendered = String(rendered).slice(0, 10);
     if (field.key === "tags" && Array.isArray(rendered)) rendered = rendered.join(", ");
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
-    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
+    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(isNumberField && !rendered ? "Assigned on save" : rendered)}" ${isNumberField ? "readonly aria-readonly=true" : ""} ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
   }
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
 }
@@ -1092,7 +1105,7 @@ async function openPlatformModal(resource, id = null, preset = {}) {
   $("#modal-eyebrow").textContent = id ? `Edit ${config.singular}` : `New ${config.singular}`;
   $("#modal-title").textContent = id ? `Update ${config.singular.toLowerCase()}` : `Create ${config.singular.toLowerCase()}`;
   $("#modal-submit").textContent = id ? "Save changes" : `Create ${config.singular.toLowerCase()}`;
-  $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.map((field) => fieldHtml(field, record[field.key])).join("")}${config.fields.some((field) => field.key === "owner_id") ? "" : fieldHtml({ key: "owner_id", label: "Owner", type: "user" }, record.owner_id)}</div>`;
+  $("#modal-body").innerHTML = `<div class="form-grid">${config.fields.filter((field) => !["record_number","quote_number","order_number","po_number","invoice_number"].includes(field.key)).map((field) => fieldHtml(field, record[field.key])).join("")}${config.fields.some((field) => field.key === "owner_id") ? "" : fieldHtml({ key: "owner_id", label: "Owner", type: "user" }, record.owner_id)}</div>`;
   $("#modal-backdrop").hidden = false;
   $("#modal-body input, #modal-body select, #modal-body textarea")?.focus();
 }
@@ -1110,7 +1123,7 @@ function settingsResourceConfig(resource) {
 function readForm(form) {
   const data = {};
   $$('[name]', form).forEach((input) => {
-    if (input.type === "file") return;
+    if (input.type === "file" || input.readOnly && ["record_number","quote_number","order_number","po_number","invoice_number"].includes(input.name)) return;
     let value = input.value;
     if (input.dataset.numeric === "true" || ["owner_id", "account_id", "contact_id", "deal_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
     else if (["tags"].includes(input.name)) value = value ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
@@ -1254,7 +1267,7 @@ async function deletePlatformRecord(resource, id) {
   try {
     await api(`/api/platform/${resource}/${id}`, { method: "DELETE" });
     toast("Record deleted", "It can be restored from Settings > Recycle Bin for 30 days.");
-    if (window.location.pathname === `/quotes/${id}`) await navigate("/quotes");
+    if (window.location.pathname === `/${resource}/${id}`) await navigate(`/${resource}`);
     else await renderRoute();
   } catch (error) { toast("Could not archive record", error.message, "error"); }
 }
@@ -1262,7 +1275,8 @@ async function deletePlatformRecord(resource, id) {
 function bindPlatform(resource) {
   if (["personal_settings", "users", "approval_processes", "blueprints", "search_setup", "customize_setup"].includes(resource)) bindSettings();
   $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate)));
-  $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
+  $('[data-platform-open]').forEach(button => button.addEventListener("click", () => navigate(`/${button.dataset.platformOpen}/${Number(button.dataset.id)}`)));
+  $('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
   $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   const current = state.platformCatalog.resources[resource] ? platformState(resource) : null;
   $$('[data-platform-select-record]').forEach(input=>input.addEventListener("change",event=>{

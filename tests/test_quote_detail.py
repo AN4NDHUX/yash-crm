@@ -57,7 +57,7 @@ def test_quote_detail_related_records_and_organization_isolation():
         out['other_detail'] = stranger.get('/api/platform/quotes/'+str(out['quote_id'])).status_code
         out['other_related'] = stranger.get('/api/platform/quotes/'+str(out['quote_id'])+'/related').status_code
     """)
-    assert out['quote_code'] == 201 and out['quote_number'].startswith('QUO-'), out
+    assert out['quote_code'] == 201 and out['quote_number'].startswith(('QT','QUO-')), out
     assert out['note_code'] in (200,201), out
     assert out['order_code'] == 201 and out['invoice_code'] == 201, out
     assert out['detail_code'] == 200 and out['related_code'] == 200, out

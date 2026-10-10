@@ -93,7 +93,7 @@ AI_API_KEY = os.getenv("YASHCRM_AI_API_KEY", "").strip()
 AI_MODEL = os.getenv("YASHCRM_AI_MODEL", "gpt-4o-mini").strip()
 AI_PROVIDER = os.getenv("YASHCRM_AI_PROVIDER", "OpenAI").strip() or "OpenAI-compatible cloud"
 def _env_int(name: str, default: int) -> int:
-    # A malformed value must not crash the import (or surface later as a bogus 422).
+
     try:
         return int(os.getenv(name, str(default)).strip())
     except ValueError:
@@ -251,9 +251,9 @@ def ensure_cloud_admin(db: Session) -> None:
 
 PUBLIC_PROBE_PATHS = frozenset({"/health", "/ready"})
 PUBLIC_AUTH_PATHS = frozenset({"/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/auth/forgot-password", "/api/auth/reset-password", "/api/billing/webhook/stripe", "/api/billing/webhook/razorpay"})
-# Static, non-sensitive files that browsers request WITHOUT the page's Basic-auth
-# credentials: the manifest fetch, favicon requests and the manifest's icons. Putting
-# them behind auth makes installability and the tab icon fail with 401. Exact paths
+
+
+
 # only (no prefixes), GET/HEAD only.
 PUBLIC_ASSET_PATHS = frozenset({
     "/manifest.webmanifest",
@@ -280,18 +280,18 @@ def validate_production_settings() -> None:
         raise RuntimeError("CORS_ORIGINS cannot contain '*' in production.")
     if not env_bool("ENABLE_AUTH", True):
         raise RuntimeError("ENABLE_AUTH must remain enabled in production.")
-    # Browser authentication is database-backed. Production Basic authentication is disabled.
+
     admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
     if parseaddr(admin_email)[1] != admin_email or "@" not in admin_email or "." not in admin_email.rsplit("@", 1)[-1]:
         raise RuntimeError("ADMIN_EMAIL must be a valid production email address.")
 
 
 def startup() -> None:
-    # Local/desktop mode remains self-initialising. Production schema changes are
-    # performed by Alembic before the web process starts (see cloud-entrypoint.sh).
+
+
     if not IS_PRODUCTION:
         Base.metadata.create_all(bind=engine)
-    # Run the additive compatibility check in every environment after migrations.
+
     # It is idempotent and only creates/adds missing notification-era schema.
     ensure_additive_schema()
     with SessionLocal() as db:
@@ -405,8 +405,8 @@ async def cloud_security(request: Request, call_next):
         try:
             with SessionLocal() as db:
                 context_actor = db.get(User, int(actor_id))
-                # The deployment-provisioned platform owner is intentionally global.
-                # Customer administrators and normal users remain organization-scoped.
+
+
                 if context_actor is not None and not _is_platform_owner(context_actor):
                     organization_id = _organization_id_for_user(db, int(actor_id))
                     if organization_id:
@@ -502,7 +502,7 @@ def ready(db: Session = Depends(get_db)) -> dict[str, Any]:
     except Exception as error:
         raise HTTPException(503, f"Database is not ready: {error.__class__.__name__}") from error
 
-    # A stamped Alembic revision is not enough: verify the physical columns used
+
     # by every primary CRM list page before advertising the service as ready.
     inspector = inspect(db.bind)
     required_models = (Lead, Contact, Account, Deal, Activity, Product, PlatformRecord, MetadataModule, MetadataField)
@@ -566,7 +566,7 @@ def favicon() -> FileResponse:
 
 @app.api_route("/favicon.ico", methods=["GET", "HEAD"])
 def favicon_ico() -> FileResponse:
-    # Browsers request /favicon.ico unprompted. Without this route the SPA catch-all
+
     # answered 200 with the HTML shell, and with auth on it answered 401.
     return FileResponse(ROOT / "static" / "icons" / "app.ico", media_type="image/x-icon", headers={"Cache-Control": "public, max-age=86400"})
 
@@ -4090,7 +4090,7 @@ def create_cpq_quote(payload: dict[str, Any], db: Session = Depends(get_db), act
     record = PlatformRecord(resource="quotes", title=values["name"], status="Draft", amount=priced["total"], owner_id=actor.id, data=values)
     db.add(record)
     db.flush()
-    ensure_transaction_number(record)
+    ensure_transaction_number(record, db)
     add_audit(db, "cpq_quote_created", "quotes", record.id, f"Created CPQ quote '{record.title}'", after=serialize_platform(record, db, actor), actor_id=actor.id)
     db.commit()
     db.refresh(record)
@@ -4785,6 +4785,7 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
         _enforce_record_limit(db, actor)
     config = platform_config(resource)
     values = platform_values(payload)
+    assert_number_immutable(resource, values)
     authorize_field_values(db, resource, values, actor, "write")
     if isinstance(actor, User):
         values["owner_id"] = actor.id
@@ -4799,7 +4800,7 @@ def create_platform_record(resource: str, payload: PlatformPayload, db: Session 
     sync_platform_columns(record, values)
     db.add(record)
     db.flush()
-    ensure_transaction_number(record)
+    ensure_transaction_number(record, db)
     if resource == "payments":
         refresh_invoice_balance(db, int(values["invoice_id"]))
     run_platform_automation(db, resource, "create", record, values)
@@ -4850,6 +4851,7 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
         raise HTTPException(403, "You do not have access to update this record")
     before = serialize_platform(record)
     changes = platform_values(payload)
+    assert_number_immutable(resource, changes)
     authorize_field_values(db, resource, changes, actor, "write")
     validate_platform_values(resource, changes, partial=True)
     values = dict(record.data or {})
@@ -4859,7 +4861,7 @@ def update_platform_record(resource: str, item_id: int, payload: PlatformPayload
     validate_platform_values(resource, values)
     sync_platform_columns(record, values)
     record.version = int(record.version or 1) + 1
-    ensure_transaction_number(record)
+    ensure_transaction_number(record, db)
     if resource == "payments":
         refresh_invoice_balance(db, int(values["invoice_id"]))
     run_platform_automation(db, resource, "update", record, values, before_values=before)
@@ -5197,6 +5199,7 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
             with db.begin_nested():
                 if is_platform:
                     values = dict(raw_values)
+                    assert_number_immutable(resource, values)
                     authorize_field_values(db, resource, values, actor, "write")
                     if isinstance(actor, User):
                         values["owner_id"] = actor.id
@@ -5206,6 +5209,7 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
                     sync_platform_columns(record, values)
                     db.add(record)
                     db.flush()
+                    ensure_transaction_number(record, db)
                     run_record_automation(db, resource, "create", record, values)
                     add_audit(db, "import", resource, record.id, f"Imported {config['singular']} '{record.title}'")
                 else:
@@ -5227,11 +5231,13 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
                         stage = values.get("stage", "Qualification")
                         values.setdefault("probability", STAGE_PROBABILITY.get(stage, 20))
                         values.setdefault("status", STAGE_STATUS.get(stage, "Open"))
+                    assert_number_immutable(resource, values)
                     record = model(**values)
                     if resource == "activities" and getattr(record, "status", None) == "Completed" and getattr(record, "completed_at", None) is None:
                         record.completed_at = datetime.utcnow()
                     db.add(record)
                     db.flush()
+                    if resource == "products": apply_number(db, record)
                     run_record_automation(db, resource, "create", record, values)
                     add_audit(db, "import", resource, record.id, f"Imported {resource.rstrip('s')} record", after=serialize(record, db))
             imported += 1
@@ -5425,12 +5431,14 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
         stage = values.get("stage", "Qualification")
         values.setdefault("probability", STAGE_PROBABILITY.get(stage, 20))
         values.setdefault("status", STAGE_STATUS.get(stage, "Open"))
+    assert_number_immutable(resource, payload.model_dump(exclude_unset=True))
     reject_duplicate(db, resource, values)
     item = model(**values)
     if resource == "activities" and item.status == "Completed" and item.completed_at is None:
         item.completed_at = datetime.utcnow()
     db.add(item)
     db.flush()
+    if resource == "products": apply_number(db, item)
     if resource == "leads": apply_lead_stage_lifecycle(db,item,actor)
     if resource == "users" and isinstance(actor, User):
         organization_id = _organization_id_required(db, actor)
@@ -5477,6 +5485,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
     before_full = serialize(item, db, actor)
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
     incoming = payload.model_dump(exclude_unset=True)
+    assert_number_immutable(resource, incoming)
     if resource == "leads" and item.status == "Converted":
         raise HTTPException(409, "Converted leads are read-only; edit the linked Deal or Contact")
     if resource == "leads":

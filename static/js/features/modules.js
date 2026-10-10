@@ -59,10 +59,10 @@ export const MODULES = {
     label: "Products", singular: "Product", icon: "□", description: "Organize the products and services behind every customer conversation.", search: "Search products, SKUs or categories...", status: ["Active", "Inactive"],
     columns: [
       { label: "Product", cell: (r) => `<button class="record-link" data-open-record="products" data-id="${r.id}">${esc(r.name)}<span class="sub-cell">${esc(r.sku || r.category || "No SKU")}</span></button>` },
-      { label: "Category", key: "category" }, { label: "Unit price", cell: (r) => formatMoney(r.unit_price) }, { label: "Stock", key: "stock_quantity" }, { label: "Status", cell: (r) => badge(r.status) },
+      { label: "Number", key: "record_number" }, { label: "Category", key: "category" }, { label: "Unit price", cell: (r) => formatMoney(r.unit_price) }, { label: "Stock", key: "stock_quantity" }, { label: "Status", cell: (r) => badge(r.status) },
     ],
     fields: [
-      { key: "name", label: "Product name", required: true }, { key: "sku", label: "SKU" }, { key: "category", label: "Category" }, { key: "unit_price", label: "Unit price", type: "number" }, { key: "stock_quantity", label: "Stock quantity", type: "number" },
+      { key: "name", label: "Product name", required: true }, { key: "record_number", label: "Product Number" }, { key: "sku", label: "SKU" }, { key: "category", label: "Category" }, { key: "unit_price", label: "Unit price", type: "number" }, { key: "stock_quantity", label: "Stock quantity", type: "number" },
       { key: "status", label: "Status", type: "select", options: ["Active", "Inactive"] }, { key: "owner_id", label: "Owner", type: "user" }, { key: "related_type", label: "Related module", type: "select", options: ["leads", "contacts", "accounts", "deals"] }, { key: "related_id", label: "Related record", type: "number" },
       { key: "description", label: "Description", type: "textarea", full: true },
     ],

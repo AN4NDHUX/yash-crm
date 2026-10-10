@@ -501,7 +501,9 @@ class Deal(TimestampMixin, Base):
 
 class Product(TimestampMixin, Base):
     __tablename__ = "products"
+    __table_args__ = (UniqueConstraint("organization_id", "record_number", name="uq_product_org_record_number"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    record_number: Mapped[str | None] = mapped_column(String(48), nullable=True)
     name: Mapped[str] = mapped_column(String(180))
     sku: Mapped[str | None] = mapped_column(String(80), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -695,7 +697,9 @@ class PlatformRecord(TimestampMixin, Base):
     """
 
     __tablename__ = "platform_records"
+    __table_args__ = (UniqueConstraint("organization_id", "resource", "record_number", name="uq_platform_org_resource_number"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    record_number: Mapped[str | None] = mapped_column(String(48), nullable=True)
     resource: Mapped[str] = mapped_column(String(80), index=True)
     title: Mapped[str] = mapped_column(String(220), index=True)
     status: Mapped[str] = mapped_column(String(40), default="Active", index=True)
