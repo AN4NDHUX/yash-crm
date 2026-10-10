@@ -62,6 +62,15 @@ def test_account_detail_and_selection_create_deal_then_create_quote():
                 page.wait_for_url("**/dashboard",timeout=15000)
 
                 page.goto(base+"/accounts")
+                try:
+                    page.locator('[data-create="accounts"]').first.wait_for(timeout=9000)
+                except Exception as error:
+                    raise AssertionError(
+                        "Accounts screen missing Create button; page="
+                        +page.locator("#app-content").inner_text()[:1800]
+                        +" | browser errors="+str(errors)
+                        +" | current URL="+page.url
+                    ) from error
                 page.locator('[data-create="accounts"]').first.click()
                 page.locator('#modal-body [name="name"]').fill("Browser Quote Account")
                 page.locator("#modal-submit").click()
