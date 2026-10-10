@@ -12,6 +12,7 @@ import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
 import { createTeamspacesFeature } from "./features/teamspaces.js";
 import { createDashboardSupport } from "./features/dashboard-support.js";
+import { loading } from "./features/loading-view.js";
 import { createPlatformDetailFeature } from "./features/platform-detail.js";
 import { createContextActions } from "./features/context-actions.js";
 
@@ -91,7 +92,6 @@ function pageHeader(eyebrow, title, copy, actions = "") {
   return `<div class="page-heading"><div><span class="eyebrow">${esc(eyebrow)}</span><h1>${esc(title)}</h1><p class="subheading">${esc(copy)}</p></div><div class="heading-actions">${actions}</div></div>`;
 }
 
-function loading() { return `<div class="loading" role="status" aria-live="polite"><div class="yash-radial-loader" aria-hidden="true"><span class="yash-loader-spokes"><i style="--i:0"></i><i style="--i:1"></i><i style="--i:2"></i><i style="--i:3"></i><i style="--i:4"></i><i style="--i:5"></i><i style="--i:6"></i><i style="--i:7"></i><i style="--i:8"></i><i style="--i:9"></i><i style="--i:10"></i><i style="--i:11"></i></span><img class="uploaded-loader-logo" src="/static/loader-logo.png?v=20261006-radial-v2" alt="" /></div><span class="loading-label">Connecting your customer journey</span><span class="loading-steps" aria-hidden="true"><i>Lead</i><b></b><i>Visit</i><b></b><i>Quote</i><b></b><i>Payment</i></span><span class="loading-progress" aria-hidden="true"><i></i></span></div>`; }
 
 function emptyState(icon, title, copy, button = "") { return `<div class="empty-state"><span class="empty-icon">${icon}</span><h3>${esc(title)}</h3><p>${esc(copy)}</p>${button ? `<div style="margin-top:16px">${button}</div>` : ""}</div>`; }
 
