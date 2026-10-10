@@ -79,7 +79,7 @@ def test_numbered_products_and_platform_records_can_open_edit_delete():
                 page.locator('#modal-body [name="sku"]').fill("SKU-ABC")
                 page.locator("#modal-submit").click()
                 page.locator("#modal-backdrop").wait_for(state="hidden", timeout=15000)
-                assert "SKU-ABC" in page.locator("#app-content").inner_text()
+                page.get_by_text("SKU-ABC",exact=True).first.wait_for(timeout=15000)
                 page.locator('[data-delete-record="products"]').first.click()
                 page.locator("#confirm-action").click()
                 page.wait_for_url("**/products", timeout=12000)
