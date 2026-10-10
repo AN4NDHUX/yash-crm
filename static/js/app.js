@@ -222,7 +222,7 @@ const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MOD
 const { platformDetailView, bindPlatformDetail } = createPlatformDetailFeature({ api, state, esc, formatDateTime, formatMoney, navigate, openPlatformModal, deletePlatformRecord, selectAll: $$ });
 const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $$ });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
-const { dashboardReportView, performanceTable, attentionPanel, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
+const { dashboardReportView, performanceTable, attentionQueue, attentionPanel, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
 
 async function navigate(path, replace = false) {
   if (replace) history.replaceState({}, "", path); else history.pushState({}, "", path);
