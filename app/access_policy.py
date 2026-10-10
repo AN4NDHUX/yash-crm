@@ -36,6 +36,10 @@ def request_resource_action(path: str, method: str) -> tuple[str | None, str]:
     parts = path.strip("/").split("/")
     if len(parts) < 2 or parts[0] != "api":
         return None, action
+    if parts[1] in {"import-wizard", "import"} and len(parts) >= 3:
+        return parts[2], "create"
+    if parts[1] == "export" and len(parts) >= 3:
+        return parts[2].removesuffix(".csv"), "read"
     if parts[1] == "platform" and len(parts) >= 3:
         return parts[2], action
     if parts[1] in {"auth", "organization", "owner", "plans", "subscription", "billing", "settings", "security"}:
