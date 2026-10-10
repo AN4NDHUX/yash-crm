@@ -1262,8 +1262,8 @@ async function deletePlatformRecord(resource, id) {
 function bindPlatform(resource) {
   if (["personal_settings", "users", "approval_processes", "blueprints", "search_setup", "customize_setup"].includes(resource)) bindSettings();
   $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate)));
-  $('[data-platform-open]').forEach(button => button.addEventListener("click", () => navigate(`/${button.dataset.platformOpen}/${Number(button.dataset.id)}`)));
-  $('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
+  $$('[data-platform-open]').forEach(button => button.addEventListener("click", () => navigate(`/${button.dataset.platformOpen}/${Number(button.dataset.id)}`)));
+  $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
   $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   const current = state.platformCatalog.resources[resource] ? platformState(resource) : null;
   $$('[data-platform-select-record]').forEach(input=>input.addEventListener("change",event=>{
