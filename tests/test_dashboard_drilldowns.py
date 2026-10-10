@@ -86,8 +86,10 @@ def test_dashboard_drilldowns_match_kpis_and_filter_closed_records():
 
 def test_dashboard_cards_link_to_five_report_routes():
     app_js = (ROOT / 'static/js/app.js').read_text(encoding='utf-8')
-    for route in ('total-leads', 'open-deals', 'pipeline-value', 'activities-due', 'ai-action-queue'):
+    dashboard_support = (ROOT / 'static/js/features/dashboard-support.js').read_text(encoding='utf-8')
+    for route in ('total-leads', 'open-deals', 'pipeline-value', 'activities-due'):
         assert f'data-go="/dashboard/report/{route}"' in app_js
+    assert 'data-go="/dashboard/report/ai-action-queue"' in dashboard_support
     assert 'content.innerHTML = await dashboardReportView(parts[2])' in app_js
     assert 'aria-label="Open Total leads report"' in app_js
 
