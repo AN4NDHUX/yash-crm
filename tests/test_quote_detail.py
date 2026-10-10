@@ -69,7 +69,7 @@ def test_quote_detail_related_records_and_organization_isolation():
 def test_quote_details_route_actions_and_responsive_styles_wired():
     js = (ROOT / 'static/js/app.js').read_text(encoding='utf-8')
     detail = (ROOT / 'static/js/features/quote-details.js').read_text(encoding='utf-8')
-    css = (ROOT / 'static/css/quote-details.css').read_text(encoding='utf-8')
+    css = (ROOT / 'static/css/modules.css').read_text(encoding='utf-8')
     assert 'if (resource === "quotes" && parts[1])' in js
     assert 'href="/quotes/${Number(row.id)}"' in js
     assert 'createQuoteDetails' in js
