@@ -5240,6 +5240,8 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
     return {"job_id": job.id, "resource": resource, "imported": imported, "errors": errors, "status": job.status}
 
 
+from app.services.lead_conversion import apply_lead_stage_lifecycle
+from app.services.record_deduplication import reject_duplicate
 from app.services.import_wizard_routes import router as guided_import_router
 app.include_router(guided_import_router)
 
@@ -5420,14 +5422,13 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
         stage = values.get("stage", "Qualification")
         values.setdefault("probability", STAGE_PROBABILITY.get(stage, 20))
         values.setdefault("status", STAGE_STATUS.get(stage, "Open"))
+    reject_duplicate(db, resource, values)
     item = model(**values)
     if resource == "activities" and item.status == "Completed" and item.completed_at is None:
         item.completed_at = datetime.utcnow()
     db.add(item)
     db.flush()
-    if resource == "leads" and item.status in {"Contacted", "Converted"}:
-        from app.services.lead_conversion import apply_lead_stage_lifecycle
-        apply_lead_stage_lifecycle(db, item, actor)
+    if resource == "leads": apply_lead_stage_lifecycle(db,item,actor)
     if resource == "users" and isinstance(actor, User):
         organization_id = _organization_id_required(db, actor)
         membership_role = "Admin" if str(item.role or "").lower() == "administrator" else "Member"
@@ -5496,6 +5497,8 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
         if value is None and not column.nullable:
             continue
         setattr(item, key, coerce_value(model, key, value))
+    if resource in {"leads","deals","accounts","contacts"} and set(incoming) & {"name","email","phone","account_id","contact_id"}:
+        reject_duplicate(db, resource, {c.key:getattr(item,c.key) for c in model.__table__.columns}, exclude_id=item.id)
     if resource == "deals" and item.stage != before[0] and item.stage in STAGE_PROBABILITY:
         if item.probability == before[1]:
             item.probability = STAGE_PROBABILITY[item.stage]
@@ -5513,10 +5516,7 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
                 db, blueprint, resource, item_id, previous_state, updated_state,
                 serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None,
             )
-    if resource == "leads" and item.status in {"Contacted", "Converted"}:
-        from app.services.lead_conversion import apply_lead_stage_lifecycle
-        db.flush()
-        apply_lead_stage_lifecycle(db, item, actor)
+    if resource == "leads": apply_lead_stage_lifecycle(db,item,actor)
     run_record_automation(db, resource, "update", item, serialize(item, db, actor), before_full)
     add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     db.commit()
