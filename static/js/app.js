@@ -12,6 +12,7 @@ import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
 import { createTeamspacesFeature } from "./features/teamspaces.js";
 import { createDashboardSupport } from "./features/dashboard-support.js";
+import { createPlatformDetailFeature } from "./features/platform-detail.js";
 import { createContextActions } from "./features/context-actions.js";
 
 async function api(path, options = {}, retried = false) {
@@ -106,7 +107,7 @@ async function ensureLookups() {
       ? (result.value?.items || [])
       : [];
   });
-  // Lookups enrich labels and forms; they are not allowed to block route rendering.
+
   state.lookups.loaded = true;
 }
 
@@ -115,8 +116,8 @@ async function ensurePlatformLookup(resource) {
   try {
     state.platformLookups[resource] = (await api(`/api/platform/${resource}?limit=100&sort=name_asc`)).items || [];
   } catch (error) {
-    // Lookup data is supplementary. A broken related-module lookup must not blank
-    // the entire current module; keep the form usable and surface the API error
+
+
     // only if the user actually needs that lookup.
     state.platformLookups[resource] = [];
   }
@@ -175,21 +176,21 @@ function applyProfile() {
   const isOwnerAdmin = profile.owner_console_access === true;
   const isAdministrator = role.toLowerCase() === "administrator";
 
-  // Administrative navigation is hidden by default in the HTML and is exposed
-  // only to authenticated CRM administrators. Backend authorization remains the
-  // source of truth; this prevents normal users from seeing dead-end admin UI.
+
+
+
   document.querySelectorAll("[data-admin-only]").forEach((node) => {
     node.hidden = !isAdministrator;
     node.setAttribute("aria-hidden", String(!isAdministrator));
   });
 
-  // Bottom-left identity always represents the current authenticated account.
+
   $$(".user-mini .avatar").forEach((node) => { node.textContent = initials(username); });
   $$(".user-mini strong").forEach((node) => { node.textContent = username; });
   $$(".user-mini-role").forEach((node) => { node.textContent = role; });
   $$(".user-mini-plan").forEach((node) => { node.textContent = planName; });
 
-  // These controls belong exclusively to the APP_USERNAME platform owner.
+
   const topProfile = $("#top-profile");
   const ownerButton = $("#owner-console-button");
   if (topProfile) {
@@ -218,6 +219,7 @@ async function refreshNavCount() {
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
 const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MODULES});
+const { platformDetailView, bindPlatformDetail } = createPlatformDetailFeature({ api, state, esc, formatDateTime, formatMoney, navigate, openPlatformModal, deletePlatformRecord, selectAll: $ });
 const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $$ });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
 const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
@@ -230,7 +232,7 @@ async function navigate(path, replace = false) {
 }
 
 async function renderRoute() {
-  // Support the legacy /app prefix used by existing CONVOSIS CRM bookmarks.
+
   const route = window.location.pathname.replace(/^\/app(?=\/|$)/, "") || "/dashboard";
   state.route = route;
   activeNav(route);
@@ -405,8 +407,13 @@ async function renderRoute() {
     if (state.platformCatalog.resources[parts[0]]) {
       const resource = parts[0];
       setBreadcrumb(state.platformCatalog.resources[resource].label);
-      content.innerHTML = await platformModuleView(resource);
-      bindPlatform(resource);
+      if (parts[1] && /^\\d+$/.test(parts[1])) {
+        content.innerHTML = await platformDetailView(resource, Number(parts[1]));
+        bindPlatformDetail(resource, Number(parts[1]));
+      } else {
+        content.innerHTML = await platformModuleView(resource);
+        bindPlatform(resource);
+      }
       return;
     }
     await navigate("/dashboard", true);
@@ -574,7 +581,7 @@ function platformTable(resource, data) {
   const config = state.platformCatalog.resources[resource];
   if (!data.items.length) return `<section class="card">${emptyState("+", `No ${config.label.toLowerCase()} found`, "Create a record or adjust the current filters.", `<button class="button button-primary" data-platform-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
   const visible = (config.fields || []).filter((item) => !["textarea", "json", "file"].includes(item.type)).slice(0, 4);
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th><input type="checkbox" data-platform-select-all="${resource}" aria-label="Select all displayed records"/></th>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-platform-select-record="${resource}" data-id="${row.id}" ${platformState(resource).selectedIds.includes(row.id) ? "checked" : ""}/></td>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong><span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th><input type="checkbox" data-platform-select-all="${resource}" aria-label="Select all displayed records"/></th>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-platform-select-record="${resource}" data-id="${row.id}" ${platformState(resource).selectedIds.includes(row.id) ? "checked" : ""}/></td>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `<button type="button" class="record-link" data-platform-open="${resource}" data-id="${row.id}">${esc(row[field.key] ?? row.name ?? "-")}<span class="sub-cell">${esc(row.record_number || "#"+row.id)}</span></button>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions"><button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function platformDisplay(field, value) {
@@ -1024,6 +1031,7 @@ function fieldHtml(field, value = "") {
   const type = field.type || "text";
   const id = `field-${field.key}`;
   const required = field.required ? "required" : "";
+  const isNumberField = ["record_number","quote_number","order_number","po_number","invoice_number"].includes(field.key);
   const hint = field.hint ? `<small style="font-size:10px;color:var(--text-faint)">${esc(field.hint)}</small>` : "";
   let input = "";
   if (type === "file") {
@@ -1052,7 +1060,7 @@ function fieldHtml(field, value = "") {
     if (type === "date" && rendered) rendered = String(rendered).slice(0, 10);
     if (field.key === "tags" && Array.isArray(rendered)) rendered = rendered.join(", ");
     if (["conditions", "steps", "stages", "transitions", "transition_requirements"].includes(field.key) && typeof rendered !== "string") rendered = JSON.stringify(rendered || [], null, 2);
-    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
+    input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(isNumberField && !rendered ? "Assigned on save" : rendered)}" ${isNumberField ? "readonly aria-readonly=true" : ""} ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
   }
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
 }
@@ -1102,7 +1110,7 @@ function settingsResourceConfig(resource) {
 function readForm(form) {
   const data = {};
   $$('[name]', form).forEach((input) => {
-    if (input.type === "file") return;
+    if (input.type === "file" || input.readOnly && ["record_number","quote_number","order_number","po_number","invoice_number"].includes(input.name)) return;
     let value = input.value;
     if (input.dataset.numeric === "true" || ["owner_id", "account_id", "contact_id", "deal_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
     else if (["tags"].includes(input.name)) value = value ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
@@ -1246,14 +1254,16 @@ async function deletePlatformRecord(resource, id) {
   try {
     await api(`/api/platform/${resource}/${id}`, { method: "DELETE" });
     toast("Record deleted", "It can be restored from Settings > Recycle Bin for 30 days.");
-    await renderRoute();
+    if (window.location.pathname === `/${resource}/${id}`) await navigate(`/${resource}`);
+    else await renderRoute();
   } catch (error) { toast("Could not archive record", error.message, "error"); }
 }
 
 function bindPlatform(resource) {
   if (["personal_settings", "users", "approval_processes", "blueprints", "search_setup", "customize_setup"].includes(resource)) bindSettings();
   $$('[data-platform-create]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformCreate)));
-  $$('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
+  $('[data-platform-open]').forEach(button => button.addEventListener("click", () => navigate(`/${button.dataset.platformOpen}/${Number(button.dataset.id)}`)));
+  $('[data-platform-edit]').forEach((button) => button.addEventListener("click", () => openPlatformModal(button.dataset.platformEdit, Number(button.dataset.id))));
   $$('[data-platform-delete]').forEach((button) => button.addEventListener("click", () => deletePlatformRecord(button.dataset.platformDelete, Number(button.dataset.id))));
   const current = state.platformCatalog.resources[resource] ? platformState(resource) : null;
   $$('[data-platform-select-record]').forEach(input=>input.addEventListener("change",event=>{
