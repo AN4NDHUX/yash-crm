@@ -118,6 +118,36 @@ def test_account_detail_and_selection_create_deal_then_create_quote():
                 assert quote["status"]=="Draft",quote
                 assert quote["quote_number"].startswith("QUO-"),quote
 
+                # Quotes must open to a real Overview/Timeline record screen.
+                quote_link=page.locator(f'[data-go="/quotes/{quote["id"]}"]').first
+                quote_link.wait_for()
+                quote_link.click()
+                page.wait_for_url(f'**/quotes/{quote["id"]}', timeout=15000)
+                page.locator('.quote-detail-page').wait_for()
+                assert page.locator('.quote-record-heading h1').inner_text() == quote["name"]
+                assert page.locator('.quote-related-nav').get_by_text("Sales Orders").count() == 1
+                assert quote["quote_number"] in page.locator(".quote-highlights").inner_text()
+                page.locator('.quote-tab-strip [data-quote-tab="timeline"]').click()
+                assert not page.locator('[data-quote-panel="timeline"]').is_hidden()
+                page.locator('.quote-tab-strip [data-quote-tab="overview"]').click()
+                page.locator('[data-quote-add-note]').click()
+                page.locator('[data-quote-note-form] [name="title"]').fill("Browser quote note")
+                page.locator('[data-quote-note-form] [name="content"]').fill("Review requested")
+                page.locator('[data-quote-note-form] button[type="submit"]').click()
+                page.locator('.quote-section-body').get_by_text("Browser quote note").wait_for()
+                page.on("dialog", lambda dialog: dialog.accept())
+                page.locator('[data-quote-convert-menu]').click()
+                page.locator('[data-quote-convert="sales_orders"]').click()
+                page.locator('#quote-section-sales-orders [data-quote-related-open="sales_orders"]').wait_for(timeout=15000)
+                order_rows=page.evaluate(
+                    "(id)=>fetch('/api/platform/quotes/'+id+'/related').then(r=>r.json())",
+                    quote["id"])
+                assert len(order_rows["sales_orders"]) == 1,order_rows
+                page.locator('#quote-section-sales-orders [data-quote-related-open="sales_orders"]').first.click()
+                page.locator('#modal-backdrop').wait_for(state="visible")
+                assert page.locator('#modal-body [name="quote_id"]').input_value() == str(quote["id"])
+                page.locator('#modal-close').click()
+
                 page.goto(base+"/accounts")
                 checkbox=page.locator('[data-select-record="accounts"]').first
                 checkbox.wait_for()
