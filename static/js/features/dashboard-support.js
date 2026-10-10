@@ -34,11 +34,17 @@ function performanceTable(rows) {
 function attentionQueue(attention) {
   const leads = attention.stuck_leads || [];
   const quotes = attention.quotes_needing_follow_up || [];
+  // Flat rows, rather than browser-default boxed buttons, keep the queue readable.
+  // Buttons retain keyboard activation and the delegated data-go navigation.
   const items = [
-    ...leads.map((item) => `<button class="related-item" data-go="/leads/${item.id}"><span class="related-dot">!</span><span class="related-main"><strong>${esc(item.name)}</strong><small>Lead stuck at ${esc(item.status)}${item.next_follow_up ? ` · follow-up ${formatDate(item.next_follow_up)}` : ""}</small></span><span>›</span></button>`),
-    ...quotes.map((item) => `<button class="related-item" data-go="/quotes"><span class="related-dot">₹</span><span class="related-main"><strong>${esc(item.name)}</strong><small>${esc(item.status)}${item.valid_until ? ` · valid until ${formatDate(item.valid_until)}` : " · no expiry date"}</small></span><span>›</span></button>`),
+    ...leads.map((item) => `<button type="button" class="ai-queue-row" data-go="/leads/${Number(item.id)}"><span class="ai-queue-icon" aria-hidden="true">!</span><span class="ai-queue-copy"><strong>${esc(item.name)}</strong><small>Lead stuck at ${esc(item.status)}${item.next_follow_up ? ` · follow-up ${formatDate(item.next_follow_up)}` : ""}</small></span><span class="ai-queue-chevron" aria-hidden="true">›</span></button>`),
+    ...quotes.map((item) => `<button type="button" class="ai-queue-row" data-go="/quotes/${Number(item.id)}"><span class="ai-queue-icon" aria-hidden="true">₹</span><span class="ai-queue-copy"><strong>${esc(item.name)}</strong><small>${esc(item.status)}${item.valid_until ? ` · valid until ${formatDate(item.valid_until)}` : " · no expiry date"}</small></span><span class="ai-queue-chevron" aria-hidden="true">›</span></button>`),
   ];
-  return items.length ? items.join("") : emptyState("✓", "Nothing urgent", "No stale leads or quotations need immediate follow-up.");
+  return items.length ? `<div class="ai-queue-list" aria-label="Records requiring action">${items.join("")}</div>` : emptyState("✓", "Nothing urgent", "No stale leads or quotations need immediate follow-up.");
+}
+
+function attentionPanel(attention) {
+  return `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div><button type="button" class="card-head-link" data-go="/dashboard/report/ai-action-queue">View queue ↗</button></div><div class="card-body">${attentionQueue(attention)}</div></section>`;
 }
 
 function activityItem(item) {
@@ -54,5 +60,5 @@ function bindDashboard() {
 }
 
 
-return { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard };
+return { dashboardReportView, performanceTable, attentionQueue, attentionPanel, activityItem, bindDashboard };
 }
