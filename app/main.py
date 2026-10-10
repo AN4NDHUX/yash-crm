@@ -5206,9 +5206,7 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
                     sync_platform_columns(record, values)
                     db.add(record)
                     db.flush()
-                    if is_platform: ensure_transaction_number(record, db)
-                    else:
-                        if resource == "products": apply_number(db, record)
+                    ensure_transaction_number(record, db)
                     run_record_automation(db, resource, "create", record, values)
                     add_audit(db, "import", resource, record.id, f"Imported {config['singular']} '{record.title}'")
                 else:
@@ -5236,6 +5234,7 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
                         record.completed_at = datetime.utcnow()
                     db.add(record)
                     db.flush()
+                    if resource == "products": apply_number(db, record)
                     run_record_automation(db, resource, "create", record, values)
                     add_audit(db, "import", resource, record.id, f"Imported {resource.rstrip('s')} record", after=serialize(record, db))
             imported += 1
