@@ -23,6 +23,9 @@ def test_account_to_deal_and_deal_to_quote_preserve_links_and_show_in_reports():
             'name':'Orbit - Quote','deal_id':deal['id'],
             'amount':8700,'status':'Draft','terms':'Net 30'})
         out['quote_status']=quote_response.status_code
+        assert quote_response.status_code == 201, (
+            quote_response.status_code, quote_response.text[:2000]
+        )
         quote=quote_response.json()
         out['quote']=quote
         saved=c.get('/api/platform/quotes/'+str(quote['id'])).json()
@@ -71,7 +74,9 @@ def test_quote_must_match_source_deal_account_and_contact():
         out['good_contact']=correct.json().get('contact_id')
         out['expected_account']=a['id']
         out['expected_contact']=x['id']
-        out['quote_count']=c.get('/api/platform/quotes').json()['total']
+        listing=c.get('/api/platform/quotes')
+        assert listing.status_code == 200, (listing.status_code, listing.text[:2000])
+        out['quote_count']=listing.json()['total']
     """)
     assert out['bad_account']==422,out
     assert out['bad_contact']==422,out
