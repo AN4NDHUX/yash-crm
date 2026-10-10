@@ -14,6 +14,13 @@ def test_quote_detail_related_records_and_organization_isolation():
             'username':'quote.detail.owner','email':'quote.detail.owner@example.test',
             'password':'strong-password-123'})
         assert signup.status_code in (200,201), signup.text
+        with main.SessionLocal() as db:
+            user = db.scalar(main.select(main.User).where(main.User.email == 'quote.detail.owner@example.test'))
+            subscription = main._ensure_organization_subscription(db, user)
+            plan = db.scalar(main.select(main.Plan).where(main.Plan.code == 'professional'))
+            subscription.plan_id = plan.id
+            subscription.status = 'Active'
+            db.commit()
         acc = client.post('/api/accounts', json={'name':'Demo Buyer Account'}).json()
         deal = client.post('/api/deals', json={'name':'Demo Buyer Deal',
             'account_id':acc['id'],'amount':17500}).json()
