@@ -5291,6 +5291,10 @@ async def submit_guided_import(
         raise HTTPException(422, "Invalid duplicate rule")
     if operation in {"update", "both"} and duplicate_key == "none":
         raise HTTPException(422, "Select a matching field to update records")
+    if operation in {"update", "both"}:
+        from app.services.security import _profile_action_allowed
+        if not _profile_action_allowed(db, actor, resource, "update"):
+            raise HTTPException(403, "Your profile does not allow updating these records")
     parsed, columns = await _wizard_uploads(files, charset)
     try:
         field_map = json.loads(mapping)
@@ -5328,6 +5332,14 @@ async def submit_guided_import(
                     raw_values = {field: row.get(column, "").strip()
                                   for column, field in field_map.items()
                                   if row.get(column, "").strip()}
+                    if resource == "leads" and raw_values.get("name"):
+                        # Zoho spreadsheets frequently split lead names into first and last.
+                        # Preserve both components when the Last Name column maps to name.
+                        name_column = next((column for column, field in field_map.items() if field == "name"), "")
+                        if name_column.strip().casefold() == "last name":
+                            first = str(row.get("First Name") or row.get("First_Name") or "").strip()
+                            if first:
+                                raw_values["name"] = f"{first} {raw_values['name']}"
                     if not raw_values.get("phone"):
                         raise HTTPException(422, "Phone Number cannot be empty")
                     if not raw_values.get(required_field):
