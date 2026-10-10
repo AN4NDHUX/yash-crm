@@ -66,8 +66,12 @@ def test_wizard_endpoints_for_four_modules_and_mandatory_phone_mapping():
         for module in ('leads','deals','accounts','contacts'):
             name_field = 'first_name' if module=='contacts' else 'name'
             name_header = 'First Name' if module=='contacts' else 'Name'
-            payload = (name_header+',Phone Number\\nTest-'+module+',+918888111222\\n').encode()
-            mapping = {name_header:name_field,'Phone Number':'phone'}
+            if module == 'contacts':
+                payload = b'First Name,Last Name,Phone Number\\nTest-contacts,Smith,+918888111222\\n'
+                mapping = {'First Name':'first_name','Last Name':'last_name','Phone Number':'phone'}
+            else:
+                payload = (name_header+',Phone Number\\nTest-'+module+',+918888111222\\n').encode()
+                mapping = {name_header:name_field,'Phone Number':'phone'}
             files = [('files',('data.csv',payload,'text/csv'))]
             preview = c.post('/api/import-wizard/'+module+'/preview',files=files)
             missing = c.post('/api/import-wizard/'+module+'/submit',files=files,
@@ -96,7 +100,7 @@ def test_wizard_endpoints_for_four_modules_and_mandatory_phone_mapping():
     assert out["history_count"] >= 8
     for module, result in out["modules"].items():
         assert result["preview"] == 200, (module, result)
-        assert result["columns"] in (["Name", "Phone Number"], ["First Name", "Phone Number"])
+        assert result["columns"] in (["Name", "Phone Number"], ["First Name", "Last Name", "Phone Number"])
         assert result["invalid"] == 422, (module, result)
         assert result["status"] == 200, (module, result)
         assert result["created"] == 1, (module, result)
