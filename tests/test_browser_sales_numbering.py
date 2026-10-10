@@ -73,7 +73,7 @@ def test_numbered_products_and_platform_records_can_open_edit_delete():
                 page.locator("#modal-backdrop").wait_for(state="hidden", timeout=15000)
                 page.locator('[data-open-record="products"]').first.click()
                 page.wait_for_url("**/products/*", timeout=12000)
-                page.get_by_text(re.compile(r"^PRD\\d{5}$")).first.wait_for(timeout=15000)
+                page.get_by_text(re.compile(r"^PRD\d{5}$")).first.wait_for(timeout=15000)
                 page.locator('[data-edit-record="products"]').first.click()
                 assert page.locator('#modal-body [name="record_number"]').get_attribute("readonly") is not None
                 page.locator('#modal-body [name="sku"]').fill("SKU-ABC")
@@ -100,7 +100,7 @@ def test_numbered_products_and_platform_records_can_open_edit_delete():
                     page.locator("#modal-backdrop").wait_for(state="hidden", timeout=15000)
                     page.locator(f'[data-platform-open="{resource}"]').first.click()
                     page.wait_for_url("**/" + resource + "/*", timeout=15000)
-                    page.get_by_text(re.compile(r"^"+prefix+r"\\d{5}$")).first.wait_for(timeout=15000)
+                    page.get_by_text(re.compile(r"^"+prefix+r"\d{5}$")).first.wait_for(timeout=15000)
                     page.locator('[data-platform-detail-edit]').first.click()
                     number = page.locator('#modal-body [name="record_number"]')
                     assert number.get_attribute("readonly") is not None
