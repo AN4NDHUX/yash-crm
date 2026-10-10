@@ -1,0 +1,32 @@
+name: Related Filter Regression
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: related-filter-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt pytest pytest-timeout
+      - name: Verify tenant-safe related module filters
+        run: pytest -q tests/test_core_module_filters.py --timeout=120
+        env:
+          APP_ENV: development
+          ENABLE_AUTH: "true"
+          APP_USERNAME: admin
+          APP_PASSWORD: supersecretpass123
