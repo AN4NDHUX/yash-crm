@@ -5272,13 +5272,13 @@ def guided_import_sample(resource: str, format: str, actor: User = Depends(curre
 
 # Guided import endpoints are separate from the legacy CSV endpoint, preserving its
 # existing integrations while applying strict mapping and phone validation to the wizard.
-from app.services.import_wizard import parse_import_file, MAX_IMPORT_ROWS
+from app.services.import_wizard import parse_import_file, MAX_IMPORT_ROWS, MAX_FILE_BYTES
 
 
 async def _wizard_uploads(files: list[UploadFile], charset: str) -> tuple[list[dict[str, Any]], list[str]]:
     if not 1 <= len(files) <= 3:
         raise HTTPException(422, "Select 1–3 files")
-    parsed = [parse_import_file(file.filename or "", await file.read(), charset) for file in files]
+    parsed = [parse_import_file(file.filename or "", await file.read(MAX_FILE_BYTES + 1), charset) for file in files]
     columns = parsed[0]["columns"]
     if any(part["columns"] != columns for part in parsed[1:]):
         raise HTTPException(422, "All files must have identical columns for one import")
