@@ -322,6 +322,19 @@ img, svg, canvas, video { max-width: 100%; }
 .detail-side .card-head { padding: 14px 16px; }
 .detail-side .card-body { padding: 15px 16px; }
 .related-item { display: flex; align-items: center; gap: 9px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+/* Unboxed record rows across modules: reset native button borders and shadows. */
+:is(button, a).related-item {
+  appearance: none; display: flex; width: 100%; min-width: 0;
+  background: transparent; border: 0; border-bottom: 1px solid var(--border);
+  border-radius: 0; box-shadow: none; margin: 0; padding: 10px 0;
+  text-align: left; font: inherit; color: inherit; text-decoration: none;
+  cursor: pointer;
+}
+:is(button, a).related-item:hover { color: var(--premium-blue-700, var(--indigo)); }
+:is(button, a).related-item:focus-visible {
+  outline: 2px solid var(--premium-blue-600, var(--indigo)); outline-offset: 2px;
+}
+
 .related-item:last-child { border-bottom: 0; padding-bottom: 0; }
 .related-item:first-child { padding-top: 0; }
 .flat-related-list { border: 0; background: transparent; }
