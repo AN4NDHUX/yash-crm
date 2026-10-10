@@ -28,7 +28,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
     if (!MODULES[resource] || !["leads", "deals", "accounts", "contacts"].includes(resource)) throw Error("Unsupported import module");
     current = { resource, step: 0, files: [], charset: "auto", preview: null, mapping: {},
       operation: "add", duplicate: "none", layout: "Default", automation: false,
-      assignment: false, tab: "all", query: "", busy: false, result: null };
+      assignment: false, followup: "", tab: "all", query: "", busy: false, result: null };
   }
   function status() { return current?.step || 0; }
   function fileList() {
@@ -60,7 +60,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
       </aside><div class="import-mapping-body"><div class="import-mapping-head">
       <div class="import-tabs"><button data-import-tab="all" class="active">All Modules (1)</button><button data-import-tab="mapped">Mapped Modules (1)</button><button data-import-tab="unmapped">Unmapped Modules (0)</button></div>
       <input data-import-module-search placeholder="Search modules and files" value="${esc(current.query)}" /></div>
-      <div class="import-target-card"><strong>${esc(caption(current.resource))}</strong><small>${current.preview.files.length} file(s) mapped</small></div>
+      ${current.tab==="unmapped"?`<p class="import-help">No Matching Modules found</p>`:`<div class="import-target-card"><strong>${esc(caption(current.resource))}</strong><small>${current.preview.files.length} file(s) mapped</small></div>`}
       ${items.length?"":'<p class="import-help">No matching files found.</p>'}
       </div></div>`;
   }
@@ -92,6 +92,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
       <section><h3>Manual Record Approval</h3><label title="Manual approval for import is not available in this CRM build">
       <input type="checkbox" disabled/> Enable manual record approval (not available)</label></section>
       <section><h3>Trigger Automation and Process Management</h3><label><input type="checkbox" data-import-automation ${current.automation?"checked":""}/> Trigger configured automations for imported and updated records</label></section>
+      <section><h3>Assign follow-up tasks</h3><label>Add follow-up task to new records and assign it to record owner <select data-import-followup><option value="">No follow-up task</option>${["Call","Meeting","Email","Follow up"].map(name=>`<option value="${name}" ${current.followup===name?"selected":""}>${name}</option>`).join("")}</select></label><p>Task due date is the next day. <a href="/setup/automation_actions">Create Workflow Task</a></p></section>
       <section><h3>Import Summary</h3><p>${current.preview.total} rows in ${current.preview.files.length} files; ${esc(current.operation)} records in ${esc(caption(current.resource))}.</p>
       <p>Phone Number is required in every row. Rows with validation errors will be reported in Import History.</p></section></div>`;
   }
@@ -137,6 +138,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
       data.append("layout",current.layout);
       data.append("trigger_automation",String(current.automation));
       data.append("apply_assignment",String(current.assignment));
+      data.append("followup_task",current.followup);
     }
     return data;
   }
@@ -171,11 +173,11 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
       } else if (current.step===4) {
         current.result=await post(`/api/import-wizard/${current.resource}/submit`,formData(true));
         toast("Import complete",`${current.result.imported} imported, ${current.result.updated} updated, ${current.result.skipped} skipped, ${current.result.errors.length} errors.`);
-        navigate("/setup/import_history"); return;
+        await navigate("/setup/import_history"); return;
       }
       current.step++;current.tab="all";current.query="";
     } catch(error) { toast("Import failed",error.message,"error"); }
-    finally {current.busy=false;refresh();}
+    finally {current.busy=false;if(current.step!==4 || !current.result)refresh();}
   }
   function bind(root=$("#app-content")) {
     if(!current) return;
@@ -193,13 +195,18 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
     }));
     $("[data-import-duplicate]",root)?.addEventListener("change",e=>current.duplicate=e.target.value);
     $("[data-import-layout]",root)?.addEventListener("change",e=>current.layout=e.target.value);
-    root.querySelectorAll("[data-import-tab]").forEach(el=>el.addEventListener("click",()=>{
-      current.tab=el.dataset.importTab;
-      if(current.step===2 && current.tab==="unmapped")toast("No unmapped modules", "All files are mapped to the selected module.");
-      else refresh();
-    }));
-    $("[data-import-module-search]",root)?.addEventListener("input",e=>{current.query=e.target.value;refresh();});
-    $("[data-import-column-search]",root)?.addEventListener("input",e=>{current.query=e.target.value;refresh();});
+    root.querySelectorAll("[data-import-tab]").forEach(el=>el.addEventListener("click",()=>{current.tab=el.dataset.importTab;refresh();}));
+    const updateSearch = e => {
+      const selector = e.target.hasAttribute("data-import-column-search") ? "[data-import-column-search]" : "[data-import-module-search]";
+      const position = e.target.selectionStart;
+      current.query=e.target.value;
+      refresh();
+      const replacement=$(selector,$("#app-content"));
+      replacement?.focus();
+      if(position!==null)replacement?.setSelectionRange(position,position);
+    };
+    $("[data-import-module-search]",root)?.addEventListener("input",updateSearch);
+    $("[data-import-column-search]",root)?.addEventListener("input",updateSearch);
     root.querySelectorAll("[data-import-map]").forEach(el=>el.addEventListener("change",e=>{
       if(e.target.value)current.mapping[e.target.dataset.importMap]=e.target.value;
       else delete current.mapping[e.target.dataset.importMap];
@@ -209,6 +216,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
     $("[data-import-reset-map]",root)?.addEventListener("click",()=>{current.mapping={};refresh();});
     $("[data-import-assignment]",root)?.addEventListener("change",e=>current.assignment=e.target.checked);
     $("[data-import-automation]",root)?.addEventListener("change",e=>current.automation=e.target.checked);
+    $("[data-import-followup]",root)?.addEventListener("change",e=>current.followup=e.target.value);
   }
   return {view,bind,status};
 }
