@@ -10,6 +10,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Allow this test to run under both `pytest` and `python -m pytest`.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 
 def run_filters_script(script: str) -> dict:
     body = (
