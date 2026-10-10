@@ -60,5 +60,5 @@ function bindDashboard() {
 }
 
 
-return { dashboardReportView, performanceTable, attentionPanel, activityItem, bindDashboard };
+return { dashboardReportView, performanceTable, attentionQueue, attentionPanel, activityItem, bindDashboard };
 }
