@@ -5354,6 +5354,8 @@ async def submit_guided_import(
     required_field = "first_name" if resource == "contacts" else "name"
     if required_field not in field_map.values():
         raise HTTPException(422, f"{required_field.replace('_', ' ').title()} must be mapped")
+    if resource == "contacts" and "last_name" not in field_map.values():
+        raise HTTPException(422, "Last Name must be mapped for Contacts")
     if duplicate_key == "email" and "email" not in model.__table__.columns:
         raise HTTPException(422, "Email matching is not supported for this module")
     if duplicate_key != "none" and duplicate_key != "id" and duplicate_key not in field_map.values():
@@ -5388,6 +5390,8 @@ async def submit_guided_import(
                         raise HTTPException(422, "Phone Number cannot be empty")
                     if not raw_values.get(required_field):
                         raise HTTPException(422, f"{required_field.replace('_', ' ').title()} cannot be empty")
+                    if resource == "contacts" and not raw_values.get("last_name"):
+                        raise HTTPException(422, "Last Name cannot be empty for Contacts")
                     values = {key: coerce_value(model, key, val) for key, val in raw_values.items()}
                     authorize_field_values(db, resource, values, actor, "write")
                     match = None
