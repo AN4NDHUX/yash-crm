@@ -4,6 +4,7 @@ import { renderPricingView, bindPricingInteractions } from "./features/pricing.j
 
 import { state, PLATFORM_MODULE_ROUTES, $, $$, esc, titleCase, initials, formatDate, formatDateTime, formatMoney, slug, pathFor, badge, lookupName } from "./core/runtime.js";
 import { MODULES } from "./features/modules.js";
+import { FILTERABLE_MODULES, renderModuleFilters, bindModuleFilters } from "./features/module-filters.js";
 import { createSetupFeature } from "./features/setup.js";
 import { createBlueprintFeature } from "./features/blueprints.js";
 import { createWorkflowRulesUI } from "./features/workflow-rules.js";
@@ -573,6 +574,10 @@ async function moduleView(resource) {
   const config = MODULES[resource];
   const current = state.moduleState[resource] || { search: "", status: "", owner_id: "", sort: "created_desc", min_amount: "", max_amount: "", close_from: "", close_to: "", offset: 0, view: "list", selectedIds: [] };
   state.moduleState[resource] = current;
+  const advanced = FILTERABLE_MODULES.includes(resource);
+  if (advanced && !current.filterCatalog) {
+    current.filterCatalog = await api(`/api/module-filter-options/${resource}`);
+  }
   const broadView = ["kanban","grid","split","chart","timeline"].includes(current.view);
   const params = new URLSearchParams({ limit: broadView ? "100" : "25", offset: broadView ? "0" : String(current.offset) });
   if (current.search) params.set("search", current.search);
@@ -583,6 +588,9 @@ async function moduleView(resource) {
   if (current.max_amount) params.set("max_amount", current.max_amount);
   if (current.close_from) params.set("close_from", current.close_from);
   if (current.close_to) params.set("close_to", current.close_to);
+  if (advanced && current.advancedFilters?.rules?.length) {
+    params.set("filters", JSON.stringify(current.advancedFilters));
+  }
   const data = await api(`/api/${resource}?${params}`);
   const actions = `<button class="button button-primary" data-create="${resource}"><span class="button-icon">＋</span>Add ${config.singular.toLowerCase()}</button>`;
   const viewOptions = [["list","List"],["grid","Grid"],["split","Split"],["chart","Chart"],["timeline","Timeline"]];
@@ -595,9 +603,13 @@ async function moduleView(resource) {
   else if (current.view === "chart") body = chartView(resource, data);
   else if (current.view === "timeline") body = timelineModuleView(resource, data);
   return `${pageHeader("Workspace / " + config.label, config.label, config.description, `${viewToggle}${actions}`)}
-    <div class="module-toolbar"><label class="toolbar-search"><span>⌕</span><input data-module-search="${resource}" value="${esc(current.search)}" placeholder="${esc(config.search)}" /></label>${config.status.length ? `<select class="filter-select" data-module-status="${resource}"><option value="">All statuses</option>${config.status.map((option) => `<option ${current.status === option ? "selected" : ""}>${esc(option)}</option>`).join("")}</select>` : ""}<select class="filter-select" data-module-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-module-sort="${resource}"><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently added</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A–Z</option>${resource === "deals" ? `<option value="amount_desc" ${current.sort === "amount_desc" ? "selected" : ""}>Amount high–low</option><option value="close_asc" ${current.sort === "close_asc" ? "selected" : ""}>Close date soonest</option>` : ""}${resource === "leads" ? `<option value="score_desc" ${current.sort === "score_desc" ? "selected" : ""}>Lead score high–low</option>` : ""}</select>${resource === "deals" ? `<input class="field-input" style="width:105px" data-deal-filter="min_amount" type="number" placeholder="Min amount" value="${esc(current.min_amount)}" /><input class="field-input" style="width:105px" data-deal-filter="max_amount" type="number" placeholder="Max amount" value="${esc(current.max_amount)}" /><input class="field-input" style="width:140px" data-deal-filter="close_from" type="date" value="${esc(current.close_from)}" /><input class="field-input" style="width:140px" data-deal-filter="close_to" type="date" value="${esc(current.close_to)}" />` : ""}<button class="button button-ghost button-small" data-clear-filters="${resource}">Clear filters</button><button class="button button-ghost button-small" data-bulk-delete="${resource}" ${current.selectedIds.length ? "" : "disabled"}>Delete selected${current.selectedIds.length ? ` (${current.selectedIds.length})` : ""}</button><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>
-    ${body}
-    ${current.view === "list" ? pagination(resource, data) : ""}`;
+    <div class="module-toolbar">${advanced ? `<button type="button" class="button button-ghost button-small advanced-filter-toggle" data-filter-toggle aria-expanded="${Boolean(current.filtersOpen)}" aria-controls="module-filter-sidebar">⚲ Filter${current.advancedFilters?.rules?.length ? ` (${current.advancedFilters.rules.length})` : ""}</button>` : ""}<label class="toolbar-search"><span>⌕</span><input data-module-search="${resource}" value="${esc(current.search)}" placeholder="${esc(config.search)}" /></label>${config.status.length ? `<select class="filter-select" data-module-status="${resource}"><option value="">All statuses</option>${config.status.map((option) => `<option ${current.status === option ? "selected" : ""}>${esc(option)}</option>`).join("")}</select>` : ""}<select class="filter-select" data-module-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-module-sort="${resource}"><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently added</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A–Z</option>${resource === "deals" ? `<option value="amount_desc" ${current.sort === "amount_desc" ? "selected" : ""}>Amount high–low</option><option value="close_asc" ${current.sort === "close_asc" ? "selected" : ""}>Close date soonest</option>` : ""}${resource === "leads" ? `<option value="score_desc" ${current.sort === "score_desc" ? "selected" : ""}>Lead score high–low</option>` : ""}</select>${resource === "deals" ? `<input class="field-input" style="width:105px" data-deal-filter="min_amount" type="number" placeholder="Min amount" value="${esc(current.min_amount)}" /><input class="field-input" style="width:105px" data-deal-filter="max_amount" type="number" placeholder="Max amount" value="${esc(current.max_amount)}" /><input class="field-input" style="width:140px" data-deal-filter="close_from" type="date" value="${esc(current.close_from)}" /><input class="field-input" style="width:140px" data-deal-filter="close_to" type="date" value="${esc(current.close_to)}" />` : ""}<button class="button button-ghost button-small" data-clear-filters="${resource}">Clear filters</button><button class="button button-ghost button-small" data-bulk-delete="${resource}" ${current.selectedIds.length ? "" : "disabled"}>Delete selected${current.selectedIds.length ? ` (${current.selectedIds.length})` : ""}</button><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>
+    ${advanced
+      ? `<div class="advanced-filter-layout ${current.filtersOpen ? "filters-visible" : ""}" data-filter-layout>
+            ${renderModuleFilters(resource, current, current.filterCatalog, esc)}
+            <div class="advanced-filter-results">${body}${current.view === "list" ? pagination(resource, data) : ""}</div>
+          </div>`
+      : `${body}${current.view === "list" ? pagination(resource, data) : ""}`}`;
 }
 
 async function activityTypeView(type) {
@@ -800,7 +812,8 @@ async function bulkArchiveLeads(current) {
 
 function bindModule(resource) {
   const current = state.moduleState[resource];
-  $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
+  bindModuleFilters({resource, current, renderRoute, toast});
+  $('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
 
   const splitRoot = $(".module-split-flat");
@@ -829,7 +842,7 @@ function bindModule(resource) {
   $("[data-module-owner]")?.addEventListener("change", (event) => { current.owner_id = event.target.value; current.offset = 0; renderRoute(); });
   $("[data-module-sort]")?.addEventListener("change", (event) => { current.sort = event.target.value; current.offset = 0; renderRoute(); });
   $$('[data-deal-filter]').forEach((input) => input.addEventListener("change", (event) => { current[event.target.dataset.dealFilter] = event.target.value; current.offset = 0; renderRoute(); }));
-  $("[data-clear-filters]")?.addEventListener("click", () => { Object.assign(current, { search: "", status: "", owner_id: "", sort: "created_desc", min_amount: "", max_amount: "", close_from: "", close_to: "", offset: 0 }); renderRoute(); });
+  $("[data-clear-filters]")?.addEventListener("click", () => { Object.assign(current, { search: "", status: "", owner_id: "", sort: "created_desc", min_amount: "", max_amount: "", close_from: "", close_to: "", offset: 0, advancedFilters: {join:"all", rules:[]}, selectedIds: [] }); renderRoute(); });
   $$('[data-select-record]').forEach((input) => input.addEventListener("change", (event) => { const id = Number(event.target.dataset.id); current.selectedIds = event.target.checked ? [...new Set([...current.selectedIds, id])] : current.selectedIds.filter((selected) => selected !== id); renderRoute(); }));
   $("[data-select-all]")?.addEventListener("change", (event) => { current.selectedIds = event.target.checked ? [...new Set([...current.selectedIds, ...dataIds(resource)])] : current.selectedIds.filter((id) => !dataIds(resource).includes(id)); renderRoute(); });
   $("[data-bulk-delete]")?.addEventListener("click", async () => {
