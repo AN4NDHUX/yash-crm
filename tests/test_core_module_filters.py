@@ -70,6 +70,20 @@ def test_module_filter_catalogs_and_authorized_field_criteria():
             out['numeric'] = [r['id'] for r in filtered('deals',[field('amount','gte','8000')]).json()['items']]
             out['status'] = [r['id'] for r in filtered('deals',[system('closed')]).json()['items']]
             out['by_contact'] = [r['id'] for r in filtered('accounts',[related('contacts','exists','Linked')]).json()['items']]
+            # Keep diagnostically useful tenant/link metadata in assertion output.
+            from app.services.module_filtering import _same_org, _matches_link
+            from app.models import Account, Contact
+            from app.database import SessionLocal
+            with SessionLocal() as inspect_db:
+                parent = inspect_db.get(Account, alpha['id'])
+                child = inspect_db.get(Contact, contact['id'])
+                out['relationship_debug'] = {
+                    'account': {field: getattr(parent, field) for field in ('id', 'owner_id', 'organization_id')},
+                    'contact': {field: getattr(child, field) for field in ('id', 'owner_id', 'organization_id', 'account_id')},
+                    'same_org': _same_org(parent, child),
+                    'linked': _matches_link(parent, 'accounts', child, 'contacts'),
+                    'record_api': {'account_id': contact.get('account_id'), 'organization_id': contact.get('organization_id')},
+                }
             out['without_contact'] = [r['id'] for r in filtered('accounts',[related('contacts','not_exists')]).json()['items']]
             out['contacts_by_account'] = [r['id'] for r in filtered('contacts',[related('accounts','exists','Alpha')]).json()['items']]
             out['contacts_without_account'] = [r['id'] for r in filtered('contacts',[related('accounts','not_exists')]).json()['items']]
@@ -93,7 +107,7 @@ def test_module_filter_catalogs_and_authorized_field_criteria():
     assert out['names'] == [ids['alpha']], out
     assert ids['deal'] in out['numeric'] and ids['lost'] not in out['numeric'], out
     assert ids['lost'] in out['status'] and ids['deal'] not in out['status'], out
-    assert out['by_contact'] == [ids['alpha']], out
+    assert out['by_contact'] == [ids['alpha']], json.dumps(out, sort_keys=True)
     assert ids['beta'] in out['without_contact'] and ids['alpha'] not in out['without_contact'], out
     assert out['contacts_by_account'] == [ids['contact']], out
     assert ids['lone'] in out['contacts_without_account'] and ids['contact'] not in out['contacts_without_account'], out
