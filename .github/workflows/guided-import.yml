@@ -26,4 +26,6 @@ jobs:
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
       - name: Test guided imports with backend and Chromium
-        run: pytest -q tests/test_guided_import_wizard.py tests/test_browser_guided_import.py --timeout=180
+        run: python -m pytest -q tests/test_guided_import_wizard.py tests/test_browser_guided_import.py --timeout=180
+        env:
+          PYTHONPATH: .
