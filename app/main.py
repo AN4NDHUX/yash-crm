@@ -5425,6 +5425,9 @@ def create_record(resource: str, payload: RecordPayload, db: Session = Depends(g
         item.completed_at = datetime.utcnow()
     db.add(item)
     db.flush()
+    if resource == "leads" and item.status in {"Contacted", "Converted"}:
+        from app.services.lead_conversion import apply_lead_stage_lifecycle
+        apply_lead_stage_lifecycle(db, item, actor)
     if resource == "users" and isinstance(actor, User):
         organization_id = _organization_id_required(db, actor)
         membership_role = "Admin" if str(item.role or "").lower() == "administrator" else "Member"
@@ -5470,6 +5473,8 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
     before_full = serialize(item, db, actor)
     before = (getattr(item, "stage", None), getattr(item, "probability", None), getattr(item, "status", None))
     incoming = payload.model_dump(exclude_unset=True)
+    if resource == "leads" and item.status == "Converted":
+        raise HTTPException(409, "Converted leads are read-only; edit the linked Deal or Contact")
     if resource == "leads":
         from app.services.stage_scoring import default_mapping, score_transition
         incoming["lead_score"] = score_transition(str(item.status or "New"), str(incoming.get("status") or item.status or "New"), default_mapping())["stage_score"]
@@ -5508,6 +5513,10 @@ def update_record(resource: str, item_id: int, payload: RecordPayload, db: Sessi
                 db, blueprint, resource, item_id, previous_state, updated_state,
                 serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None,
             )
+    if resource == "leads" and item.status in {"Contacted", "Converted"}:
+        from app.services.lead_conversion import apply_lead_stage_lifecycle
+        db.flush()
+        apply_lead_stage_lifecycle(db, item, actor)
     run_record_automation(db, resource, "update", item, serialize(item, db, actor), before_full)
     add_audit(db, "update", resource, item_id, f"Updated {resource.rstrip('s')} record", before=before_full, after=serialize(item, db, actor), actor_id=actor.id if isinstance(actor, User) else None)
     db.commit()
