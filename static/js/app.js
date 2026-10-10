@@ -368,7 +368,7 @@ async function renderRoute() {
         return;
       }
       setBreadcrumb(state.platformCatalog.resources[resource].label);
-      if (parts[1] && /^\\d+$/.test(parts[1])) {
+      if (parts[1] && /^\d+$/.test(parts[1])) {
         content.innerHTML = await platformDetailView(resource, Number(parts[1]));
         bindPlatformDetail(resource, Number(parts[1]));
       } else {
