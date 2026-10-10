@@ -539,7 +539,7 @@ async function moduleView(resource) {
   else if (current.view === "chart") body = chartView(resource, data);
   else if (current.view === "timeline") body = timelineModuleView(resource, data);
   return `${pageHeader("Workspace / " + config.label, config.label, config.description, `${viewToggle}${actions}`)}
-    <div class="module-toolbar">${advanced ? `<button type="button" class="button button-ghost button-small advanced-filter-toggle" data-filter-toggle aria-expanded="${Boolean(current.filtersOpen)}" aria-controls="module-filter-sidebar">⚲ Filter${current.advancedFilters?.rules?.length ? ` (${current.advancedFilters.rules.length})` : ""}</button>` : ""}<label class="toolbar-search"><span>⌕</span><input data-module-search="${resource}" value="${esc(current.search)}" placeholder="${esc(config.search)}" /></label>${config.status.length ? `<select class="filter-select" data-module-status="${resource}"><option value="">All statuses</option>${config.status.map((option) => `<option ${current.status === option ? "selected" : ""}>${esc(option)}</option>`).join("")}</select>` : ""}<select class="filter-select" data-module-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-module-sort="${resource}"><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently added</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A–Z</option>${resource === "deals" ? `<option value="amount_desc" ${current.sort === "amount_desc" ? "selected" : ""}>Amount high–low</option><option value="close_asc" ${current.sort === "close_asc" ? "selected" : ""}>Close date soonest</option>` : ""}${resource === "leads" ? `<option value="score_desc" ${current.sort === "score_desc" ? "selected" : ""}>Lead score high–low</option>` : ""}</select>${resource === "deals" ? `<input class="field-input" style="width:105px" data-deal-filter="min_amount" type="number" placeholder="Min amount" value="${esc(current.min_amount)}" /><input class="field-input" style="width:105px" data-deal-filter="max_amount" type="number" placeholder="Max amount" value="${esc(current.max_amount)}" /><input class="field-input" style="width:140px" data-deal-filter="close_from" type="date" value="${esc(current.close_from)}" /><input class="field-input" style="width:140px" data-deal-filter="close_to" type="date" value="${esc(current.close_to)}" />` : ""}<button class="button button-ghost button-small" data-clear-filters="${resource}">Clear filters</button><button class="button button-ghost button-small" data-bulk-delete="${resource}" ${current.selectedIds.length ? "" : "disabled"}>Delete selected${current.selectedIds.length ? ` (${current.selectedIds.length})` : ""}</button><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>
+    <div class="module-toolbar">${advanced ? `<button type="button" class="button button-ghost button-small advanced-filter-toggle" data-filter-toggle aria-expanded="${Boolean(current.filtersOpen)}" aria-controls="module-filter-sidebar">⚲ Filter${current.advancedFilters?.rules?.length ? ` (${current.advancedFilters.rules.length})` : ""}</button>` : ""}<label class="toolbar-search"><span>⌕</span><input data-module-search="${resource}" value="${esc(current.search)}" placeholder="${esc(config.search)}" /></label>${config.status.length ? `<select class="filter-select" data-module-status="${resource}"><option value="">All statuses</option>${config.status.map((option) => `<option ${current.status === option ? "selected" : ""}>${esc(option)}</option>`).join("")}</select>` : ""}<select class="filter-select" data-module-owner="${resource}"><option value="">All owners</option>${(state.meta?.users || []).map((user) => `<option value="${user.id}" ${String(current.owner_id) === String(user.id) ? "selected" : ""}>${esc(user.name)}</option>`).join("")}</select><select class="filter-select" data-module-sort="${resource}"><option value="created_desc" ${current.sort === "created_desc" ? "selected" : ""}>Recently added</option><option value="name_asc" ${current.sort === "name_asc" ? "selected" : ""}>Name A–Z</option>${resource === "deals" ? `<option value="amount_desc" ${current.sort === "amount_desc" ? "selected" : ""}>Amount high–low</option><option value="close_asc" ${current.sort === "close_asc" ? "selected" : ""}>Close date soonest</option>` : ""}${resource === "leads" ? `<option value="score_desc" ${current.sort === "score_desc" ? "selected" : ""}>Lead score high–low</option>` : ""}</select>${resource === "deals" ? `<input class="field-input" style="width:105px" data-deal-filter="min_amount" type="number" placeholder="Min amount" value="${esc(current.min_amount)}" /><input class="field-input" style="width:105px" data-deal-filter="max_amount" type="number" placeholder="Max amount" value="${esc(current.max_amount)}" /><input class="field-input" style="width:140px" data-deal-filter="close_from" type="date" value="${esc(current.close_from)}" /><input class="field-input" style="width:140px" data-deal-filter="close_to" type="date" value="${esc(current.close_to)}" />` : ""}<button class="button button-ghost button-small" data-clear-filters="${resource}">Clear filters</button>${resource === "accounts" ? `<button type="button" class="button button-primary button-small" data-selected-account-deal ${current.selectedIds.length === 1 ? "" : "disabled"}>Convert to Deal${current.selectedIds.length === 1 ? " (1 selected)" : ""}</button>` : ""}<button class="button button-ghost button-small" data-bulk-delete="${resource}" ${current.selectedIds.length ? "" : "disabled"}>Delete selected${current.selectedIds.length ? ` (${current.selectedIds.length})` : ""}</button><span style="margin-left:auto;color:var(--text-faint);font-size:11px">${data.total} record${data.total === 1 ? "" : "s"}</span></div>
     ${advanced
       ? `<div class="advanced-filter-layout ${current.filtersOpen ? "filters-visible" : ""}" data-filter-layout>
             ${renderModuleFilters(resource, current, current.filterCatalog, esc)}
@@ -643,7 +643,7 @@ function tableView(resource, data) {
   const config = MODULES[resource];
   if (!data.items.length) return `<section class="card">${emptyState(config.icon, `No ${config.label.toLowerCase()} found`, "Try changing your filters or create a new record.", `<button class="button button-primary" data-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
   const selectionHeader = `<th><input type="checkbox" data-select-all="${resource}" aria-label="Select all displayed records" /></th>`;
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${selectionHeader}${config.columns.map((column) => `<th>${column.label}</th>`).join("")}<th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-select-record="${resource}" data-id="${row.id}" ${state.moduleState[resource].selectedIds.includes(row.id) ? "checked" : ""} /></td>${config.columns.map((column) => `<td class="${column.key === "name" ? "primary-cell" : ""}">${column.cell ? column.cell(row) : esc(row[column.key] ?? "—")}</td>`).join("")}<td><div class="table-actions">${resource === "activities" && row.status !== "Completed" ? `<button class="table-action" title="Mark complete" data-complete-activity="${row.id}">✓</button>` : ""}<button class="table-action" title="Edit" data-edit-record="${resource}" data-id="${row.id}">✎</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-delete-record="${resource}" data-id="${row.id}">⌫</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr>${selectionHeader}${config.columns.map((column) => `<th>${column.label}</th>`).join("")}<th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-select-record="${resource}" data-id="${row.id}" ${state.moduleState[resource].selectedIds.includes(row.id) ? "checked" : ""} /></td>${config.columns.map((column) => `<td class="${column.key === "name" ? "primary-cell" : ""}">${column.cell ? column.cell(row) : esc(row[column.key] ?? "—")}</td>`).join("")}<td><div class="table-actions">${resource === "activities" && row.status !== "Completed" ? `<button class="table-action" title="Mark complete" data-complete-activity="${row.id}">✓</button>` : ""}${resource === "accounts" ? `<button class="table-action" title="Convert to Deal" data-create-account-deal="${row.id}">Convert to Deal</button>` : ""}<button class="table-action" title="Edit" data-edit-record="${resource}" data-id="${row.id}">✎</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-delete-record="${resource}" data-id="${row.id}">⌫</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
 function kanbanView(items) {
@@ -770,8 +770,12 @@ function bindModule(resource) {
     const preview = $("[data-split-preview]", splitRoot);
     if (preview) preview.innerHTML = flatSplitPreview(resource, record);
   });
-  $$('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
-  $$('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
+  bindContextCreationActions();
+  $("[data-selected-account-deal]")?.addEventListener("click", () => {
+    if (current.selectedIds.length === 1) openDealForAccount(current.selectedIds[0]);
+  });
+  $('[data-edit-record]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.editRecord, Number(button.dataset.id))));
+  $('[data-delete-record]').forEach((button) => button.addEventListener("click", () => deleteRecord(button.dataset.deleteRecord, Number(button.dataset.id))));
   const search = $("[data-module-search]");
   let searchTimer;
   search?.addEventListener("input", (event) => { clearTimeout(searchTimer); current.search = event.target.value; current.offset = 0; searchTimer = setTimeout(renderRoute, 260); });
@@ -802,7 +806,12 @@ async function detailView(resource, id) {
   const title = resource === "contacts" ? record.full_name : record.name || record.subject;
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
   const details = detailFields(resource, record);
-  return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
+  const contextualActions = resource === "deals"
+    ? `<button type="button" class="button button-primary" data-create-deal-quote="${id}">Create Quote</button>`
+    : resource === "accounts"
+      ? `<button type="button" class="button button-primary" data-create-account-deal="${id}">Convert to Deal</button>`
+      : "";
+  return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}${contextualActions}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
     <section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !timeline?.blueprint_enabled ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>
     <div class="detail-record-layout"><aside class="detail-related-nav"><div class="detail-related-nav-head"><h3>Related List</h3></div>${relatedNavigation(resource, related, timeline)}</aside><section class="detail-record-main"><div class="detail-tab-strip"><button class="detail-tab active" type="button" data-detail-tab="overview">Overview</button><button class="detail-tab" type="button" data-detail-tab="timeline">Timeline</button></div><div class="detail-tab-panel" data-detail-panel="overview">${resource === "leads" ? leadStagePanel(record, timeline) : ""}${resource === "deals" ? `<section class="detail-plain-section" id="detail-section-stage_progress"><div class="detail-plain-head"><h3>Stage progress</h3></div><div class="detail-plain-body">${blueprintDealProgress(record,timeline)}</div></section>` : ""}${relatedContent(resource, related)}</div><div class="detail-tab-panel" data-detail-panel="timeline" hidden><section class="detail-plain-section" id="detail-section-timeline"><div class="detail-plain-head"><h3>Timeline</h3></div><div class="detail-plain-body">${(resource === "leads" || resource === "deals") ? timelineHtml(timeline?.items || []) : `<div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p class="related-empty">No linked activity yet.</p>`}</div>`}</div></section></div></section></div>`;
 }
@@ -965,6 +974,7 @@ function bindDetail(resource, id) {
   $$('[data-related-platform]').forEach(button => button.addEventListener('click', () => navigate('/' + encodeURIComponent(button.dataset.relatedPlatform))));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
   $("[data-convert-lead]")?.addEventListener("click", () => openConvertModal(Number(id)));
+  bindContextCreationActions();
   $$('[data-lead-transition]').forEach((button) => button.addEventListener("click", async () => {
     button.disabled = true;
     try {
@@ -1045,6 +1055,46 @@ function fieldHtml(field, value = "") {
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
 }
 
+async function openQuoteForDeal(id) {
+  try {
+    const deal = await api(`/api/deals/${id}`);
+    await openPlatformModal("quotes", null, {
+      name: `${deal.name} - Quote`,
+      deal_id: deal.id,
+      account_id: deal.account_id || null,
+      contact_id: deal.contact_id || null,
+      amount: deal.amount ?? 0,
+      status: "Draft",
+    });
+    state.modal.context = { kind: "deal-quote", sourceId: deal.id };
+  } catch (error) {
+    toast("Cannot create quote", error.message, "error");
+  }
+}
+
+async function openDealForAccount(id) {
+  try {
+    const account = await api(`/api/accounts/${id}`);
+    await openRecordModal("deals", null, {
+      name: `${account.name} - Opportunity`,
+      account_id: account.id,
+      phone: account.phone || "",
+      amount: 0,
+      stage: "Qualification",
+      status: "Open",
+      type: "New business",
+    });
+    state.modal.context = { kind: "account-deal", sourceId: account.id };
+  } catch (error) {
+    toast("Cannot create deal", error.message, "error");
+  }
+}
+
+function bindContextCreationActions() {
+  $("[data-create-deal-quote]").forEach(button => button.addEventListener("click", () => openQuoteForDeal(Number(button.dataset.createDealQuote))));
+  $("[data-create-account-deal]").forEach(button => button.addEventListener("click", () => openDealForAccount(Number(button.dataset.createAccountDeal))));
+}
+
 async function openRecordModal(resource, id = null, preset = {}) {
   const config = MODULES[resource] || settingsResourceConfig(resource);
   if (!config) return;
@@ -1110,22 +1160,30 @@ async function submitRecord(event) {
   if (!state.modal) return;
   if (state.modal.convert) return submitConvert(event.currentTarget);
   if (state.modal.platform) return submitPlatformRecord(event.currentTarget);
-  const { resource, id } = state.modal;
+  const { resource, id, context } = state.modal;
   const singular = MODULES[resource]?.singular || settingsResourceConfig(resource)?.singular || "record";
   const submit = $("#modal-submit");
   try {
+    if (submit.disabled) return;
     const data = readForm(event.currentTarget);
+    if (context?.kind === "account-deal") data.account_id = context.sourceId;
     submit.disabled = true;
+    let created = null;
     if (resource === "attachments" && !id) {
       await createAttachmentFromFile(event.currentTarget, data, api);
     } else if (resource === "users" && !id) {
       await api("/api/admin/users/invite", { method: "POST", body: JSON.stringify(data) });
     } else {
-      await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+      created = await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
     }
     if (["accounts", "contacts"].includes(resource)) invalidateLookups();
     if (resource === "users") { await refreshMeta(); if (id && id === state.profile?.id) { state.profile = await api("/api/settings/profile"); applyProfile(); } }
     closeModal();
+    if (context?.kind === "account-deal" && created?.id) {
+      toast("Deal created", "The new Deal is linked to the selected Account.");
+      await navigate(`/deals/${created.id}`);
+      return;
+    }
     toast(resource === "users" && !id ? "Invitation created" : `${id ? "Updated" : "Created"} ${singular}`, resource === "users" && !id ? "The teammate can join this organization using the invitation link." : "");
     await renderRoute();
   } catch (error) { toast("Could not save record", error.message, "error"); }
@@ -1133,12 +1191,15 @@ async function submitRecord(event) {
 }
 
 async function submitPlatformRecord(form) {
-  const { resource, id } = state.modal;
+  const { resource, id, context } = state.modal;
   const config = state.platformCatalog.resources[resource];
   const submit = $("#modal-submit");
   try {
+    if (submit.disabled) return;
     const data = readForm(form);
+    if (context?.kind === "deal-quote") data.deal_id = context.sourceId;
     submit.disabled = true;
+    let created = null;
     const upload = resource === "documents" ? form.querySelector('input[type="file"]')?.files?.[0] : null;
     if (upload) {
       if (id) throw new Error("Upload a new document as a separate record; existing file history remains unchanged.");
@@ -1150,10 +1211,15 @@ async function submitPlatformRecord(form) {
       let result = {}; try { result = raw ? JSON.parse(raw) : {}; } catch { result = {}; }
       if (!response.ok) throw new Error(result.detail || raw.slice(0, 180) || `Upload failed with HTTP ${response.status}`);
     } else {
-      await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
+      created = await api(`/api/platform/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
     }
     invalidateLookups();
     closeModal();
+    if (context?.kind === "deal-quote" && created?.id) {
+      toast("Quote created", `${created.quote_number || "Quote"} is linked to the Deal.`);
+      await navigate("/quotes");
+      return;
+    }
     toast(`${id ? "Updated" : "Created"} ${config.singular}`);
     await renderRoute();
   } catch (error) { toast("Could not save record", error.message, "error"); }
