@@ -57,6 +57,23 @@ def test_dashboard_cards_open_live_reports_in_browser():
                 page.fill("#confirm-password", "dashboard-password-123")
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard", timeout=15000)
+                # URL navigation precedes async SPA rendering; report actual
+                # page and API state if the dashboard fails to become ready.
+                first_metric = page.locator('.stats-grid [data-go="/dashboard/report/total-leads"]')
+                try:
+                    first_metric.wait_for(state="visible", timeout=15000)
+                except Exception as error:
+                    dashboard_api = page.evaluate("""async () => {
+                        const response = await fetch('/api/dashboard');
+                        return {status: response.status, body: (await response.text()).slice(0, 1500)};
+                    }""")
+                    content = (page.locator("#app-content").inner_text(timeout=5000)
+                               if page.locator("#app-content").count()
+                               else page.locator("body").inner_text())
+                    raise AssertionError(
+                        f"Dashboard KPI not rendered: {error}; page={page.url}; "
+                        f"content={content[:1600]!r}; api={dashboard_api!r}"
+                    ) from error
                 for key in ("total-leads", "open-deals", "pipeline-value", "activities-due"):
                     page.locator(f'.stats-grid [data-go="/dashboard/report/{key}"]').click()
                     page.wait_for_url(f"**/dashboard/report/{key}", timeout=15000)
