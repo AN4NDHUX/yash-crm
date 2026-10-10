@@ -254,23 +254,12 @@ def normalize_platform_links(db: Session, resource: str, values: dict[str, Any])
         values.update({"related_type": parent.resource, "related_id": parent.id})
 
 
-TRANSACTION_NUMBERS = {
-    "quotes": ("quote_number", "QUO"),
-    "sales_orders": ("order_number", "SO"),
-    "purchase_orders": ("po_number", "PO"),
-    "invoices": ("invoice_number", "INV"),
-}
+from app.services.auto_numbering import NUMBER_DEFINITIONS, apply_number
 
 
-def ensure_transaction_number(record: PlatformRecord) -> None:
-    definition = TRANSACTION_NUMBERS.get(record.resource)
-    if not definition:
-        return
-    key, prefix = definition
-    values = _platform_data_dict(record)
-    if not values.get(key):
-        values[key] = f"{prefix}-{datetime.utcnow():%Y%m}-{record.id:05d}"
-        sync_platform_columns(record, values)
+def ensure_transaction_number(record: PlatformRecord, db: Session) -> None:
+    if record.resource in NUMBER_DEFINITIONS:
+        apply_number(db, record)
 
 
 def refresh_invoice_balance(db: Session, invoice_id: int) -> None:
@@ -314,6 +303,7 @@ def _platform_data_dict(record: PlatformRecord) -> dict[str, Any]:
 def serialize_platform(record: PlatformRecord, db: Session | None = None, actor: User | None = None) -> dict[str, Any]:
     data = _platform_data_dict(record)
     data.update({
+        "record_number": record.record_number,
         "id": record.id,
         "resource": record.resource,
         "name": record.title,
