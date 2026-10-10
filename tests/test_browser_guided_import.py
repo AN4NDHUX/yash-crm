@@ -59,9 +59,9 @@ def test_browser_guided_import_all_four_modules():
                 page.wait_for_url("**/dashboard",timeout=15000)
                 for resource in ("leads","deals","accounts","contacts"):
                     file_body = (
-                        b"First Name,Last Name,Phone Number\\nAva,Smith,+911234567890\\n"
+                        b"First Name,Last Name,Phone Number\nAva,Smith,+911234567890\n"
                         if resource=="contacts"
-                        else f"Full Name,Phone Number\\nBrowser {resource},+91123456789{len(resource)}\\n".encode()
+                        else f"Full Name,Phone Number\nBrowser {resource},+91123456789{len(resource)}\n".encode()
                     )
                     page.goto(base+"/"+resource)
                     entry = page.locator(f'[data-start-import="{resource}"]')
