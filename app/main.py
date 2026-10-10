@@ -5280,7 +5280,7 @@ async def submit_guided_import(
     resource: str, files: list[UploadFile] = File(...), mapping: str = Form(...),
     charset: str = Form("auto"), operation: str = Form("add"),
     duplicate_key: str = Form("none"), layout: str = Form("Default"),
-    trigger_automation: bool = Form(False),
+    trigger_automation: bool = Form(False), apply_assignment: bool = Form(False),
     db: Session = Depends(get_db), actor: User = Depends(current_actor)
 ) -> dict[str, Any]:
     if resource not in {"leads", "deals", "accounts", "contacts"}:
@@ -5374,7 +5374,16 @@ async def submit_guided_import(
                             stage = values.get("stage", "Qualification")
                             values.setdefault("probability", STAGE_PROBABILITY.get(stage, 20))
                             values.setdefault("status", STAGE_STATUS.get(stage, "Open"))
-                        values["owner_id"] = actor.id
+                        if apply_assignment:
+                            apply_assignment_rule(db, resource, values)
+                            candidate = values.get("owner_id")
+                            if candidate and not db.scalar(select(OrganizationMember.id).where(
+                                OrganizationMember.organization_id == TENANT_ORGANIZATION_ID.get(),
+                                OrganizationMember.user_id == candidate,
+                                OrganizationMember.status == "Active",
+                            )):
+                                values.pop("owner_id", None)
+                        values.setdefault("owner_id", actor.id)
                         record = model(**values)
                         db.add(record)
                         db.flush()
