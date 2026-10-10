@@ -5317,6 +5317,7 @@ async def submit_guided_import(
     charset: str = Form("auto"), operation: str = Form("add"),
     duplicate_key: str = Form("none"), layout: str = Form("Default"),
     trigger_automation: bool = Form(False), apply_assignment: bool = Form(False),
+    followup_task: str = Form(""),
     db: Session = Depends(get_db), actor: User = Depends(current_actor)
 ) -> dict[str, Any]:
     if resource not in {"leads", "deals", "accounts", "contacts"}:
@@ -5359,6 +5360,13 @@ async def submit_guided_import(
         raise HTTPException(422, "The duplicate matching field must also be mapped")
     if len(layout) > 100:
         raise HTTPException(422, "Invalid layout name")
+    followup_task = followup_task.strip()
+    if len(followup_task) > 180:
+        raise HTTPException(422, "Follow-up task subject is too long")
+    if followup_task:
+        from app.services.security import _profile_action_allowed
+        if not _profile_action_allowed(db, actor, "activities", "create"):
+            raise HTTPException(403, "Your profile does not allow creating follow-up tasks")
 
     imported, updated, skipped, errors = 0, 0, 0, []
     for part in parsed:
@@ -5437,6 +5445,17 @@ async def submit_guided_import(
                         db.flush()
                         if trigger_automation:
                             run_record_automation(db, resource, "create", record, values)
+                        if followup_task:
+                            task = Activity(
+                                organization_id=TENANT_ORGANIZATION_ID.get(),
+                                activity_type="Task", subject=followup_task,
+                                owner_id=record.owner_id, due_at=datetime.utcnow() + timedelta(days=1),
+                                related_type=resource, related_id=record.id,
+                                status="Open",
+                            )
+                            db.add(task)
+                            db.flush()
+                            add_audit(db, "create", "activities", task.id, "Follow-up task from guided import")
                         add_audit(db, "import", resource, record.id, "Created through guided import")
                         imported += 1
             except Exception as exc:
