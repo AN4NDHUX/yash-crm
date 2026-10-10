@@ -757,10 +757,15 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
         if event == "create":
             from app.services.record_deduplication import reject_duplicate
             reject_duplicate(db, resource, {c.key:getattr(record,c.key) for c in record.__table__.columns}, exclude_id=record.id)
-        if resource == "leads" and record.status in {"Contacted", "Converted"}:
-            from app.services.lead_conversion import apply_lead_stage_lifecycle
-            actor_id = TENANT_ACTOR_ID.get() or record.owner_id
-            apply_lead_stage_lifecycle(db, record, db.get(User, actor_id) if actor_id else None)
+        if resource == "leads":
+            from app.services.stage_scoring import default_mapping, score_transition
+            stages = default_mapping()
+            if record.status in {stage.name for stage in stages}:
+                record.lead_score = score_transition("", record.status, stages)["stage_score"]
+            if record.status in {"Contacted", "Converted"}:
+                from app.services.lead_conversion import apply_lead_stage_lifecycle
+                actor_id = TENANT_ACTOR_ID.get() or record.owner_id
+                apply_lead_stage_lifecycle(db, record, db.get(User, actor_id) if actor_id else None)
 
 
 def run_platform_automation(db: Session, resource: str, event: str, record: PlatformRecord, values: dict[str, Any], before_values: dict[str, Any] | None = None) -> None:
