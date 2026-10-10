@@ -7,9 +7,29 @@ in the caller's transaction, and rows are linked back to the original Lead.
 from __future__ import annotations
 
 from typing import Any
+from contextvars import ContextVar
 
 from fastapi import HTTPException
 from sqlalchemy import select, func
+
+# Only an explicit, published Blueprint Convert transition can finish a
+# Blueprint-controlled lead. Creating a Contact and Account is not conversion.
+BLUEPRINT_CONVERSION_CONTEXT: ContextVar[bool] = ContextVar("blueprint_lead_conversion", default=False)
+
+
+def _require_explicit_blueprint_conversion(db, lead):
+    if BLUEPRINT_CONVERSION_CONTEXT.get():
+        return
+    from app.models import Blueprint
+    published = db.scalar(select(Blueprint.id).where(
+        Blueprint.organization_id == lead.organization_id,
+        Blueprint.active == True, Blueprint.draft == False, Blueprint.archived == False,
+        func.lower(func.trim(Blueprint.module)).in_(("lead", "leads")),
+        func.coalesce(Blueprint.field_name, "status") == "status",
+        func.coalesce(Blueprint.layout_name, "Default") == (lead.layout_name or "Default"),
+    ).limit(1))
+    if published is not None:
+        raise HTTPException(409, "Use the published Blueprint Convert transition to create a Deal.")
 
 
 def _models():
@@ -161,6 +181,7 @@ def promote_lead_to_deal(db, lead, actor, values=None, *, create_deal=True):
     m = _models()
     Account, Contact, Deal = m["Account"], m["Contact"], m["Deal"]
     values = values or {}
+    _require_explicit_blueprint_conversion(db, lead)
     account, contact = ensure_contacted_parties(db, lead, actor)
     org_id = lead.organization_id
     deal = _valid_link(db, Deal, lead.converted_deal_id, org_id, "Deal")

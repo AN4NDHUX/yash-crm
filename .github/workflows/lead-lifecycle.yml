@@ -12,6 +12,9 @@ on:
       - "migrations/versions/**"
       - "tests/test_lead_stage_promotion.py"
       - "tests/test_lead_conversion_upgrade.py"
+      - "tests/test_lead_blueprint_conversion_flow.py"
+      - "app/services/blueprint_routes.py"
+      - "static/js/app.js"
       - ".github/workflows/lead-lifecycle.yml"
   workflow_dispatch:
 
@@ -30,4 +33,4 @@ jobs:
       - name: Verify Lead promotion, deduplication and existing conversion
         env:
           PYTHONPATH: .
-        run: python -m pytest -q tests/test_lead_stage_promotion.py tests/test_lead_conversion_upgrade.py tests/test_crm_stage_timeline.py --timeout=180
+        run: python -m pytest -q tests/test_lead_stage_promotion.py tests/test_lead_conversion_upgrade.py tests/test_lead_blueprint_conversion_flow.py tests/test_crm_stage_timeline.py --timeout=180
