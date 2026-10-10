@@ -14,6 +14,7 @@ import { createTeamspacesFeature } from "./features/teamspaces.js";
 import { createDashboardSupport } from "./features/dashboard-support.js";
 import { createContextActions } from "./features/context-actions.js";
 import { createQuoteDetails } from "./features/quote-details.js";
+import { renderPlatformTable } from "./features/platform-table.js";
 
 async function api(path, options = {}, retried = false) {
   try {
@@ -219,7 +220,7 @@ async function refreshNavCount() {
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
 const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MODULES});
-const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $ });
+const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $$ });
 const quoteDetails = createQuoteDetails({ api, esc, badge, formatDate, formatDateTime, formatMoney, lookupName, navigate, openPlatformModal, deletePlatformRecord, toast, renderRoute });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
 const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
@@ -581,10 +582,7 @@ function platformState(resource) {
 }
 
 function platformTable(resource, data) {
-  const config = state.platformCatalog.resources[resource];
-  if (!data.items.length) return `<section class="card">${emptyState("+", `No ${config.label.toLowerCase()} found`, "Create a record or adjust the current filters.", `<button class="button button-primary" data-platform-create="${resource}">Add ${config.singular.toLowerCase()}</button>`)}</section>`;
-  const visible = (config.fields || []).filter((item) => !["textarea", "json", "file"].includes(item.type)).slice(0, 4);
-  return `<section class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th><input type="checkbox" data-platform-select-all="${resource}" aria-label="Select all displayed records"/></th>${visible.map((field) => `<th>${esc(field.label)}</th>`).join("")}<th>Owner</th><th>Updated</th><th></th></tr></thead><tbody>${data.items.map((row) => `<tr><td><input type="checkbox" data-platform-select-record="${resource}" data-id="${row.id}" ${platformState(resource).selectedIds.includes(row.id) ? "checked" : ""}/></td>${visible.map((field, index) => `<td class="${index === 0 ? "platform-cell" : ""}">${index === 0 ? `${resource === "quotes" ? `<a class="platform-record-link" href="/quotes/${Number(row.id)}" data-go="/quotes/${Number(row.id)}">${esc(row[field.key] ?? row.name ?? "-")}</a>` : `<strong>${esc(row[field.key] ?? row.name ?? "-")}</strong>`}<span class="sub-cell">#${row.id}</span>` : field.type === "number" && ["amount", "budget", "target", "target_amount", "committed", "best_case", "expected_revenue"].includes(field.key) ? formatMoney(row[field.key]) : field.type === "date" ? formatDate(row[field.key]) : field.key === "status" ? badge(row[field.key]) : platformDisplay(field, row[field.key])}</td>`).join("")}<td>${esc(row.owner_name || "Unassigned")}</td><td>${formatDateTime(row.updated_at)}</td><td><div class="table-actions">${resource === "quotes" ? `<a class="table-action" href="/quotes/${Number(row.id)}" data-go="/quotes/${Number(row.id)}">View</a>` : ""}<button class="table-action" title="Edit" data-platform-edit="${resource}" data-id="${row.id}">Edit</button><button class="table-action" title="Delete (30-day Recycle Bin)" data-platform-delete="${resource}" data-id="${row.id}">Archive</button></div></td></tr>`).join("")}</tbody></table></div></section>`;
+  return renderPlatformTable(resource, data, { state, platformState, emptyState, esc, formatMoney, formatDate, formatDateTime, badge, platformDisplay });
 }
 
 function platformDisplay(field, value) {
