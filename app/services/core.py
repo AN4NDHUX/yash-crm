@@ -461,6 +461,8 @@ def _execute_workflow_action(db: Session, action: dict[str, Any], resource: str,
             column = record.__table__.columns.get(field_name)
             if column is None:
                 raise ValueError(f"Unknown field '{field_name}' for {resource}")
+            if isinstance(record, Lead) and record.status == "Converted" and field_name == "status":
+                raise ValueError("Converted Leads cannot be moved to another stage")
             setattr(record, field_name, coerce_value(type(record), field_name, field_value))
     elif action_type in {"create_task", "task"}:
         owner_id = getattr(record, "owner_id", None)
@@ -747,6 +749,18 @@ def run_record_automation(db: Session, resource: str, event: str, record: Any, v
             execution.status = "failed"
             execution.error = str(error)
             add_audit(db, "automation_error", resource, record.id, f"Workflow '{rule.title}' failed: {error}")
+
+
+
+    # Include legacy imports and workflow field updates, not just UI transitions.
+    if resource in {"leads", "accounts", "contacts", "deals"} and isinstance(record, (Lead, Account, Contact, Deal)):
+        if event == "create":
+            from app.services.record_deduplication import reject_duplicate
+            reject_duplicate(db, resource, {c.key:getattr(record,c.key) for c in record.__table__.columns}, exclude_id=record.id)
+        if resource == "leads" and record.status in {"Contacted", "Converted"}:
+            from app.services.lead_conversion import apply_lead_stage_lifecycle
+            actor_id = TENANT_ACTOR_ID.get() or record.owner_id
+            apply_lead_stage_lifecycle(db, record, db.get(User, actor_id) if actor_id else None)
 
 
 def run_platform_automation(db: Session, resource: str, event: str, record: PlatformRecord, values: dict[str, Any], before_values: dict[str, Any] | None = None) -> None:
