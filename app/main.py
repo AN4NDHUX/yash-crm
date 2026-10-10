@@ -856,7 +856,7 @@ def _ai_count_status(rows: list[PlatformRecord], *statuses: str) -> int:
 def ai_dashboard(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     """Management cockpit scoped to the signed-in workspace."""
     _enforce_plan_feature(db, actor, "apex")
-    leads = db.scalars(select(Lead).where(Lead.archived == False)).all()
+    leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status != "Converted")).all()
     emails = db.scalars(select(Email).where(Email.archived == False)).all()
     activities = db.scalars(select(Activity).where(Activity.archived == False)).all()
     visits = _ai_dashboard_platform_rows(db, "site_visits")
@@ -1067,12 +1067,12 @@ def render_saved_dashboard(dashboard_id: int, payload: dict[str, Any] | None = N
 @app.get("/api/dashboard")
 def dashboard(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     closed = ["Closed Won", "Closed Lost"]
-    total_leads = db.scalar(select(func.count()).select_from(Lead).where(Lead.archived == False, Lead.owner_id == actor.id)) or 0
+    total_leads = db.scalar(select(func.count()).select_from(Lead).where(Lead.archived == False, Lead.status != "Converted", Lead.owner_id == actor.id)) or 0
     open_deals = db.scalar(select(func.count()).select_from(Deal).where(Deal.archived == False, Deal.owner_id == actor.id, Deal.stage.not_in(closed))) or 0
     pipeline_value = db.scalar(select(func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.owner_id == actor.id, Deal.stage.not_in(closed))) or 0
     activities_due = db.scalar(select(func.count()).select_from(Activity).where(Activity.archived == False, Activity.owner_id == actor.id, Activity.status != "Completed", Activity.due_at <= datetime.utcnow() + timedelta(days=7))) or 0
     stage_rows = db.execute(select(Deal.stage, func.count(Deal.id), func.coalesce(func.sum(Deal.amount), 0)).where(Deal.archived == False, Deal.owner_id == actor.id, Deal.stage.not_in(closed)).group_by(Deal.stage)).all()
-    lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False, Lead.owner_id == actor.id).group_by(Lead.status)).all()
+    lead_rows = db.execute(select(Lead.status, func.count(Lead.id)).where(Lead.archived == False, Lead.status != "Converted", Lead.owner_id == actor.id).group_by(Lead.status)).all()
     recent = db.scalars(select(Activity).where(Activity.archived == False, Activity.owner_id == actor.id).order_by(Activity.created_at.desc()).limit(6)).all()
     performance = sales_performance(db, actor)
     return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db, actor) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
@@ -1122,7 +1122,7 @@ def dashboard_report(
     if report_key == "total-leads":
         resource = "leads"
         query = select(Lead).where(
-            Lead.archived == False, Lead.owner_id == actor.id,
+            Lead.archived == False, Lead.status != "Converted", Lead.owner_id == actor.id,
         ).order_by(Lead.created_at.desc(), Lead.id.desc())
     elif report_key in {"open-deals", "pipeline-value"}:
         resource = "deals"
@@ -1548,7 +1548,7 @@ def ai_crm_context(db: Session, lead_id: int | None = None, actor: User | None =
     if actor is None:
         raise HTTPException(401, "Sign in to continue")
     performance = sales_performance(db, actor)
-    leads = db.scalars(select(Lead).where(Lead.archived == False).order_by(Lead.updated_at.desc()).limit(25)).all()
+    leads = db.scalars(select(Lead).where(Lead.archived == False, Lead.status != "Converted").order_by(Lead.updated_at.desc()).limit(25)).all()
     deals = db.scalars(select(Deal).where(Deal.archived == False).order_by(Deal.updated_at.desc()).limit(25)).all()
     activities = db.scalars(select(Activity).where(Activity.archived == False, Activity.status != "Completed").order_by(Activity.updated_at.desc()).limit(30)).all()
     users = [actor]
@@ -1698,7 +1698,7 @@ def _apex_score_lead(lead: Lead) -> dict[str, Any]:
 
 
 def _apex_score_all_leads(db: Session, lead_ids: list[int] | None = None) -> list[dict[str, Any]]:
-    query = select(Lead).where(Lead.archived == False)
+    query = select(Lead).where(Lead.archived == False, Lead.status != "Converted")
     if lead_ids:
         query = query.where(Lead.id.in_(lead_ids))
     leads = db.scalars(query.order_by(Lead.updated_at.desc()).limit(100)).all()
@@ -5564,8 +5564,6 @@ def record_timeline(
     record = db.get(RESOURCE_MAP[resource], item_id)
     if record is None or getattr(record, "archived", False) or not can_access_record(db, resource, record, actor):
         raise HTTPException(404, "Record not found")
-    # Audit history is not the global, administrator-only /api/audit feed.
-    # Never return raw before/after snapshots, which may contain protected fields.
     organization_id = record.organization_id
     if organization_id is None:
         raise HTTPException(404, "Record not found")
@@ -5720,9 +5718,6 @@ def related_records(resource: str, item_id: int, db: Session = Depends(get_db), 
             model.archived == False,
         ).order_by(model.created_at.desc())).all()
         related[key] = visible(key, rows)
-    # Include linked platform and custom-module records in standard CRM related lists.
-    # Keep the original lead reference for audit and lineage; never expose records
-    # from another organization or ones the current actor cannot read.
     if resource in {"leads", "accounts", "contacts", "deals"}:
         organization_id = parent.organization_id
         platform_rows = db.scalars(select(PlatformRecord).where(
