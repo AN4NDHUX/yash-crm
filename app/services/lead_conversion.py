@@ -53,6 +53,9 @@ def ensure_contacted_parties(db, lead, actor) -> tuple[Any, Any]:
             func.lower(func.trim(Account.name)) == company.casefold(),
         ).order_by(Account.id).limit(1))
     if account is None:
+        from app.services.security import _profile_action_allowed
+        if actor is None or not _profile_action_allowed(db, actor, "accounts", "create"):
+            raise HTTPException(403, "You cannot create Accounts from Leads")
         m["_enforce_record_limit"](db, actor)
         account = Account(
             name=company, phone=lead.phone, type="Prospect", owner_id=lead.owner_id,
@@ -84,6 +87,9 @@ def ensure_contacted_parties(db, lead, actor) -> tuple[Any, Any]:
         contact = next((row for row in possible if not email or not row.email
                         or str(row.email).strip().casefold() == email), None)
     if contact is None:
+        from app.services.security import _profile_action_allowed
+        if actor is None or not _profile_action_allowed(db, actor, "contacts", "create"):
+            raise HTTPException(403, "You cannot create Contacts from Leads")
         m["_enforce_record_limit"](db, actor)
         names = str(lead.name or "").strip().split(" ", 1)
         contact = Contact(
@@ -165,6 +171,9 @@ def promote_lead_to_deal(db, lead, actor, values=None, *, create_deal=True):
             Deal.archived == False,
         ).limit(1))
     if create_deal and deal is None:
+        from app.services.security import _profile_action_allowed
+        if actor is None or not _profile_action_allowed(db, actor, "deals", "create"):
+            raise HTTPException(403, "You cannot create Deals from Leads")
         m["_enforce_record_limit"](db, actor)
         name = str(values.get("deal_name") or lead.name).strip()
         if not name:
