@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import io
 import re
+import zipfile
 from datetime import date, datetime
 from pathlib import Path
 
@@ -90,12 +91,21 @@ def parse_import_file(filename: str, raw: bytes, charset: str = "auto") -> dict:
         try:
             reader = csv.reader(io.StringIO(_decode(raw, charset), newline=""))
             headers = next(reader, [])
-            records = list(reader)
+            records = []
+            for number, values in enumerate(reader, start=1):
+                if number > MAX_IMPORT_ROWS:
+                    raise HTTPException(413, "Only 100,000 records can be imported")
+                records.append(values)
+        except HTTPException:
+            raise
         except (csv.Error, ValueError) as exc:
             raise HTTPException(422, "Invalid CSV file") from exc
     elif ext == ".xlsx":
         try:
             from openpyxl import load_workbook
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                if sum(info.file_size for info in archive.infolist()) > 100 * 1024 * 1024:
+                    raise HTTPException(413, "Workbook exceeds safe uncompressed size")
             wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
             try:
                 rows = wb.active.iter_rows(values_only=True)
@@ -116,8 +126,12 @@ def parse_import_file(filename: str, raw: bytes, charset: str = "auto") -> dict:
             import xlrd
             book = xlrd.open_workbook(file_contents=raw)
             sheet = book.sheet_by_index(0)
+            if sheet.nrows > MAX_IMPORT_ROWS + 1:
+                raise HTTPException(413, "Only 100,000 records can be imported")
             headers = sheet.row_values(0) if sheet.nrows else []
             records = [sheet.row_values(index) for index in range(1, sheet.nrows)]
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(422, "Invalid XLS workbook") from exc
     if ext == ".vcf":
