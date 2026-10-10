@@ -162,7 +162,7 @@ def validate_platform_values(resource: str, values: dict[str, Any], *, partial: 
             except (ValueError, TypeError) as error:
                 raise HTTPException(422, "Schedule must be a valid ISO datetime") from error
     for key in values:
-        if key not in field_map and key not in {"title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "storage_key", "paid_amount", "balance_due", "criteria", "actions", "scheduled_for"}:
+        if key not in field_map and key not in {"record_number", "title", "owner_id", "account_id", "contact_id", "deal_id", "related_type", "related_id", "amount", "due_date", "status", "file_name", "file_size", "content_type", "storage_key", "paid_amount", "balance_due", "criteria", "actions", "scheduled_for"}:
             raise HTTPException(422, f"Unknown field '{key}' for {config['label']}")
     for item in config.get("fields", []):
         if item.get("type") == "json" and item["key"] in values and values[item["key"]] is not None and not isinstance(values[item["key"]], (dict, list)):
