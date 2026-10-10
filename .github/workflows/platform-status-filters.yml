@@ -1,0 +1,36 @@
+name: Platform Status Filter Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "static/js/app.js"
+      - "app/platform_catalog.py"
+      - "tests/test_platform_status_filters.py"
+      - "tests/test_browser_platform_status_filters.py"
+      - ".github/workflows/platform-status-filters.yml"
+  workflow_dispatch:
+
+jobs:
+  status-filters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt pytest pytest-timeout
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Validate JavaScript
+        run: node --check static/js/app.js
+      - name: Test all sales-module status filters
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_platform_status_filters.py tests/test_browser_platform_status_filters.py --timeout=180
