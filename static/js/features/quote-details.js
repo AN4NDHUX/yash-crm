@@ -22,9 +22,12 @@ export function createQuoteDetails(ctx) {
     return `<section class="quote-section" id="quote-section-${esc(id)}"><header class="quote-section-head"><h3>${esc(title)}</h3>${action}</header><div class="quote-section-body">${rows.length ? rows.join("") : `<p class="quote-empty">${esc(emptyText)}</p>`}</div></section>`;
   }
   function relatedRows(related, key, resource, titleKey) {
-    return (related[key] || []).map(item => entry(item[titleKey] || item.name || item.title || item.subject || "Record",
-      item.status || item.email || item.updated_at?.slice(0, 10) || "",
-      resource ? `/${resource}/${Number(item.id)}` : ""));
+    return (related[key] || []).map(item => {
+      const title = item[titleKey] || item.name || item.title || item.subject || "Record";
+      const detail = item.status || item.email || item.updated_at?.slice(0, 10) || "";
+      if (["sales_orders", "invoices"].includes(resource)) return `<button class="quote-related-item" type="button" data-quote-related-open="${resource}" data-id="${Number(item.id)}"><span class="quote-related-line"><strong>${esc(title)}</strong><small>${esc(detail)}</small></span><span aria-hidden="true">›</span></button>`;
+      return entry(title, detail, resource ? `/${resource}/${Number(item.id)}` : "");
+    });
   }
   function rail(related) {
     const groups = [
@@ -159,7 +162,7 @@ export function createQuoteDetails(ctx) {
     const existing = related[destination] || [];
     if (existing.length) {
       toast("Existing record", "Opening the existing converted record to avoid duplicates.");
-      await navigate(`/${destination}/${existing[0].id}`);
+      await openPlatformModal(destination, Number(existing[0].id));
       return;
     }
     const kind = destination === "sales_orders" ? "Sales Order" : "Invoice";
@@ -178,7 +181,7 @@ export function createQuoteDetails(ctx) {
     try {
       const created = await api(`/api/platform/${destination}`, { method: "POST", body: JSON.stringify(data) });
       toast(`${kind} created`, "The new record is linked to this Quote.");
-      await navigate(`/${destination}/${created.id}`);
+      await navigate(`/quotes/${quote.id}`);
     } catch (error) {
       toast("Conversion failed", error.message, "error");
       if (button) button.disabled = false;
@@ -193,6 +196,7 @@ export function createQuoteDetails(ctx) {
     });
     document.querySelectorAll("[data-quote-convert]").forEach(button =>
       button.addEventListener("click", () => convert(button.dataset.quoteConvert)));
+    document.querySelectorAll("[data-quote-related-open]").forEach(button => button.addEventListener("click", () => openPlatformModal(button.dataset.quoteRelatedOpen, Number(button.dataset.id))));
     document.querySelector("[data-quote-edit]")?.addEventListener("click", () => openPlatformModal("quotes", id));
     document.querySelector("[data-quote-archive]")?.addEventListener("click", () => deletePlatformRecord("quotes", id));
     document.querySelectorAll("[data-quote-tab]").forEach(button =>
