@@ -368,8 +368,13 @@ async function renderRoute() {
         return;
       }
       setBreadcrumb(state.platformCatalog.resources[resource].label);
-      content.innerHTML = await platformModuleView(resource);
-      bindPlatform(resource);
+      if (parts[1] && /^\\d+$/.test(parts[1])) {
+        content.innerHTML = await platformDetailView(resource, Number(parts[1]));
+        bindPlatformDetail(resource, Number(parts[1]));
+      } else {
+        content.innerHTML = await platformModuleView(resource);
+        bindPlatform(resource);
+      }
       return;
     }
     if (parts[0] === "activities" && ["tasks", "meetings", "calls"].includes(parts[1])) {
