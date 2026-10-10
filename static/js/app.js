@@ -527,7 +527,8 @@ async function moduleView(resource) {
     params.set("filters", JSON.stringify(current.advancedFilters));
   }
   const data = await api(`/api/${resource}?${params}`);
-  const actions = `<button class="button button-ghost" data-start-import="${resource}">Import ${config.label}</button><button class="button button-primary" data-create="${resource}"><span class="button-icon">＋</span>Add ${config.singular.toLowerCase()}</button>`;
+  const importAction = ["leads","deals","accounts","contacts"].includes(resource) ? `<button class="button button-ghost" data-start-import="${resource}">Import ${config.label}</button>` : "";
+  const actions = `${importAction}<button class="button button-primary" data-create="${resource}"><span class="button-icon">＋</span>Add ${config.singular.toLowerCase()}</button>`;
   const viewOptions = [["list","List"],["grid","Grid"],["split","Split"],["chart","Chart"],["timeline","Timeline"]];
   if (resource === "deals") viewOptions.splice(1,0,["kanban","Pipeline"]);
   const viewToggle = `<div class="view-toggle">${viewOptions.map(([key,label]) => `<button class="${current.view === key ? "active" : ""}" data-toggle-view="${key}">${label}</button>`).join('')}</div>`;
