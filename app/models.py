@@ -483,6 +483,7 @@ class Deal(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(180))
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(ForeignKey("contacts.id"), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     amount: Mapped[float] = mapped_column(Float, default=0)
     stage: Mapped[str] = mapped_column(String(80), default="Qualification")
     layout_name: Mapped[str] = mapped_column(String(100), default="Default")
