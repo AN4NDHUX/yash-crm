@@ -126,3 +126,66 @@ def test_core_duplicate_prevention_and_cross_org_isolation():
     assert out['deal_status'] in (200,201) and out['dup_deal'] == 409, out
     assert out['other_deal'] in (200,201) and out['counts'] == [1,1,1,2], out
     assert out['other_org_same_email'] in (200,201), out
+
+
+def test_workflow_generated_contacted_status_links_existing_lead():
+    out = app_scenario("""
+    with TestClient(main.app) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Workflow Promotion','organization_name':'Workflow Promotion Workspace',
+            'username':'workflow.promotion','email':'workflow.promotion@example.test',
+            'password':'strong-password-123'})
+        workflow = c.post('/api/platform/workflow_rules', json={
+            'name':'Automatic contact stage', 'module':'leads', 'event':'create',
+            'criteria':None, 'status':'Active',
+            'actions':[{'type':'field_update','field':'status','value':'Contacted'}],
+        })
+        out['workflow_created'] = workflow.status_code
+        lead = c.post('/api/leads',json={'name':'Hana Lal','company':'Redbird','phone':'+919991112223'})
+        out['lead_http'] = lead.status_code
+        out['lead'] = lead.json()
+        out['counts'] = [c.get('/api/'+resource).json()['total'] for resource in ('leads','accounts','contacts','deals')]
+        out['history'] = c.get('/api/leads/'+str(lead.json()['id'])+'/timeline').status_code
+        converted = c.patch('/api/leads/'+str(lead.json()['id']),json={'status':'Converted'})
+        out['converted_http'] = converted.status_code
+        out['final_counts'] = [c.get('/api/'+resource).json()['total'] for resource in ('leads','accounts','contacts','deals')]
+    """)
+    assert out['workflow_created'] in (200, 201), out
+    assert out['lead_http'] in (200, 201), out
+    assert out['lead']['status'] == 'Contacted', out
+    assert out['lead']['converted_account_id'] and out['lead']['converted_contact_id'], out
+    assert out['counts'] == [1, 1, 1, 0] and out['history'] == 200, out
+    assert out['converted_http'] == 200 and out['final_counts'] == [0, 1, 1, 1], out
+
+
+def test_guided_import_contacted_and_converted_preserves_identity():
+    out = app_scenario("""
+    import json
+    with TestClient(main.app) as c:
+        c.post('/api/auth/signup', json={
+            'name':'Import Promotions','organization_name':'Import Promotions Workspace',
+            'username':'import.promotions','email':'import.promotions@example.test',
+            'password':'strong-password-123'})
+        fields={'Name':'name','Phone Number':'phone','Lead Status':'status'}
+        def run_import(status,operation,dup):
+            data=('Name,Phone Number,Lead Status\\nAnil Shah,+919991100223,'+status+'\\n').encode()
+            return c.post('/api/import-wizard/leads/submit',
+                files=[('files',('leads.csv',data,'text/csv'))],
+                data={'mapping':json.dumps(fields),'operation':operation,'duplicate_key':dup})
+        first=run_import('Contacted','add','phone')
+        out['first_status']=first.status_code
+        out['first_result']=first.json()
+        out['before']=[c.get('/api/'+resource).json()['total'] for resource in ('leads','accounts','contacts','deals')]
+        repeat=run_import('Contacted','add','phone')
+        out['repeat_status']=repeat.status_code
+        out['repeat_skipped']=repeat.json().get('skipped')
+        second=run_import('Converted','update','phone')
+        out['second_status']=second.status_code
+        out['second_result']=second.json()
+        out['after']=[c.get('/api/'+resource).json()['total'] for resource in ('leads','accounts','contacts','deals')]
+    """)
+    assert out['first_status'] == 200 and out['first_result']['imported'] == 1, out
+    assert out['before'] == [1, 1, 1, 0], out
+    assert out['repeat_status'] == 200 and out['repeat_skipped'] == 1, out
+    assert out['second_status'] == 200 and out['second_result']['updated'] == 1, out
+    assert out['after'] == [0, 1, 1, 1], out
