@@ -38,11 +38,23 @@ export function createSetupFeature(ctx) {
   }
   
   function importView() {
-    const choices = Object.entries(state.platformCatalog.resources).filter(([, config]) => !["Security", "Customization", "Automation", "Templates", "Developer", "General"].includes(config.group));
-    return `<section class="card settings-section"><div class="settings-section-head"><h2>Import</h2><p>Import UTF-8 CSV files into expanded CRM modules. Required column names match the field API names.</p></div><form data-import-form><div class="form-grid"><div class="field"><label>Module</label><select class="field-select" name="resource">${choices.map(([key, config]) => `<option value="${key}">${esc(config.label)}</option>`).join("")}</select></div><div class="field"><label>CSV file</label><input class="field-input" name="file" type="file" accept=".csv,text/csv" required /></div></div><div class="form-actions"><button class="button button-primary" type="submit">Import records</button></div></form></section>`;
+    const choices = ["leads", "deals", "accounts", "contacts"];
+    return `<section class="card settings-section"><div class="settings-section-head"><h2>Import CRM Records</h2><p>Upload CSV, XLS, XLSX or VCF. Choose how to process records, map columns, and require Phone Number before submission.</p></div>
+      <div class="setup-directory">${choices.map(resource=>`<a class="button button-ghost" href="/import/${resource}">Import ${esc(MODULES[resource].label)}</a>`).join("")}</div>
+      <div class="form-actions"><a class="button button-ghost" href="/setup/import_history">View Import History</a><a class="button button-ghost" href="/setup/export">Export Records</a><a class="button button-ghost" href="/setup/recycle_bin">Recycle Bin</a></div>
+      </section>`;
   }
-  
-  function exportView() {
+
+  async function importHistoryView() {
+    const data = await api("/api/import-jobs");
+    return `<section class="card settings-section"><div class="settings-section-head"><h2>Import History</h2><p>Review completed imports, skipped rows and row-level errors.</p></div>
+    <div class="form-actions"><a class="button button-ghost" href="/setup/import">New Import</a></div>
+    ${data.items?.length ? data.items.map(item=>`<div class="rule-row"><div class="rule-info"><strong>${esc(titleCase(item.resource))} Imported — ${esc(item.filename)}</strong>
+    <small>${esc(item.created_at)} · ${esc(item.status)} · ${item.imported_rows}/${item.total_rows} created or updated · ${item.error_rows} errors</small>
+    ${item.errors?.length ? `<details><summary>View errors</summary>${item.errors.map(error=>`<div>Row ${Number(error.row)}: ${esc(error.error)}</div>`).join("")}</details>` : ""}</div></div>`).join("") : emptyState("▤","No imports yet","Start an import from Leads, Deals, Accounts or Contacts.")}</section>`;
+  }
+
+    function exportView() {
     const resources = [...Object.keys(MODULES), ...Object.keys(state.platformCatalog.resources)];
     return `<section class="card settings-section"><div class="settings-section-head"><h2>Export</h2><p>Download active records as UTF-8 CSV for analysis or backup.</p></div><div class="setup-directory">${resources.map((resource) => `<a class="button button-ghost" href="/api/export/${resource}.csv" download>${esc(MODULES[resource]?.label || state.platformCatalog.resources[resource]?.label || titleCase(resource))}</a>`).join("")}</div></section>`;
   }
@@ -531,6 +543,7 @@ export function createSetupFeature(ctx) {
     else if (resource === "audit_log") content = await auditView();
     else if (resource === "recycle_bin") content = await recycleBinView();
     else if (resource === "import") content = importView();
+    else if (resource === "import_history") content = await importHistoryView();
     else if (resource === "export") content = exportView();
     else if (resource === "duplicates") content = duplicateView();
     else if (resource === "custom_modules") content = await customModulesAdminView();
