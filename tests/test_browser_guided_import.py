@@ -57,6 +57,18 @@ def test_browser_guided_import_all_four_modules():
                 page.fill("#confirm-password","guided-import-password-123")
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard",timeout=15000)
+                expected_modules = ["leads", "deals", "accounts", "contacts"]
+                for resource in expected_modules:
+                    page.goto(base + "/setup/import")
+                    module_select = page.locator("#setup-import-module")
+                    module_select.wait_for(timeout=15000)
+                    assert module_select.locator("option").evaluate_all(
+                        "(options) => options.map(option => option.value)"
+                    ) == expected_modules
+                    module_select.select_option(resource)
+                    page.locator("[data-setup-import-selector] button[type=submit]").click()
+                    page.wait_for_url("**/import/" + resource, timeout=15000)
+                    page.locator("[data-import-files]").wait_for(timeout=10000)
                 for resource in ("leads","deals","accounts","contacts"):
                     file_body = (
                         b"First Name,Last Name,Phone Number\nAva,Smith,+911234567890\n"
