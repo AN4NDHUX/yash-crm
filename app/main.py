@@ -1078,6 +1078,99 @@ def dashboard(db: Session = Depends(get_db), actor: User = Depends(current_actor
     return {"metrics": {"total_leads": total_leads, "open_deals": open_deals, "pipeline_value": float(pipeline_value or 0), "activities_due": activities_due, "payments_received": performance["totals"]["achieved"], "team_target": performance["totals"]["target"]}, "pipeline": [{"stage": stage, "count": int(count), "amount": float(amount or 0)} for stage, count, amount in stage_rows], "lead_funnel": [{"status": status, "count": int(count)} for status, count in lead_rows], "recent_activity": [serialize(item, db, actor) for item in recent], "sales_performance": performance["people"], "attention": performance["attention"]}
 
 
+
+@app.get("/api/dashboard/report/{report_key}")
+def dashboard_report(
+    report_key: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    """Read-only KPI drill-downs with the dashboard's ownership and date predicates."""
+    definitions = {
+        "total-leads": ("Total leads", "All your non-archived leads, including converted leads."),
+        "open-deals": ("Open deals", "Your deals excluding Closed Won and Closed Lost."),
+        "pipeline-value": ("Pipeline value", "Value and details of your open opportunities."),
+        "activities-due": ("Activities due", "Incomplete and overdue activities due within seven days."),
+        "ai-action-queue": ("AI action queue", "Stale leads and quotations requiring follow-up."),
+    }
+    if report_key not in definitions:
+        raise HTTPException(404, "Dashboard report not found")
+    title, description = definitions[report_key]
+    if report_key == "ai-action-queue":
+        attention = sales_performance(db, actor)["attention"]
+        rows = [
+            {"id": item["id"], "resource": "leads", "title": item["name"],
+             "context": "Stale lead", "status": item["status"],
+             "date": item.get("next_follow_up"), "amount": None,
+             "url": f"/leads/{item['id']}"}
+            for item in attention["stuck_leads"]
+        ] + [
+            {"id": item["id"], "resource": "quotes", "title": item["name"],
+             "context": "Quotation follow-up", "status": item["status"],
+             "date": item.get("valid_until"), "amount": None, "url": "/quotes"}
+            for item in attention["quotes_needing_follow_up"]
+        ]
+        return {
+            "key": report_key, "title": title, "description": description,
+            "total": len(rows), "amount": None,
+            "items": rows[offset:offset + limit], "limit": limit,
+            "offset": offset, "has_more": offset + limit < len(rows),
+        }
+
+    if report_key == "total-leads":
+        resource = "leads"
+        query = select(Lead).where(
+            Lead.archived == False, Lead.owner_id == actor.id,
+        ).order_by(Lead.created_at.desc(), Lead.id.desc())
+    elif report_key in {"open-deals", "pipeline-value"}:
+        resource = "deals"
+        query = select(Deal).where(
+            Deal.archived == False, Deal.owner_id == actor.id,
+            Deal.stage.not_in(["Closed Won", "Closed Lost"]),
+        ).order_by(Deal.created_at.desc(), Deal.id.desc())
+    else:
+        resource = "activities"
+        query = select(Activity).where(
+            Activity.archived == False, Activity.owner_id == actor.id,
+            Activity.status != "Completed",
+            Activity.due_at <= datetime.utcnow() + timedelta(days=7),
+        ).order_by(Activity.due_at.asc(), Activity.id.desc())
+
+    # Verify record access and apply field-level serialization for every result.
+    visible = [
+        record for record in db.scalars(query).all()
+        if can_access_record(db, resource, record, actor)
+    ]
+    rows = []
+    for record in visible[offset:offset + limit]:
+        data = serialize(record, db, actor)
+        if resource == "leads":
+            label, context, status = data.get("name"), data.get("company"), data.get("status")
+            date_value, amount = data.get("next_follow_up"), None
+        elif resource == "deals":
+            label, context, status = data.get("name"), data.get("type"), data.get("stage")
+            date_value, amount = data.get("expected_close_date"), data.get("amount")
+        else:
+            label, context, status = data.get("subject"), data.get("activity_type"), data.get("status")
+            date_value, amount = data.get("due_at"), None
+        rows.append({
+            "id": record.id, "resource": resource,
+            "title": label or f"Record {record.id}", "context": context or "",
+            "status": status or "", "date": date_value, "amount": amount,
+            "url": f"/{resource}/{record.id}",
+        })
+    return {
+        "key": report_key, "title": title, "description": description,
+        "total": len(visible),
+        "amount": float(sum(float(record.amount or 0) for record in visible))
+                  if report_key == "pipeline-value" else None,
+        "items": rows, "limit": limit, "offset": offset,
+        "has_more": offset + limit < len(visible),
+    }
+
+
 def _date_value(value: Any) -> date | None:
     if not value:
         return None
