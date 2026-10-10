@@ -168,7 +168,7 @@ def test_guided_import_contacted_and_converted_preserves_identity():
             'password':'strong-password-123'})
         fields={'Name':'name','Phone Number':'phone','Lead Status':'status'}
         def run_import(status,operation,dup):
-            data=('Name,Phone Number,Lead Status\nAnil Shah,+919991100223,'+status+'\n').encode()
+            data=('Name,Phone Number,Lead Status\\nAnil Shah,+919991100223,'+status+'\\n').encode()
             return c.post('/api/import-wizard/leads/submit',
                 files=[('files',('leads.csv',data,'text/csv'))],
                 data={'mapping':json.dumps(fields),'operation':operation,'duplicate_key':dup})
