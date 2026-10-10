@@ -1079,6 +1079,9 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
     query = select(model)
     if hasattr(model, "archived"):
         query = query.where(getattr(model, "archived") == False)
+    if resource == "leads":
+        # Converted Leads remain in the database for audit/linkage, not active lists.
+        query = query.where(Lead.status != "Converted")
     if search:
         clauses = [getattr(model, column).ilike(f"%{search}%") for column in SEARCH_COLUMNS.get(resource, []) if hasattr(model, column)]
         if resource == "contacts":
