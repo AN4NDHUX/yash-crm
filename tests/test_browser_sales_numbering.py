@@ -101,6 +101,12 @@ def test_numbered_products_and_platform_records_can_open_edit_delete():
                     page.locator(f'[data-platform-open="{resource}"]').first.click()
                     page.wait_for_url("**/" + resource + "/*", timeout=15000)
                     page.get_by_text(re.compile(r"^"+prefix+r"\d{5}$")).first.wait_for(timeout=15000)
+                    try:
+                        page.locator('[data-platform-detail-edit]').first.wait_for(timeout=8000)
+                    except Exception as error:
+                        raise AssertionError("Detail Edit missing for "+resource+" at "+page.url+
+                            "; content="+page.locator("#app-content").inner_text()[:1500]+
+                            "; JS errors="+str(browser_errors)) from error
                     page.locator('[data-platform-detail-edit]').first.click()
                     number = page.locator('#modal-body [name="record_number"]')
                     assert number.get_attribute("readonly") is not None
