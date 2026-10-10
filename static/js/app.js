@@ -219,7 +219,7 @@ async function refreshNavCount() {
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
 const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MODULES});
-const { platformDetailView, bindPlatformDetail } = createPlatformDetailFeature({ api, state, esc, formatDateTime, formatMoney, navigate, openPlatformModal, deletePlatformRecord, selectAll: $ });
+const { platformDetailView, bindPlatformDetail } = createPlatformDetailFeature({ api, state, esc, formatDateTime, formatMoney, navigate, openPlatformModal, deletePlatformRecord, selectAll: $$ });
 const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $$ });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
 const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
