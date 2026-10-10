@@ -24,7 +24,7 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r requirements-dev.txt pytest pytest-timeout
       - name: Verify tenant-safe related module filters
-        run: pytest -q tests/test_core_module_filters.py --timeout=120
+        run: python -m pytest -q tests/test_core_module_filters.py --timeout=120
         env:
           APP_ENV: development
           ENABLE_AUTH: "true"
