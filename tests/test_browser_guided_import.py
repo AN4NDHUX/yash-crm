@@ -71,8 +71,22 @@ def test_browser_guided_import_all_four_modules():
                     page.locator("[data-import-files]").set_input_files({
                         "name":"import.csv","mimeType":"text/csv","buffer":file_body
                     })
-                    page.locator("[data-import-next]").click()
-                    page.locator("input[name=import-operation]").first.wait_for()
+                    with page.expect_response(lambda res: res.url.endswith("/api/import-wizard/"+resource+"/preview"), timeout=20000) as preview_event:
+                        page.locator("[data-import-next]").click()
+                    preview_response = preview_event.value
+                    assert preview_response.status == 200, (
+                        resource, preview_response.status, preview_response.text()[:1200],
+                        page.locator("#app-content").inner_text()[:1200]
+                    )
+                    try:
+                        page.locator("input[name=import-operation]").first.wait_for(timeout=8000)
+                    except Exception as error:
+                        raise AssertionError(
+                            "Import wizard did not advance: " + resource
+                            + " | preview=" + preview_response.text()[:700]
+                            + " | UI=" + page.locator("#app-content").inner_text()[:1600]
+                            + " | alerts=" + page.locator("body").inner_text()[-500:]
+                        ) from error
                     page.locator("[data-import-next]").click()
                     page.locator(".import-target-card").wait_for()
                     page.locator("[data-import-next]").click()
