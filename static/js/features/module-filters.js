@@ -42,7 +42,7 @@ export function renderModuleFilters(resource, current, catalog, esc) {
       </select><input class="advanced-filter-value" data-filter-value type="${inputType}" ${type === "number" ? 'step="any"' : ""} value="${esc(old?.value || "")}" placeholder="${kind === "related" ? "Optional related-record name" : "Filter value"}" aria-label="${esc(item.label)} value" ${noValue ? "hidden" : ""}/>`;
   };
   const title = resource[0].toUpperCase() + resource.slice(1);
-  return `<aside class="advanced-filter-sidebar" data-filter-sidebar ${current.filtersOpen ? "" : "hidden"} aria-label="${esc(title)} filters">
+  return `<aside id="module-filter-sidebar" class="advanced-filter-sidebar" data-filter-sidebar ${current.filtersOpen ? "" : "hidden"} aria-label="${esc(title)} filters">
     <div class="advanced-filter-head"><strong>Filter ${esc(title)} by</strong><button type="button" class="advanced-filter-close" data-filter-close aria-label="Close filters">×</button></div>
     <label class="advanced-filter-search-label"><span>⌕</span><input type="search" data-filter-search placeholder="Search filters" aria-label="Search available filters"/></label>
     <div class="advanced-filter-scroll">
