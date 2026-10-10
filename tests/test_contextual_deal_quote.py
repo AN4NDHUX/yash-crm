@@ -10,6 +10,13 @@ def test_account_to_deal_and_deal_to_quote_preserve_links_and_show_in_reports():
             'username':'context.owner','email':'context.owner@example.test',
             'password':'strong-password-123'})
         out['signup']=signup.status_code
+        with main.SessionLocal() as db:
+            user=db.scalar(main.select(main.User).where(main.User.email=='context.owner@example.test'))
+            subscription=main._ensure_organization_subscription(db,user)
+            plan=db.scalar(main.select(main.Plan).where(main.Plan.code=='professional'))
+            subscription.plan_id=plan.id
+            subscription.status='Active'
+            db.commit()
         account=c.post('/api/accounts',json={'name':'Orbit Systems','phone':'+919811223300'}).json()
         contact=c.post('/api/contacts',json={'first_name':'Mira','last_name':'Roy',
             'email':'mira@example.test','account_id':account['id']}).json()
@@ -58,6 +65,13 @@ def test_quote_must_match_source_deal_account_and_contact():
             'name':'Quote Consistency','organization_name':'Quote Consistency Workspace',
             'username':'quote.consistency','email':'quote.consistency@example.test',
             'password':'strong-password-123'})
+        with main.SessionLocal() as db:
+            user=db.scalar(main.select(main.User).where(main.User.email=='quote.consistency@example.test'))
+            subscription=main._ensure_organization_subscription(db,user)
+            plan=db.scalar(main.select(main.Plan).where(main.Plan.code=='professional'))
+            subscription.plan_id=plan.id
+            subscription.status='Active'
+            db.commit()
         a=c.post('/api/accounts',json={'name':'North'}).json()
         b=c.post('/api/accounts',json={'name':'South'}).json()
         x=c.post('/api/contacts',json={'first_name':'Max','last_name':'Lee','account_id':a['id']}).json()
