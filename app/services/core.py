@@ -215,9 +215,13 @@ def normalize_platform_links(db: Session, resource: str, values: dict[str, Any])
         deal = db.get(Deal, int(values["deal_id"]))
         if deal is None or deal.archived:
             raise HTTPException(422, "The selected opportunity no longer exists")
-        if values.get("account_id") in (None, ""):
+        if deal.account_id is not None and values.get("account_id") not in (None, "", deal.account_id):
+            raise HTTPException(422, "Quote Account must match the selected Deal")
+        if deal.contact_id is not None and values.get("contact_id") not in (None, "", deal.contact_id):
+            raise HTTPException(422, "Quote Contact must match the selected Deal")
+        if deal.account_id is not None:
             values["account_id"] = deal.account_id
-        if values.get("contact_id") in (None, ""):
+        if deal.contact_id is not None:
             values["contact_id"] = deal.contact_id
         if values.get("owner_id") in (None, ""):
             values["owner_id"] = deal.owner_id
