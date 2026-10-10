@@ -60,6 +60,14 @@ def test_account_detail_and_selection_create_deal_then_create_quote():
                 page.fill("#confirm-password","quote-browser-password-123")
                 page.click("#submit-button")
                 page.wait_for_url("**/dashboard",timeout=15000)
+                # Fixture-only entitlement. Production upgrades require the billing flow.
+                import sqlite3
+                with sqlite3.connect(f"{temporary}/quote-ui.db") as connection:
+                    connection.execute(
+                        "UPDATE organization_subscriptions SET plan_id="
+                        "(SELECT id FROM plans WHERE code='professional')"
+                    )
+                    connection.commit()
 
                 page.goto(base+"/accounts")
                 try:
