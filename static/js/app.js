@@ -215,8 +215,8 @@ async function refreshNavCount() {
 }
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
-const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $, readForm, toast, navigate });
-const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $, openRecordModal });
+const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
+const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
 
 async function navigate(path, replace = false) {
   if (replace) history.replaceState({}, "", path); else history.pushState({}, "", path);
