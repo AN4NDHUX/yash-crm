@@ -205,6 +205,9 @@ async def submit_guided_import(
                             continue
                         if resource == "leads" and match.status == "Converted":
                             raise HTTPException(409, "Converted Leads are read-only")
+                        if resource == "leads" and values.get("status"):
+                            from app.services.stage_scoring import score_transition, default_mapping
+                            values["lead_score"] = score_transition(match.status or "New", values["status"], default_mapping())["stage_score"]
                         for key, value in values.items():
                             setattr(match, key, value)
                         reject_duplicate(db, resource, {col.key:getattr(match,col.key) for col in model.__table__.columns}, exclude_id=match.id)
