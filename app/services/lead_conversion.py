@@ -63,6 +63,8 @@ def ensure_contacted_parties(db, lead, actor) -> tuple[Any, Any]:
         db.flush()
         m["add_audit"](db, "create", "accounts", account.id,
                        f"Created Account from contacted lead #{lead.id}")
+    if actor is not None and not m["can_access_record"](db, "accounts", account, actor):
+        raise HTTPException(403, "Matching Account is not accessible")
     lead.converted_account_id = account.id
 
     contact = _valid_link(db, Contact, lead.converted_contact_id, org_id, "Contact")
@@ -97,6 +99,8 @@ def ensure_contacted_parties(db, lead, actor) -> tuple[Any, Any]:
                        f"Created Contact from contacted lead #{lead.id}")
     elif contact.account_id is None:
         contact.account_id = account.id
+    if actor is not None and not m["can_access_record"](db, "contacts", contact, actor):
+        raise HTTPException(403, "Matching Contact is not accessible")
     lead.converted_contact_id = contact.id
     db.flush()
     return account, contact
