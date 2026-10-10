@@ -254,7 +254,7 @@ def normalize_platform_links(db: Session, resource: str, values: dict[str, Any])
         values.update({"related_type": parent.resource, "related_id": parent.id})
 
 
-from app.services.auto_numbering import NUMBER_DEFINITIONS, apply_number
+from app.services.auto_numbering import NUMBER_DEFINITIONS, NUMBER_LOCK, assert_number_immutable, apply_number
 
 
 def ensure_transaction_number(record: PlatformRecord, db: Session) -> None:
