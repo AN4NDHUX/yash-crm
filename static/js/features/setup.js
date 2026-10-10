@@ -39,8 +39,15 @@ export function createSetupFeature(ctx) {
   
   function importView() {
     const choices = ["leads", "deals", "accounts", "contacts"];
-    return `<section class="card settings-section"><div class="settings-section-head"><h2>Import CRM Records</h2><p>Upload CSV, XLS, XLSX or VCF. Choose how to process records, map columns, and require Phone Number before submission.</p></div>
-      <div class="setup-directory">${choices.map(resource=>`<a class="button button-ghost" href="/import/${resource}">Import ${esc(MODULES[resource].label)}</a>`).join("")}</div>
+    return `<section class="card settings-section"><div class="settings-section-head"><h2>Import</h2><p>Choose a CRM module, then upload CSV, XLS, XLSX or VCF files and map the required Phone Number field.</p></div>
+      <form data-setup-import-selector>
+        <div class="form-grid"><div class="field"><label for="setup-import-module">Module</label>
+          <select class="field-select" id="setup-import-module" name="resource" required>
+            ${choices.map(resource=>`<option value="${resource}">${esc(MODULES[resource].label)}</option>`).join("")}
+          </select>
+        </div></div>
+        <div class="form-actions"><button class="button button-primary" type="submit">Import records</button></div>
+      </form>
       <div class="form-actions"><a class="button button-ghost" href="/setup/import_history">View Import History</a><a class="button button-ghost" href="/setup/export">Export Records</a><a class="button button-ghost" href="/setup/recycle_bin">Recycle Bin</a></div>
       </section>`;
   }
