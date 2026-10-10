@@ -68,7 +68,8 @@ def test_browser_guided_import_all_four_modules():
                     module_select.select_option(resource)
                     page.locator("[data-setup-import-selector] button[type=submit]").click()
                     page.wait_for_url("**/import/" + resource, timeout=15000)
-                    page.locator("[data-import-files]").wait_for(timeout=10000)
+                    page.locator("[data-import-drop]").wait_for(state="visible",timeout=10000)
+                    page.locator("[data-import-files]").wait_for(state="attached",timeout=10000)
                 for resource in ("leads","deals","accounts","contacts"):
                     file_body = (
                         b"First Name,Last Name,Phone Number\nAva,Smith,+911234567890\n"
