@@ -1530,3 +1530,66 @@ button, a, input, select, textarea { touch-action: manipulation; }
 .import-footer .button-primary{background:#254ddb;color:white;border-color:#254ddb}
 .import-footer button:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:750px){.import-wizard-panel{padding:12px}.import-wizard-header{padding:14px}.import-mapping-layout{grid-template-columns:1fr}.import-mapping-aside{border-right:0;border-bottom:1px solid #e0e6ef}.import-progress{width:100%}.import-progress span{font-size:10px;padding:8px}.import-upload-zone{margin:10px auto}}
+
+/* Quote record details: CRM-inspired hierarchy in the CONVOSIS design system. */
+.quote-detail-page{width:100%;min-width:0;padding-bottom:38px;color:var(--text,#172643)}
+.quote-record-header{display:flex;justify-content:space-between;align-items:center;gap:22px;padding:18px 22px;margin-bottom:18px;background:var(--surface,#fff);border:1px solid var(--border,#dfe5f0);border-radius:16px;box-shadow:var(--shadow-sm)}
+.quote-record-heading{display:flex;gap:16px;align-items:center;min-width:0}
+.quote-record-heading>div{min-width:0}
+.quote-record-heading h1{margin:6px 0 7px;font-size:24px;line-height:1.25;font-weight:750;overflow-wrap:anywhere}
+.quote-record-heading p{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0;color:var(--text-muted,#66748c);font-size:12px}
+.quote-eyebrow{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-faint,#7c8aa1)}
+.quote-back{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:11px;background:var(--surface-soft,#f2f6fc);color:var(--text);font-size:19px;text-decoration:none}
+.quote-back:hover,.platform-record-link:hover,.quote-inline-link:hover{color:var(--premium-blue-600,#196bce)}
+.quote-action-bar{display:flex;align-items:center;flex-wrap:wrap;gap:9px;justify-content:flex-end}
+.quote-convert-wrapper{position:relative}
+.quote-convert-options{z-index:30;position:absolute;top:calc(100% + 6px);right:0;min-width:185px;padding:5px;background:var(--surface,#fff);border:1px solid var(--border,#dfe5f0);border-radius:12px;box-shadow:0 15px 32px rgba(20,40,90,.12)}
+.quote-convert-options[hidden]{display:none}
+.quote-convert-options button{display:block;text-align:left;width:100%;font:inherit;font-size:12px;padding:11px 13px;border:0;border-radius:8px;background:none;color:var(--text);cursor:pointer}
+.quote-convert-options button:hover{background:var(--surface-soft,#f0f5fb)}
+.platform-record-link{font-size:12px;font-weight:700;text-decoration:none;color:var(--premium-blue-700,#1356a3)}
+.quote-record-layout{display:grid;grid-template-columns:225px minmax(0,1fr);gap:18px;align-items:start}
+.quote-related-nav{position:sticky;top:98px;display:flex;flex-direction:column;background:var(--surface,#fff);border:1px solid var(--border,#dfe5f0);border-radius:15px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.quote-related-nav h3{padding:17px 18px 12px;margin:0;font-size:14px;border-bottom:1px solid var(--border,#dfe5f0)}
+.quote-related-nav button{display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:left;width:100%;border:0;background:transparent;padding:12px 18px;font:inherit;font-size:12px;color:var(--text-soft,#60718b);cursor:pointer}
+.quote-related-nav button:hover,.quote-related-nav button:focus-visible{background:var(--surface-soft,#f3f7fc);color:var(--premium-blue-700,#1554aa);outline-offset:-2px}
+.quote-related-nav small{min-width:16px;text-align:right;font-size:10px;color:var(--text-faint,#7a8a9d)}
+.quote-record-main{min-width:0}
+.quote-tab-strip{display:flex;width:fit-content;gap:3px;border:1px solid var(--border,#dfe5f0);background:var(--surface,#fff);border-radius:999px;padding:4px;margin:0 0 16px}
+.quote-tab-strip button{border:0;border-radius:999px;padding:10px 24px;min-width:112px;background:transparent;color:var(--text-soft,#617188);font-size:12px;font-weight:600;cursor:pointer}
+.quote-tab-strip button.active{background:var(--blue-soft,#eaf2ff);color:var(--premium-blue-700,#1452a4);box-shadow:0 1px 4px rgba(0,0,0,.07)}
+[data-quote-panel][hidden]{display:none!important}
+.quote-highlights{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;padding:18px 20px;margin-bottom:16px;background:var(--surface,#fff);border:1px solid var(--border,#dfe5f0);border-radius:15px;box-shadow:var(--shadow-sm)}
+.quote-highlights>div{min-width:0;display:flex;flex-direction:column;gap:7px}
+.quote-highlights span:not(.status-badge){color:var(--text-faint,#74839a);font-size:10px;font-weight:700;letter-spacing:.05em}
+.quote-highlights strong{font-size:13px;overflow-wrap:anywhere}
+.quote-section{scroll-margin-top:108px;background:var(--surface,#fff);border:1px solid var(--border,#dfe5f0);border-radius:15px;margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.quote-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 21px;border-bottom:1px solid var(--border,#dfe5f0)}
+.quote-section-head h3{font-size:14px;line-height:1.4;margin:0}
+.quote-section-body{padding:6px 21px}
+.quote-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px 40px;padding:25px 22px 28px;margin:0}
+.quote-field{display:grid;grid-template-columns:minmax(125px,.85fr) minmax(0,1.15fr);align-items:baseline;gap:14px;font-size:12px}
+.quote-field dt{color:var(--text-soft,#667792);text-align:right}
+.quote-field dd{margin:0;color:var(--text,#162642);font-weight:550;overflow-wrap:anywhere;line-height:1.5}
+.quote-inline-link{color:var(--premium-blue-700,#1453a8);font-weight:650;text-decoration:none}
+.quote-related-item{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--border,#e0e6f2);padding:14px 0;color:var(--text);text-decoration:none}
+.quote-related-item:last-child{border-bottom:0}
+a.quote-related-item:hover{color:var(--premium-blue-700,#1453a8)}
+.quote-related-line{display:flex;flex-direction:column;gap:5px;min-width:0}
+.quote-related-line strong{font-size:12px;font-weight:650}
+.quote-related-line small,.quote-event small{color:var(--text-faint,#78869c);font-size:11px}
+.quote-empty{padding:16px 0;color:var(--text-muted,#70809a);font-size:12px;margin:0}
+.quote-text-action{border:0;background:transparent;color:var(--premium-blue-700,#1967c3);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.quote-terms{white-space:pre-wrap;font-size:12px;line-height:1.6;margin:12px 0 18px}
+.quote-timeline{padding:23px 25px}
+.quote-event{display:flex;gap:15px;align-items:flex-start;min-height:68px;border-left:2px solid var(--border,#dbe5f0);margin-left:6px;padding-left:20px;position:relative}
+.quote-event>div{display:flex;flex-direction:column;gap:6px;padding-bottom:22px}
+.quote-event strong{font-size:12px}
+.quote-event-dot{position:absolute;left:-6px;top:1px;width:10px;height:10px;border:2px solid var(--premium-blue-600,#1c65b9);border-radius:50%;background:var(--surface,#fff)}
+.quote-note-form{display:grid;gap:11px;padding:16px 0}
+.quote-note-form label{display:grid;gap:5px;font-size:12px;font-weight:600}
+.quote-note-form input,.quote-note-form textarea{width:100%;padding:10px 12px;font:inherit;font-size:12px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:9px}
+.quote-note-form>div{display:flex;gap:8px}
+@media(max-width:1100px){.quote-field-grid{gap:18px}.quote-field{grid-template-columns:1fr;gap:3px}.quote-field dt{text-align:left}.quote-highlights{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:820px){.quote-record-layout{grid-template-columns:1fr}.quote-related-nav{position:static;display:flex;flex-direction:row;overflow-x:auto;gap:2px;padding:5px}.quote-related-nav h3{display:none}.quote-related-nav button{width:auto;flex:none;gap:5px;border-radius:8px;white-space:nowrap;padding:10px}.quote-record-header{align-items:flex-start;flex-direction:column}.quote-action-bar{justify-content:flex-start}}
+@media(max-width:560px){.quote-record-header{padding:16px}.quote-record-heading h1{font-size:19px}.quote-field-grid{grid-template-columns:1fr;gap:18px}.quote-highlights{gap:12px;padding:14px}.quote-highlights strong{font-size:12px}.quote-section-head{padding:14px 16px}.quote-section-body{padding:5px 16px}.quote-tab-strip button{min-width:100px;padding:9px 16px}}
