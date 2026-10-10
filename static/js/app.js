@@ -9,6 +9,8 @@ import { createSetupFeature } from "./features/setup.js";
 import { createBlueprintFeature } from "./features/blueprints.js";
 import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
+import { createTeamspacesFeature } from "./features/teamspaces.js";
+import { createDashboardSupport } from "./features/dashboard-support.js";
 
 async function api(path, options = {}, retried = false) {
   try {
@@ -213,6 +215,8 @@ async function refreshNavCount() {
 }
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
+const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $, readForm, toast, navigate });
+const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $, openRecordModal });
 
 async function navigate(path, replace = false) {
   if (replace) history.replaceState({}, "", path); else history.pushState({}, "", path);
@@ -401,56 +405,6 @@ async function renderRoute() {
   }
 }
 
-async function teamspacesView() {
-  const data = await api("/api/teamspaces");
-  const items = data.items || [];
-  return `${pageHeader("Workspace", "Teamspaces", "Organize modules, people, and work around the teams that use CONVOSIS CRM.")}
-    <div class="teamspaces-layout">
-      <section class="card settings-section"><div class="settings-section-head"><h2>Create a teamspace</h2><p>Give a group a focused workspace without changing the underlying CRM records.</p></div>
-        <form data-teamspace-form class="settings-form"><div class="form-grid"><div class="field"><label>Name</label><input class="field-input" name="name" required placeholder="Revenue team" /></div><div class="field"><label>Icon</label><input class="field-input" name="icon" value="◈" maxlength="4" /></div><div class="field field-full"><label>Description</label><textarea class="field-input" name="description" rows="3" placeholder="What this teamspace is for"></textarea></div></div><div class="form-actions"><button class="button button-primary" type="submit">Create teamspace</button></div></form>
-      </section>
-      <section class="card settings-section"><div class="settings-section-head"><h2>Your teamspaces</h2><p>${items.length} active workspace${items.length === 1 ? "" : "s"} with shared module context.</p></div><div class="teamspace-list">${items.length ? items.map((item) => `<article class="teamspace-card"><div class="teamspace-icon">${esc(item.icon || "◈")}</div><div class="rule-info"><strong>${esc(item.name)}</strong><small>${esc(item.description || "No description yet")}</small><small>${item.members?.length || 0} member${item.members?.length === 1 ? "" : "s"} · ${(item.modules || []).length} module${(item.modules || []).length === 1 ? "" : "s"}</small></div><button class="button button-small button-ghost" data-teamspace-open="${item.id}">Open</button></article>`).join("") : emptyState("◈", "No teamspaces yet", "Create a workspace for a sales, support, or operations group.")}</div></section>
-    </div>`;
-}
-
-function bindTeamspaces() {
-  $("[data-teamspace-form]")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    try { await api("/api/teamspaces", { method: "POST", body: JSON.stringify(readForm(event.currentTarget)) }); toast("Teamspace created", "The new workspace is ready for your team."); await navigate("/teamspaces", true); }
-    catch (error) { toast("Could not create teamspace", error.message, "error"); }
-  });
-  $$('[data-teamspace-open]').forEach((button) => button.addEventListener("click", async () => {
-    const item = await api(`/api/teamspaces/${button.dataset.teamspaceOpen}`);
-    toast(item.name, `${item.members.length} members · ${(item.modules || []).length} modules`, "success");
-  }));
-}
-
-
-async function dashboardReportView(key) {
-  const rawOffset = Number(new URLSearchParams(window.location.search).get("offset") || "0");
-  const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
-  const report = await api(`/api/dashboard/report/${encodeURIComponent(key)}?limit=25&offset=${offset}`);
-  const isDeal = ["open-deals", "pipeline-value"].includes(key);
-  const isActivity = key === "activities-due";
-  const column = isDeal ? "Amount" : isActivity ? "Due date" : key === "ai-action-queue" ? "Follow-up / validity" : "Next follow-up";
-  const rows = (report.items || []).map((item) => {
-    const date = item.date ? (isActivity ? formatDateTime(item.date) : formatDate(item.date)) : "—";
-    const value = isDeal ? formatMoney(item.amount || 0) : date;
-    return `<tr><td><strong>${esc(item.title)}</strong><span class="sub-cell">${esc(item.context || item.resource)}</span></td><td>${badge(item.status || "Unspecified")}</td><td>${esc(value)}</td><td><button type="button" class="button button-small button-ghost" data-go="${esc(item.url)}">Open ↗</button></td></tr>`;
-  }).join("");
-  const base = `/dashboard/report/${encodeURIComponent(key)}`;
-  const previous = offset > 0 ? `<button type="button" class="button button-small button-ghost" data-go="${base}?offset=${Math.max(0, offset - report.limit)}">← Previous</button>` : "";
-  const next = report.has_more ? `<button type="button" class="button button-small button-ghost" data-go="${base}?offset=${offset + report.limit}">Next →</button>` : "";
-  const from = report.total ? offset + 1 : 0;
-  const to = Math.min(offset + (report.items || []).length, report.total);
-  return `${pageHeader("Dashboard / Reports", report.title, report.description, '<button type="button" class="button button-ghost" data-go="/dashboard">← Back to dashboard</button>')}
-    <section class="card dashboard-report" data-dashboard-report="${esc(key)}">
-      <div class="card-head"><div class="card-head-copy"><h2>${report.total} matching record${report.total === 1 ? "" : "s"}</h2><small>Live CRM records${report.amount != null ? " · Open pipeline: " + formatMoney(report.amount) : ""}</small></div></div>
-      <div class="card-body">${rows ? `<div class="table-wrap"><table class="data-table dashboard-report-table"><thead><tr><th>Record</th><th>Status / Stage</th><th>${column}</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState("◎", "No matching records", "There are no records matching this dashboard metric right now.")}</div>
-      <div class="dashboard-report-footer"><span>${from}–${to} of ${report.total}</span><div class="dashboard-report-pages">${previous}${next}</div></div>
-    </section>`;
-}
-
 async function dashboardView() {
   const data = await api("/api/dashboard");
   const metrics = data.metrics;
@@ -541,33 +495,6 @@ function bindReportDashboard() {
   $(`[data-new-dashboard]`)?.addEventListener("click", () => navigate("/dashboards"));
   $(`[data-dashboard-form]`)?.addEventListener("submit", async (event) => { event.preventDefault(); try { const data = dashboardFormPayload(event.currentTarget); const id = data.id; delete data.id; await api(`/api/platform/dashboards${id ? `/${id}` : ""}`, {method:id ? "PATCH" : "POST", body:JSON.stringify(data)}); toast("Dashboard saved", "Your custom dashboard layout is ready."); await navigate("/dashboards", true); } catch (error) { toast("Could not save dashboard", error.message, "error"); } });
   $(`[data-preview-dashboard]`)?.addEventListener("click", async (event) => { try { const result = await api(`/api/dashboards/${event.currentTarget.dataset.previewDashboard}/view`, {method:"POST", body:"{}"}); $(`[data-dashboard-widgets]`).innerHTML = result.widgets.length ? `<div class="dashboard-grid">${result.widgets.map((widget) => `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>${esc(widget.title)}</h2><small>${esc(widget.type)} · ${widget.result ? `${widget.result.total} rows` : "Unavailable"}</small></div></div><div class="card-body">${reportResultHtml(widget.result || widget)}</div></section>`).join("")}</div>` : emptyState("▦", "No widgets", "Add a report widget to preview this dashboard."); } catch (error) { toast("Preview failed", error.message, "error"); } });
-}
-
-function performanceTable(rows) {
-  if (!rows.length) return emptyState("◎", "No active salespeople", "Add active users and targets to calculate performance.");
-  return `<div class="table-wrap"><table class="data-table performance-table"><thead><tr><th>Salesperson</th><th>Target</th><th>Achieved</th><th>Achievement</th><th>Conversions</th><th>Incentive</th></tr></thead><tbody>${rows.map((row) => `<tr><td><strong>${esc(row.name)}</strong><span class="sub-cell">${esc(row.role)}${row.target_configured ? "" : " · target missing"}</span></td><td>${formatMoney(row.target)}</td><td>${formatMoney(row.achieved)}</td><td><span class="achievement-meter"><i style="width:${Math.min(Number(row.achievement_percent || 0), 100)}%"></i></span><strong>${Number(row.achievement_percent || 0).toFixed(1)}%</strong></td><td>${row.conversions}</td><td>${formatMoney(row.incentive)}</td></tr>`).join("")}</tbody></table></div>`;
-}
-
-function attentionQueue(attention) {
-  const leads = attention.stuck_leads || [];
-  const quotes = attention.quotes_needing_follow_up || [];
-  const items = [
-    ...leads.map((item) => `<button class="related-item" data-go="/leads/${item.id}"><span class="related-dot">!</span><span class="related-main"><strong>${esc(item.name)}</strong><small>Lead stuck at ${esc(item.status)}${item.next_follow_up ? ` · follow-up ${formatDate(item.next_follow_up)}` : ""}</small></span><span>›</span></button>`),
-    ...quotes.map((item) => `<button class="related-item" data-go="/quotes"><span class="related-dot">₹</span><span class="related-main"><strong>${esc(item.name)}</strong><small>${esc(item.status)}${item.valid_until ? ` · valid until ${formatDate(item.valid_until)}` : " · no expiry date"}</small></span><span>›</span></button>`),
-  ];
-  return items.length ? items.join("") : emptyState("✓", "Nothing urgent", "No stale leads or quotations need immediate follow-up.");
-}
-
-function activityItem(item) {
-  const rawKind = String(item.activity_type || "task").toLowerCase();
-  const kind = ["call", "meeting"].includes(rawKind) ? rawKind : "task";
-  const icon = kind === "call" ? "⌕" : kind === "meeting" ? "◷" : "✓";
-  return `<div class="activity-item"><span class="activity-icon ${kind}">${icon}</span><div class="activity-copy"><strong>${esc(item.subject)}</strong><small>${esc(item.related_label || "Unlinked record")} · ${esc(titleCase(item.status))}</small></div><span class="activity-time">${formatDateTime(item.due_at)}</span></div>`;
-}
-
-function bindDashboard() {
-  $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create)));
-  // The global delegated data-go handler performs dashboard navigation once.
 }
 
 async function moduleView(resource) {
