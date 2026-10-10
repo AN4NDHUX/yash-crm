@@ -1,6 +1,6 @@
 // CONVOSIS CRM service worker: makes the app installable and keeps the app shell available.
 // Data is never cached: /api requests always go to the server, so the app needs the server running.
-const CACHE = "convosis-crm-shell-v7";
+const CACHE = "convosis-crm-shell-v8";
 // Do not prefetch the protected HTML shell during service-worker install. The
 // first authenticated navigation stores it for offline use without creating a
 // second Basic-auth challenge or caching a 401 response.
