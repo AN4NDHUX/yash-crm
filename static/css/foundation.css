@@ -337,6 +337,27 @@ img, svg, canvas, video { max-width: 100%; }
 .related-item small { display: block; color: var(--text-faint); font-size: 10px; margin-top: 2px; }
 .related-dot { width: 25px; height: 25px; border-radius: 7px; display: inline-flex; justify-content: center; align-items: center; color: var(--indigo); background: var(--surface-indigo); font-size: 11px; }
 
+/* AI action queue: flat, full-width clickable rows without item boxes. */
+.ai-queue-list { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+.ai-queue-row {
+  appearance: none; display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 12px 0; margin: 0; border: 0; border-radius: 0; box-shadow: none;
+  background: transparent; color: var(--text); text-align: left; font: inherit;
+  cursor: pointer;
+}
+.ai-queue-row + .ai-queue-row { border-top: 1px solid var(--border); }
+.ai-queue-row:hover { background: transparent; color: var(--premium-blue-700, var(--indigo)); }
+.ai-queue-row:focus-visible { outline: 2px solid var(--premium-blue-600, var(--indigo)); outline-offset: 2px; }
+.ai-queue-icon {
+  flex: 0 0 27px; display: inline-flex; align-items: center; justify-content: center;
+  width: 27px; height: 27px; border-radius: 7px; color: var(--indigo);
+  background: var(--surface-indigo); font-size: 12px; font-weight: 650;
+}
+.ai-queue-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.ai-queue-copy strong { overflow-wrap: anywhere; font-size: 12px; font-weight: 650; line-height: 1.4; }
+.ai-queue-copy small { overflow-wrap: anywhere; font-size: 11px; color: var(--text-faint); line-height: 1.45; }
+.ai-queue-chevron { flex: none; color: var(--text-faint); font-size: 18px; }
+
 .view-toggle { display: inline-flex; background: var(--surface-soft); padding: 3px; border-radius: 7px; }
 .view-toggle button { height: 28px; border: 0; background: transparent; color: var(--text-faint); border-radius: 5px; padding: 0 10px; font-size: 11px; }
 .view-toggle button.active { background: #fff; color: var(--text); box-shadow: var(--shadow-sm); }
