@@ -6,7 +6,7 @@ const ALIASES = {
   "phone number": "phone", "mobile number": "phone", "mobile": "phone", "telephone": "phone",
   "contact number": "phone", "lead name": "name", "full name": "name", "account name": "name",
   "deal name": "name", "lead status": "status", "lead source": "source",
-  "assigned to": "owner_id", "remarks": "notes", "last contacted date": "next_follow_up",
+  "assigned to": "owner_id", "remarks": "notes", "next follow up date": "next_follow_up", "next follow-up date": "next_follow_up",
 };
 
 export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
@@ -160,6 +160,9 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
       const required=current.resource==="contacts"?"first_name":"name";
       if (!Object.values(current.mapping).includes(required)) {
         toast("Required mapping",`Map ${required.replace("_"," ")} to continue.`,"error");return;
+      }
+      if (current.resource==="contacts" && !Object.values(current.mapping).includes("last_name")) {
+        toast("Last Name required", "Map Last Name before continuing with Contacts.", "error"); return;
       }
       if (["phone","email"].includes(current.duplicate) && !Object.values(current.mapping).includes(current.duplicate)) {
         toast("Matching field required", "Map the selected duplicate matching field.", "error");return;
