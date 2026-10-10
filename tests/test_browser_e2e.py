@@ -453,6 +453,10 @@ def test_browser_leads_flat_timeline_and_split_views():
                 }""")
                 assert all(item["status"] in (200, 201) for item in created), created
                 page.goto(base + "/leads")
+                try:
+                    page.locator('[data-toggle-view="timeline"]').wait_for(timeout=12000)
+                except Exception as error:
+                    raise AssertionError("Leads failed to render: " + page.locator("#app-content").inner_text()[:1800] + " | URL " + page.url) from error
                 page.locator('[data-toggle-view="timeline"]').click()
                 page.locator(".flat-timeline-entry").first.wait_for(timeout=15000)
                 assert page.locator(".flat-timeline-entry").count() >= 2
