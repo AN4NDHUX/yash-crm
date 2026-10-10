@@ -1003,6 +1003,12 @@ def ensure_workspace_defaults(db: Session) -> None:
         db.add(Attachment(name="Customer requirements.pdf", file_type="PDF", file_size="2.4 MB", url="#", related_type="accounts", related_id=account.id, owner_id=owner.id, organization_id=organization_id))
     if db.scalar(select(Email.id).limit(1)) is None and owner and contact:
         db.add(Email(subject="Follow-up and next steps", from_email=owner.email, to_email=contact.email, body="Sharing the next steps from our conversation.", status="Sent", sent_at=datetime.utcnow() - timedelta(hours=3), related_type="contacts", related_id=contact.id, owner_id=owner.id, organization_id=organization_id))
+    if organization_id:
+        db.flush()
+        for item in db.scalars(select(Product).where(
+            Product.organization_id == organization_id, Product.record_number.is_(None)
+        )).all():
+            apply_number(db, item)
     db.commit()
 
 
@@ -1066,6 +1072,14 @@ def ensure_platform_defaults(db: Session, include_demo: bool = False) -> None:
             sync_platform_columns(record, values)
             db.add(record)
     db.flush()
+    if organization_id:
+        for item in db.scalars(select(PlatformRecord).where(
+            PlatformRecord.organization_id == organization_id,
+            PlatformRecord.resource.in_(tuple(NUMBER_DEFINITIONS)),
+            PlatformRecord.record_number.is_(None),
+        )).all():
+            apply_number(db, item)
+        db.flush()
 
 
 STAGE_PROBABILITY = {"Qualification": 20, "Needs Analysis": 40, "Proposal": 60, "Negotiation": 80, "Closed Won": 100, "Closed Lost": 0}
