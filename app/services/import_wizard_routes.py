@@ -25,6 +25,8 @@ from app.services.security import (
     current_actor, authorize_field_values, can_access_record, _enforce_record_limit,
 )
 from app.services.import_wizard import parse_import_file, MAX_IMPORT_ROWS, MAX_FILE_BYTES
+from app.services.record_deduplication import reject_duplicate
+from app.services.lead_conversion import apply_lead_stage_lifecycle
 
 router = APIRouter()
 
@@ -201,9 +203,14 @@ async def submit_guided_import(
                         if operation == "add":
                             skipped += 1
                             continue
+                        if resource == "leads" and match.status == "Converted":
+                            raise HTTPException(409, "Converted Leads are read-only")
                         for key, value in values.items():
                             setattr(match, key, value)
+                        reject_duplicate(db, resource, {col.key:getattr(match,col.key) for col in model.__table__.columns}, exclude_id=match.id)
                         db.flush()
+                        if resource == "leads":
+                            apply_lead_stage_lifecycle(db, match, actor)
                         if trigger_automation:
                             run_record_automation(db, resource, "update", match, values)
                         add_audit(db, "import_update", resource, match.id, "Updated through guided import")
@@ -231,9 +238,12 @@ async def submit_guided_import(
                             )):
                                 values.pop("owner_id", None)
                         values.setdefault("owner_id", actor.id)
+                        reject_duplicate(db, resource, values)
                         record = model(**values)
                         db.add(record)
                         db.flush()
+                        if resource == "leads":
+                            apply_lead_stage_lifecycle(db, record, actor)
                         if trigger_automation:
                             run_record_automation(db, resource, "create", record, values)
                         if followup_task:
