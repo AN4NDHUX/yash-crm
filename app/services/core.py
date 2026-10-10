@@ -255,6 +255,7 @@ def normalize_platform_links(db: Session, resource: str, values: dict[str, Any])
 
 
 from app.services.auto_numbering import NUMBER_DEFINITIONS, NUMBER_LOCK, assert_number_immutable, apply_number
+TRANSACTION_NUMBERS = NUMBER_DEFINITIONS
 
 
 def ensure_transaction_number(record: PlatformRecord, db: Session) -> None:
@@ -1138,6 +1139,10 @@ __all__ = [
     "STAGE_PROBABILITY",
     "STAGE_STATUS",
     "TRANSACTION_NUMBERS",
+    "NUMBER_LOCK",
+    "NUMBER_DEFINITIONS",
+    "assert_number_immutable",
+    "apply_number",
     "_active_blueprint",
     "_execute_workflow_action",
     "_record_title",
