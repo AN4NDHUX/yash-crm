@@ -167,3 +167,45 @@ button.dashboard-metric-link:focus-visible { outline:3px solid var(--primary, #2
 .dashboard-report-footer { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; gap:12px; flex-wrap:wrap; border-top:1px solid var(--border, #e4eaf3); }
 .dashboard-report-pages { display:flex; gap:8px; }
 @media (max-width:700px) { .dashboard-report-footer { padding:12px; } }
+
+
+/* Core CRM advanced filters: compact Zoho-inspired sidebar and responsive list. */
+.advanced-filter-toggle { flex:0 0 auto; font-weight:650; }
+.advanced-filter-layout { min-width:0; }
+.advanced-filter-layout.filters-visible { display:grid; grid-template-columns:minmax(210px,244px) minmax(0,1fr); align-items:start; gap:14px; }
+.advanced-filter-results { min-width:0; }
+.advanced-filter-sidebar { min-width:0; overflow:hidden; background:#fff; border:1px solid var(--border,#dce3ef); border-radius:12px; display:flex; flex-direction:column; max-height:calc(100dvh - 210px); position:sticky; top:16px; }
+.advanced-filter-sidebar[hidden], .advanced-filter-condition[hidden], .advanced-filter-option[hidden] { display:none!important; }
+.advanced-filter-head { display:flex; justify-content:space-between; align-items:center; padding:16px 14px 10px; gap:8px; color:var(--text,#1a2745); font-size:14px; }
+.advanced-filter-close { background:transparent; border:0; color:var(--text-muted,#65758d); font-size:24px; cursor:pointer; width:28px; height:28px; display:grid; place-items:center; border-radius:6px; }
+.advanced-filter-close:hover { background:#edf2fa; }
+.advanced-filter-search-label { margin:4px 12px 12px; display:flex; align-items:center; gap:7px; min-height:36px; border:1px solid var(--border,#dce3ef); border-radius:8px; padding:0 10px; color:#66758c; }
+.advanced-filter-search-label input { width:100%; min-width:0; outline:none; border:0; font:inherit; font-size:13px; background:transparent; color:var(--text,#1a2745); }
+.advanced-filter-scroll { overflow-y:auto; overscroll-behavior:contain; padding:0 12px 14px; flex:1 1 auto; min-height:0; scrollbar-width:thin; }
+.advanced-filter-group { padding:8px 0 10px; border-top:1px solid #e9eef6; }
+.advanced-filter-group summary { list-style:none; display:flex; justify-content:space-between; gap:6px; font-weight:700; color:var(--text,#1a2745); font-size:12px; padding:7px 2px; cursor:pointer; }
+.advanced-filter-group summary::before { content:"▾"; margin-right:3px; }
+.advanced-filter-group:not([open]) summary::before { content:"▸"; }
+.advanced-filter-group summary::-webkit-details-marker { display:none; }
+.advanced-filter-group summary span { font-weight:500; color:#8190a8; margin-left:auto; }
+.advanced-filter-options { display:flex; flex-direction:column; gap:3px; padding:4px 0; }
+.advanced-filter-option { padding:3px 2px; border-radius:6px; }
+.advanced-filter-option > label { display:flex; align-items:flex-start; gap:8px; font-size:12px; line-height:1.5; cursor:pointer; color:var(--text,#1a2745); }
+.advanced-filter-option > label input { margin:3px 0 0; flex:0 0 auto; width:15px; height:15px; accent-color:#2b64d7; }
+.advanced-filter-option > label span { min-width:0; overflow-wrap:anywhere; }
+.advanced-filter-option:hover { background:#f7f9fd; }
+.advanced-filter-condition { padding:8px 0 6px 23px; display:flex; gap:6px; flex-direction:column; }
+.advanced-filter-condition select,.advanced-filter-condition input { min-width:0; width:100%; padding:8px 7px; border:1px solid var(--border,#dce3ef); border-radius:6px; font-size:12px; color:var(--text,#1a2745); background:#fff; }
+.advanced-filter-hint { font-size:11px; color:var(--text-muted,#65758d); }
+.advanced-filter-actions { padding:12px; border-top:1px solid var(--border,#dce3ef); background:#fbfcff; flex:0 0 auto; display:flex; flex-direction:column; gap:9px; }
+.advanced-filter-actions > label { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:12px; }
+.advanced-filter-actions > label select { border:1px solid var(--border,#dce3ef); border-radius:6px; background:#fff; padding:6px; min-width:0; }
+.advanced-filter-buttons { display:flex; gap:8px; }
+.advanced-filter-buttons > button { flex:1 1 0; min-width:0; }
+.advanced-filter-actions small { color:var(--text-muted,#65758d); font-size:11px; }
+.advanced-filter-sidebar :is(button, input, select, summary):focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+@media(max-width:950px) {
+  .advanced-filter-layout.filters-visible { grid-template-columns:minmax(0,1fr); }
+  .advanced-filter-sidebar { position:static; max-height:440px; }
+  .advanced-filter-results { width:100%; }
+}
