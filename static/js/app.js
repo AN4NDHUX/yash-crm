@@ -118,7 +118,6 @@ async function ensurePlatformLookup(resource) {
   } catch (error) {
 
 
-    // only if the user actually needs that lookup.
     state.platformLookups[resource] = [];
   }
 }
@@ -1115,7 +1114,7 @@ function settingsResourceConfig(resource) {
 function readForm(form) {
   const data = {};
   $$('[name]', form).forEach((input) => {
-    if (input.type === "file" || input.readOnly && ["record_number","quote_number","order_number","po_number","invoice_number"].includes(input.name)) return;
+    if (input.type === "file" || input.readOnly) return;
     let value = input.value;
     if (input.dataset.numeric === "true" || ["owner_id", "account_id", "contact_id", "deal_id", "related_id", "lead_score", "probability", "amount", "employees", "annual_revenue", "unit_price", "stock_quantity"].includes(input.name)) value = value ? Number(value) : null;
     else if (["tags"].includes(input.name)) value = value ? value.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
@@ -1389,7 +1388,6 @@ function bindGlobal() {
     try {
       await api(`/api/notifications/${notificationId}/read`, { method: "POST" });
     } catch {
-      // Popup dismissal must never interrupt the CRM.
     }
   };
 
@@ -1425,7 +1423,6 @@ function bindGlobal() {
       const items = Array.isArray(data.items) ? data.items : [];
       items.slice().reverse().forEach(showNotificationPopup);
     } catch {
-      // Notifications are optional UI; never show an error popup if the feed is unavailable.
     }
   };
 
