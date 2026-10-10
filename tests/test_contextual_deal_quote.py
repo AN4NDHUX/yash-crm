@@ -51,7 +51,7 @@ def test_account_to_deal_and_deal_to_quote_preserve_links_and_show_in_reports():
     assert out['saved']['status']=='Draft',out
     assert out['saved']['terms']=='Net 30',out
     assert out['saved']['amount']==8700,out
-    assert out['saved']['quote_number'].startswith('QUO-'),out
+    assert out['saved']['quote_number'].startswith('QT'),out
     assert out['quote_listing']==1 and out['account_count']==1 and out['deal_count']==1,out
     assert out['account_deals'][0]['id']==out['deal_id'],out
     assert any(item['id']==out['quote']['id'] and item['resource']=='quotes'
