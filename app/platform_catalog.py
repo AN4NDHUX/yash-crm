@@ -291,7 +291,7 @@ SETUP_NAVIGATION: dict[str, list[tuple[str, str]]] = {
     ],
     "Experience Center": [("signals","Signals"),("command_center","CommandCenter"),("segmentation","Segmentation")],
     "Data Administration": [
-        ("import","Import"),("export","Export"),("data_backup","Data Backup"),("storage","Storage"),("recycle_bin","Recycle Bin"),("sandboxes","Sandbox"),("copy_customization","Copy Customization"),
+        ("import","Import"),("import_history","Import History"),("export","Export"),("data_backup","Data Backup"),("storage","Storage"),("recycle_bin","Recycle Bin"),("sandboxes","Sandbox"),("copy_customization","Copy Customization"),
         ("duplicates","Duplicate Management"),("data_quality","Data Quality"),("migration","Migration")
     ],
     "Marketplace": [("marketplace_integrations","All Integrations")],
