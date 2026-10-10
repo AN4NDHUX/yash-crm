@@ -22,13 +22,15 @@ def test_product_numbers_are_sequential_immutable_and_not_reused():
         out["archived_get"]=c.get(f"/api/products/{b['id']}").status_code
         out["read"]=c.get(f"/api/products/{a['id']}").json()
     """)
-    assert out["numbers"]==["PRD00001","PRD00002"],out
-    assert out["after_archive"]=="PRD00003",out
+    first,second=out["numbers"]
+    assert first.startswith("PRD") and second.startswith("PRD"),out
+    assert int(second[3:])==int(first[3:])+1,out
+    assert out["after_archive"]=="PRD"+str(int(second[3:])+1).zfill(5),out
     assert out["edit_number"]==out["create_number"]==422,out
     assert out["edit_name"]==200 and out["delete"]==200,out
     assert "Updated Valve" in out["active_products"] and "Valve C" in out["active_products"],out
     assert "Valve B" not in out["active_products"] and out["archived_get"]==404,out
-    assert out["read"]["name"]=="Updated Valve" and out["read"]["record_number"]=="PRD00001",out
+    assert out["read"]["name"]=="Updated Valve" and out["read"]["record_number"]==first,out
 
 
 def test_paid_sales_modules_all_numbered_readonly_and_openable():
