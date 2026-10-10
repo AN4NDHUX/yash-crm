@@ -46,7 +46,7 @@ def test_ui_contracts_and_setup_entries():
         assert f'["leads", "deals", "accounts", "contacts"]' in app
         assert f'["leads", "deals", "accounts", "contacts"]' in wizard
     assert 'data-start-import' in app
-    assert 'Phone Number must be mapped' in (ROOT / "app/main.py").read_text()
+    assert 'Phone Number must be mapped' in (ROOT / "app/services/import_wizard_routes.py").read_text()
     for item in ('("import","Import")', '("import_history","Import History")',
                  '("export","Export")', '("recycle_bin","Recycle Bin")'):
         assert item in catalog
