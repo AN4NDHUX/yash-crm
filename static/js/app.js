@@ -12,6 +12,7 @@ import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
 import { createTeamspacesFeature } from "./features/teamspaces.js";
 import { createDashboardSupport } from "./features/dashboard-support.js";
+import { createContextActions } from "./features/context-actions.js";
 
 async function api(path, options = {}, retried = false) {
   try {
@@ -217,6 +218,7 @@ async function refreshNavCount() {
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
 const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MODULES});
+const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $ });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
 const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
 
@@ -1053,46 +1055,6 @@ function fieldHtml(field, value = "") {
     input = `<input class="field-input" id="${id}" name="${field.key}" type="${type}" value="${esc(rendered)}" ${type === "number" ? 'step="any" data-numeric="true"' : ""} ${required} />`;
   }
   return `<div class="field ${field.full ? "full" : ""}"><label for="${id}">${esc(field.label)}${field.required ? ' <span class="required">*</span>' : ""}</label>${input}${hint}</div>`;
-}
-
-async function openQuoteForDeal(id) {
-  try {
-    const deal = await api(`/api/deals/${id}`);
-    await openPlatformModal("quotes", null, {
-      name: `${deal.name} - Quote`,
-      deal_id: deal.id,
-      account_id: deal.account_id || null,
-      contact_id: deal.contact_id || null,
-      amount: deal.amount ?? 0,
-      status: "Draft",
-    });
-    state.modal.context = { kind: "deal-quote", sourceId: deal.id };
-  } catch (error) {
-    toast("Cannot create quote", error.message, "error");
-  }
-}
-
-async function openDealForAccount(id) {
-  try {
-    const account = await api(`/api/accounts/${id}`);
-    await openRecordModal("deals", null, {
-      name: `${account.name} - Opportunity`,
-      account_id: account.id,
-      phone: account.phone || "",
-      amount: 0,
-      stage: "Qualification",
-      status: "Open",
-      type: "New business",
-    });
-    state.modal.context = { kind: "account-deal", sourceId: account.id };
-  } catch (error) {
-    toast("Cannot create deal", error.message, "error");
-  }
-}
-
-function bindContextCreationActions() {
-  $("[data-create-deal-quote]").forEach(button => button.addEventListener("click", () => openQuoteForDeal(Number(button.dataset.createDealQuote))));
-  $("[data-create-account-deal]").forEach(button => button.addEventListener("click", () => openDealForAccount(Number(button.dataset.createAccountDeal))));
 }
 
 async function openRecordModal(resource, id = null, preset = {}) {
