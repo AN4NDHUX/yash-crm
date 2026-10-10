@@ -85,6 +85,12 @@ def test_numbered_products_and_platform_records_can_open_edit_delete():
 
                 for resource, prefix in (("price_books", "PB"), ("vendors", "VND")):
                     page.goto(base + "/" + resource)
+                    try:
+                        page.locator(f'[data-platform-create="{resource}"]').first.wait_for(timeout=8000)
+                    except Exception as error:
+                        raise AssertionError("Missing platform Create button for "+resource+
+                            "; page="+page.locator("#app-content").inner_text()[:1500]+
+                            "; browser errors="+str(browser_errors)) from error
                     page.locator(f'[data-platform-create="{resource}"]').first.click()
                     number = page.locator('#modal-body [name="record_number"]')
                     assert number.get_attribute("readonly") is not None
