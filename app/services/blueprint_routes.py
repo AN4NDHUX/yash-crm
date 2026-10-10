@@ -242,4 +242,11 @@ def mount_blueprint_routes(app, current_actor, _require_organization_admin):
         data[bp.field_name or FIELDS[resource]] = edge["to"]
         # Route through the same permission, Blueprint and workflow validations as normal editing.
         from app.main import update_record
+        if resource == "leads" and (bp.field_name or FIELDS[resource]) == "status" and edge["to"] == "Converted":
+            from app.services.lead_conversion import BLUEPRINT_CONVERSION_CONTEXT
+            token = BLUEPRINT_CONVERSION_CONTEXT.set(True)
+            try:
+                return update_record(resource, item_id, RecordPayload(**data), db=db, actor=actor)
+            finally:
+                BLUEPRINT_CONVERSION_CONTEXT.reset(token)
         return update_record(resource, item_id, RecordPayload(**data), db=db, actor=actor)
