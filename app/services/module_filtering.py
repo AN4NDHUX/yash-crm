@@ -165,7 +165,15 @@ def parse_filters(resource: str, raw: str | None) -> tuple[str, list[dict[str, A
 def _same_org(parent: Any, child: Any) -> bool:
     first = getattr(parent, "organization_id", None)
     second = getattr(child, "organization_id", None)
-    return first == second and first is not None
+    if first is not None or second is not None:
+        # Never combine records across different organizations, including an
+        # organization-stamped record with a legacy unscoped record.
+        return first is not None and first == second
+    # Some legacy/test records predate tenant-stamping. Only their same-owner
+    # relationships can be followed, after per-record permission checks.
+    first_owner = getattr(parent, "owner_id", None)
+    second_owner = getattr(child, "owner_id", None)
+    return first_owner is not None and first_owner == second_owner
 
 
 def _matches_link(parent: Any, module: str, child: Any, related: str) -> bool:
