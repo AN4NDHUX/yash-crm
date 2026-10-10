@@ -1,0 +1,45 @@
+name: Sales Auto Numbering Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/models.py"
+      - "app/main.py"
+      - "app/services/auto_numbering.py"
+      - "app/services/core.py"
+      - "migrations/versions/0029_sales_record_numbering.py"
+      - "static/js/app.js"
+      - "static/js/features/modules.js"
+      - "static/js/features/platform-detail.js"
+      - "app/platform_catalog.py"
+      - "tests/test_sales_numbering_and_navigation.py"
+      - "tests/test_browser_sales_numbering.py"
+      - ".github/workflows/sales-numbering.yml"
+  workflow_dispatch:
+
+jobs:
+  numbering:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install regression dependencies
+        run: python -m pip install -r requirements-dev.txt pytest pytest-timeout
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Validate frontend syntax
+        run: |
+          node --check static/js/app.js
+          node --check static/js/features/platform-detail.js
+      - name: Test eight numbered sales modules and browser record lifecycle
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_sales_numbering_and_navigation.py tests/test_browser_sales_numbering.py --timeout=180
