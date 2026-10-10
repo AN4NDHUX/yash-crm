@@ -4834,6 +4834,9 @@ def get_platform_related(resource: str, item_id: int, db: Session = Depends(get_
                 linked[key].append(serialize(row, db, actor))
     linked["activities"] = [serialize(row, db, actor) for row in db.scalars(select(Activity).where(Activity.related_type == resource, Activity.related_id == item_id, Activity.archived == False).order_by(Activity.created_at.desc())).all() if can_access_record(db, "activities", row, actor)]
     linked["platform_records"] = [serialize_platform(row, db, actor) for row in db.scalars(select(PlatformRecord).where(PlatformRecord.related_type == resource, PlatformRecord.related_id == item_id, PlatformRecord.archived == False).order_by(PlatformRecord.updated_at.desc())).all() if can_access_record(db, row.resource, row, actor)]
+    if resource == "quotes":
+        from app.services.quote_related import quote_detail_relations
+        linked.update(quote_detail_relations(db, record, item_id, actor))
     return linked
 
 
