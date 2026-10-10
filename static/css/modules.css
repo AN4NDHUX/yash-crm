@@ -1472,3 +1472,61 @@ button, a, input, select, textarea { touch-action: manipulation; }
 @media(max-width:900px){.module-split-flat{grid-template-columns:minmax(0,1fr);gap:18px}.flat-split-list{border-right:0;border-bottom:1px solid #dce5f1}.flat-split-preview{padding:6px 2px 22px}.flat-split-item{min-height:65px}}
 @media(max-width:600px){.flat-preview-fields{grid-template-columns:1fr}.flat-timeline-entry{grid-template-columns:28px minmax(0,1fr) 18px;gap:9px}.flat-timeline-time{grid-column:2;grid-row:2;text-align:left;padding-bottom:8px}.flat-timeline-open{grid-column:3;grid-row:1}.flat-timeline-day{margin-left:40px}}
 @media(prefers-reduced-motion:reduce){.flat-split-item{transition:none}}
+
+
+/* Guided record imports: five-stage workspace inspired by Zoho's data administration flow. */
+.import-wizard{display:flex;flex-direction:column;min-height:calc(100vh - 190px);border:1px solid #d9e0ef;background:#fff;border-radius:12px;overflow:hidden;color:#183157}
+.import-wizard-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 22px;border-bottom:1px solid #e3e8f3;flex-wrap:wrap}
+.import-wizard-header h2{margin:0;font-size:20px;font-weight:650}
+.import-progress{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+.import-progress span{font-size:12px;font-weight:550;line-height:1.4;white-space:nowrap;padding:9px 12px;background:#f0f3fa;color:#75849d;clip-path:polygon(0 0,calc(100% - 10px) 0,100% 50%,calc(100% - 10px) 100%,0 100%,10px 50%)}
+.import-progress span.current{color:#9b4d14;background:#fff3e8}
+.import-progress span.complete{background:#e9f8ef;color:#16764b}
+.import-wizard-panel{flex:1;min-height:360px;padding:22px;overflow:auto}
+.import-upload-zone{margin:35px auto 20px;max-width:760px;min-height:255px;border:1px dashed #bfcce4;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;padding:25px;text-align:center}
+.import-upload-zone.dragging{border-color:#4666ed;background:#f0f5ff}
+.import-upload-zone strong{font-size:14px}
+.import-upload-zone p{margin:0;font-size:12px;color:#6c7b99}
+.import-upload-icon{font-size:38px;color:#456dd6}
+.import-browse{position:relative;background:#f4f6ff;border:1px solid #7b8cff;border-radius:5px;padding:8px 13px;cursor:pointer;color:#3b54bf}
+.import-input-row{display:flex;align-items:center;gap:14px;margin:18px auto;font-size:13px;color:#536682;max-width:760px;flex-wrap:wrap}
+.import-input-row select,.import-mapping-head input,.import-table select{background:#fff;border:1px solid #cbd4e8;border-radius:6px;padding:8px 11px;min-width:170px;color:#243b60;font:inherit}
+.import-input-row select:focus,.import-table select:focus{outline:2px solid #8da4f8;outline-offset:1px}
+.import-uploaded-file{display:flex;align-items:center;justify-content:space-between;gap:18px;min-width:min(100%,350px);border:1px solid #dce2ef;border-radius:6px;padding:9px 11px;background:#f8faff;font-size:12px}
+.import-uploaded-file span{color:#687891}
+.import-help{margin:15px auto;max-width:760px;padding:12px 14px;border-radius:7px;background:#fcfbed;color:#6e684b;font-size:12px}
+.import-form-section{border-bottom:1px solid #e8edf5;padding:10px 12px 20px;margin-bottom:12px}
+.import-form-section h3,.import-assign h3{font-size:14px;margin:7px 0 18px;color:#12294c}
+.import-choice{display:block;max-width:530px;padding:12px;border:1px solid transparent;border-radius:7px;font-size:13px}
+.import-choice:has(input:checked){border-color:#7c91ff;background:#f5f7ff}
+.import-mapping-layout{display:grid;grid-template-columns:minmax(185px,245px) minmax(0,1fr);min-height:420px;border:1px solid #e3e9f3;border-radius:8px;overflow:hidden}
+.import-mapping-aside{padding:20px 14px;border-right:1px solid #e0e6ef;background:#fafcff}
+.import-mapping-aside h3{margin:2px 0 14px;font-size:14px}
+.import-mapping-aside p{font-size:12px;color:#61708c}
+.import-mapping-aside button{width:100%;border:0;background:transparent;text-align:left;padding:12px;border-radius:7px;color:#334968;cursor:pointer}
+.import-mapping-aside button.active{background:#eaf0ff;color:#425bd2}
+.import-mapping-aside button span,.import-mapping-aside h3 span{float:right;border:1px solid #d7ddec;border-radius:100%;padding:0 6px}
+.import-mapping-body{min-width:0;padding:18px}
+.import-mapping-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:15px}
+.import-mapping-head h3{font-size:16px;margin:0 auto 0 0}
+.import-mapping-head button,.import-tabs button{border:1px solid #d7dfef;border-radius:6px;padding:8px 10px;background:#fff;color:#2d4675;cursor:pointer}
+.import-tabs{display:flex;gap:4px;flex-wrap:wrap}
+.import-tabs button.active{background:#eaf0ff;border-color:#7b91ed}
+.import-target-card{display:flex;flex-direction:column;gap:12px;max-width:180px;min-height:120px;border:1px solid #cfdaf4;padding:20px;border-radius:9px;background:#f8faff}
+.import-target-card small{color:#5b6e91}
+.import-scroll-table{max-height:440px;overflow:auto;border:1px solid #e1e7f2}
+.import-table{border-collapse:collapse;width:100%;font-size:13px}
+.import-table th{text-align:left;font-weight:600;position:sticky;top:0;background:#f8faff;padding:13px;border-bottom:1px solid #dce3f1;z-index:1}
+.import-table td{padding:11px 13px;border-bottom:1px solid #ebeff8;min-width:145px}
+.import-table tbody tr:nth-child(even){background:#f8faff}
+.import-table td:nth-child(3){max-width:350px;overflow-wrap:anywhere;font-size:12px}
+.import-mapping-required{font-size:12px;color:#be4e2e;font-weight:550}
+.import-assign section{padding:10px 8px 24px;margin-bottom:8px;border-bottom:1px solid #e3e9f0}
+.import-assign label{font-size:13px}
+.import-assign p{font-size:12px;color:#667a9d}
+.import-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 22px;border-top:1px solid #e2e8f2;background:#fcfdff}
+.import-footer>div{display:flex;gap:10px}
+.import-footer button{padding:9px 17px;border:1px solid #cbd4e8;border-radius:6px;background:#fff;color:#23406f;cursor:pointer}
+.import-footer .button-primary{background:#254ddb;color:white;border-color:#254ddb}
+.import-footer button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:750px){.import-wizard-panel{padding:12px}.import-wizard-header{padding:14px}.import-mapping-layout{grid-template-columns:1fr}.import-mapping-aside{border-right:0;border-bottom:1px solid #e0e6ef}.import-progress{width:100%}.import-progress span{font-size:10px;padding:8px}.import-upload-zone{margin:10px auto}}
