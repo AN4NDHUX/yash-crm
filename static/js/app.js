@@ -740,7 +740,7 @@ async function bulkArchiveLeads(current) {
 function bindModule(resource) {
   const current = state.moduleState[resource];
   bindModuleFilters({resource, current, renderRoute, toast});
-  $('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
+  $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
 
   const splitRoot = $(".module-split-flat");
