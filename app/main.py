@@ -5240,6 +5240,162 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
     return {"job_id": job.id, "resource": resource, "imported": imported, "errors": errors, "status": job.status}
 
 
+# Guided import endpoints are separate from the legacy CSV endpoint, preserving its
+# existing integrations while applying strict mapping and phone validation to the wizard.
+from app.services.import_wizard import parse_import_file, MAX_IMPORT_ROWS
+
+
+async def _wizard_uploads(files: list[UploadFile], charset: str) -> tuple[list[dict[str, Any]], list[str]]:
+    if not 1 <= len(files) <= 3:
+        raise HTTPException(422, "Select 1–3 files")
+    parsed = [parse_import_file(file.filename or "", await file.read(), charset) for file in files]
+    columns = parsed[0]["columns"]
+    if any(part["columns"] != columns for part in parsed[1:]):
+        raise HTTPException(422, "All files must have identical columns for one import")
+    if sum(part["count"] for part in parsed) > MAX_IMPORT_ROWS:
+        raise HTTPException(413, "Only 100,000 records can be imported per job")
+    return parsed, columns
+
+
+@app.post("/api/import-wizard/{resource}/preview")
+async def preview_guided_import(
+    resource: str, files: list[UploadFile] = File(...),
+    charset: str = Form("auto"), actor: User = Depends(current_actor)
+) -> dict[str, Any]:
+    if resource not in {"leads", "deals", "accounts", "contacts"}:
+        raise HTTPException(404, "Unknown import module")
+    parsed, columns = await _wizard_uploads(files, charset)
+    return {"resource": resource, "files": [{"name": p["filename"], "count": p["count"]} for p in parsed],
+            "columns": columns, "sample": parsed[0]["sample"],
+            "total": sum(p["count"] for p in parsed),
+            "fields": [{"key": key, "label": key.replace("_", " ").title()}
+                       for key in RESOURCE_MAP[resource].__table__.columns.keys()
+                       if key not in {"id", "created_at", "updated_at", "organization_id",
+                                      "owner_id", "archived", "converted_account_id",
+                                      "converted_contact_id", "converted_deal_id"}]}
+
+
+@app.post("/api/import-wizard/{resource}/submit")
+async def submit_guided_import(
+    resource: str, files: list[UploadFile] = File(...), mapping: str = Form(...),
+    charset: str = Form("auto"), operation: str = Form("add"),
+    duplicate_key: str = Form("none"), layout: str = Form("Default"),
+    trigger_automation: bool = Form(False),
+    db: Session = Depends(get_db), actor: User = Depends(current_actor)
+) -> dict[str, Any]:
+    if resource not in {"leads", "deals", "accounts", "contacts"}:
+        raise HTTPException(404, "Unknown import module")
+    if operation not in {"add", "update", "both"}:
+        raise HTTPException(422, "Invalid import operation")
+    if duplicate_key not in {"none", "phone", "email", "id"}:
+        raise HTTPException(422, "Invalid duplicate rule")
+    if operation in {"update", "both"} and duplicate_key == "none":
+        raise HTTPException(422, "Select a matching field to update records")
+    parsed, columns = await _wizard_uploads(files, charset)
+    try:
+        field_map = json.loads(mapping)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, "Invalid field mapping") from exc
+    if not isinstance(field_map, dict):
+        raise HTTPException(422, "Field mapping must be an object")
+    model = RESOURCE_MAP[resource]
+    restricted = {"id", "owner_id", "organization_id", "archived",
+                  "created_at", "updated_at", "converted_account_id",
+                  "converted_contact_id", "converted_deal_id", "lead_score"}
+    available = set(model.__table__.columns.keys()) - restricted
+    if any(k not in columns or not isinstance(v, str) or v not in available
+           for k, v in field_map.items()):
+        raise HTTPException(422, "Mapping contains an unknown or restricted field")
+    if len(set(field_map.values())) != len(field_map):
+        raise HTTPException(422, "Each CRM field can only be mapped once")
+    if "phone" not in field_map.values():
+        raise HTTPException(422, "Phone Number must be mapped before continuing")
+    required_field = "first_name" if resource == "contacts" else "name"
+    if required_field not in field_map.values():
+        raise HTTPException(422, f"{required_field.replace('_', ' ').title()} must be mapped")
+    if duplicate_key == "email" and "email" not in model.__table__.columns:
+        raise HTTPException(422, "Email matching is not supported for this module")
+    if duplicate_key != "none" and duplicate_key != "id" and duplicate_key not in field_map.values():
+        raise HTTPException(422, "The duplicate matching field must also be mapped")
+    if len(layout) > 100:
+        raise HTTPException(422, "Invalid layout name")
+
+    imported, updated, skipped, errors = 0, 0, 0, []
+    for part in parsed:
+        for row_number, row in enumerate(part["rows"], start=2):
+            try:
+                with db.begin_nested():
+                    raw_values = {field: row.get(column, "").strip()
+                                  for column, field in field_map.items()
+                                  if row.get(column, "").strip()}
+                    if not raw_values.get("phone"):
+                        raise HTTPException(422, "Phone Number cannot be empty")
+                    if not raw_values.get(required_field):
+                        raise HTTPException(422, f"{required_field.replace('_', ' ').title()} cannot be empty")
+                    values = {key: coerce_value(model, key, val) for key, val in raw_values.items()}
+                    authorize_field_values(db, resource, values, actor, "write")
+                    match = None
+                    if duplicate_key != "none":
+                        if duplicate_key == "id":
+                            record_id = row.get("id") or row.get("ID") or ""
+                            if str(record_id).strip().isdigit():
+                                match = db.get(model, int(record_id))
+                        else:
+                            check_value = str(raw_values.get(duplicate_key) or "").strip()
+                            if check_value:
+                                match = db.scalars(select(model).where(
+                                    func.lower(getattr(model, duplicate_key)) == check_value.lower(),
+                                    model.archived == False
+                                ).order_by(model.id)).first()
+                        if match is not None and (getattr(match, "archived", False)
+                                                  or not can_access_record(db, resource, match, actor)):
+                            raise HTTPException(403, "Matching record is not accessible")
+                    if match is not None:
+                        if operation == "add":
+                            skipped += 1
+                            continue
+                        for key, value in values.items():
+                            setattr(match, key, value)
+                        db.flush()
+                        if trigger_automation:
+                            run_record_automation(db, resource, "update", match, values)
+                        add_audit(db, "import_update", resource, match.id, "Updated through guided import")
+                        updated += 1
+                    elif operation == "update":
+                        skipped += 1
+                    else:
+                        _enforce_record_limit(db, actor)
+                        if resource == "leads":
+                            from app.services.stage_scoring import default_mapping, score_transition
+                            values["lead_score"] = score_transition("", values.get("status") or "New", default_mapping())["stage_score"]
+                        if resource in {"leads", "deals"} and "layout_name" in model.__table__.columns:
+                            values["layout_name"] = layout or "Default"
+                        if resource == "deals":
+                            stage = values.get("stage", "Qualification")
+                            values.setdefault("probability", STAGE_PROBABILITY.get(stage, 20))
+                            values.setdefault("status", STAGE_STATUS.get(stage, "Open"))
+                        values["owner_id"] = actor.id
+                        record = model(**values)
+                        db.add(record)
+                        db.flush()
+                        if trigger_automation:
+                            run_record_automation(db, resource, "create", record, values)
+                        add_audit(db, "import", resource, record.id, "Created through guided import")
+                        imported += 1
+            except Exception as exc:
+                errors.append({"file": part["filename"], "row": row_number,
+                               "error": str(getattr(exc, "detail", exc))[:240]})
+    job = ImportJob(owner_id=actor.id, organization_id=TENANT_ORGANIZATION_ID.get(),
+                    resource=resource, filename=", ".join(p["filename"] for p in parsed)[:220],
+                    status="Completed with errors" if errors else "Completed",
+                    total_rows=imported + updated + skipped + len(errors),
+                    imported_rows=imported + updated, error_rows=len(errors), errors=errors[:100])
+    db.add(job)
+    db.commit()
+    return {"job_id": job.id, "resource": resource, "imported": imported, "updated": updated,
+            "skipped": skipped, "errors": errors, "status": job.status}
+
+
 @app.get("/api/import-jobs")
 def import_jobs(db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     rows = db.scalars(select(ImportJob).order_by(ImportJob.created_at.desc()).limit(100)).all()
