@@ -18,7 +18,7 @@ def test_product_numbers_are_sequential_immutable_and_not_reused():
         out["delete"]=c.delete(f"/api/products/{b['id']}").status_code
         new=c.post("/api/products",json={"name":"Valve C"}).json()
         out["after_archive"]=new.get("record_number")
-        out["list_total"]=c.get("/api/products").json()["total"]
+        out["active_products"]=[row["name"] for row in c.get("/api/products").json()["items"]]
         out["archived_get"]=c.get(f"/api/products/{b['id']}").status_code
         out["read"]=c.get(f"/api/products/{a['id']}").json()
     """)
@@ -26,7 +26,8 @@ def test_product_numbers_are_sequential_immutable_and_not_reused():
     assert out["after_archive"]=="PRD00003",out
     assert out["edit_number"]==out["create_number"]==422,out
     assert out["edit_name"]==200 and out["delete"]==200,out
-    assert out["list_total"]==2 and out["archived_get"]==404,out
+    assert "Updated Valve" in out["active_products"] and "Valve C" in out["active_products"],out
+    assert "Valve B" not in out["active_products"] and out["archived_get"]==404,out
     assert out["read"]["name"]=="Updated Valve" and out["read"]["record_number"]=="PRD00001",out
 
 
