@@ -153,3 +153,17 @@
  .dashboard-grid .card-head-link { text-align:left; }
 }
 @media (max-width:420px) { .stats-grid { grid-template-columns:minmax(0,1fr); } }
+
+
+/* Clickable dashboard KPIs retain the appearance and spacing of stat cards. */
+button.dashboard-metric-link { appearance:none; display:flex; width:100%; font:inherit; color:inherit; text-align:left; cursor:pointer; }
+button.dashboard-metric-link:hover { border-color:var(--primary, #2463de); transform:translateY(-1px); }
+button.dashboard-metric-link:focus-visible { outline:3px solid var(--primary, #2463de); outline-offset:3px; }
+.dashboard-report { width:100%; min-width:0; }
+.dashboard-report .card-body { min-width:0; }
+.dashboard-report-table { width:100%; }
+.dashboard-report-table .sub-cell { display:block; margin-top:4px; }
+.dashboard-report-table td:last-child { text-align:right; white-space:nowrap; }
+.dashboard-report-footer { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; gap:12px; flex-wrap:wrap; border-top:1px solid var(--border, #e4eaf3); }
+.dashboard-report-pages { display:flex; gap:8px; }
+@media (max-width:700px) { .dashboard-report-footer { padding:12px; } }
