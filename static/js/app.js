@@ -1138,7 +1138,7 @@ async function submitRecord(event) {
     } else {
       created = await api(`/api/${resource}${id ? `/${id}` : ""}`, { method: id ? "PATCH" : "POST", body: JSON.stringify(data) });
     }
-    if (["accounts", "contacts"].includes(resource)) invalidateLookups();
+    if (["accounts", "contacts", "deals"].includes(resource)) invalidateLookups();
     if (resource === "users") { await refreshMeta(); if (id && id === state.profile?.id) { state.profile = await api("/api/settings/profile"); applyProfile(); } }
     closeModal();
     if (context?.kind === "account-deal" && created?.id) {
