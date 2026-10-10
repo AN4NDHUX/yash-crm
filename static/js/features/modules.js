@@ -50,7 +50,7 @@ export const MODULES = {
       { label: "Stage", cell: (r) => badge(r.stage) }, { label: "Amount", cell: (r) => `<strong>${formatMoney(r.amount)}</strong>` }, { label: "Probability", cell: (r) => `${r.probability || 0}%` }, { label: "Close date", cell: (r) => formatDate(r.expected_close_date) }, { label: "Owner", cell: (r) => r.owner_name || "Unassigned" },
     ],
     fields: [
-      { key: "name", label: "Deal name", required: true }, { key: "account_id", label: "Account", type: "account" }, { key: "contact_id", label: "Primary contact", type: "contact" }, { key: "amount", label: "Amount", type: "number" },
+      { key: "name", label: "Deal name", required: true }, { key: "phone", label: "Phone" }, { key: "account_id", label: "Account", type: "account" }, { key: "contact_id", label: "Primary contact", type: "contact" }, { key: "amount", label: "Amount", type: "number" },
       { key: "stage", label: "Stage", type: "select", options: ["Qualification", "Needs Analysis", "Proposal", "Negotiation", "Closed Won", "Closed Lost"] }, { key: "probability", label: "Probability (%)", type: "number" }, { key: "expected_close_date", label: "Expected close date", type: "date" }, { key: "owner_id", label: "Owner", type: "user" },
       { key: "type", label: "Deal type", type: "select", options: ["New business", "Expansion", "Renewal", "Partnership"] }, { key: "source", label: "Source" }, { key: "status", label: "Status", type: "select", options: ["Open", "Won", "Lost"] }, { key: "notes", label: "Notes", type: "textarea", full: true },
     ],
