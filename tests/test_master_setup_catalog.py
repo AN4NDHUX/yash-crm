@@ -16,7 +16,7 @@ def test_master_setup_groups_are_registered():
 
 
 def test_all_setup_links_resolve_to_real_resources_or_special_pages():
-    special = {"users", "audit_log", "import", "export", "recycle_bin", "duplicates", "approval_processes", "blueprints", "workflow_rules"}
+    special = {"users", "audit_log", "import", "import_history", "export", "recycle_bin", "duplicates", "approval_processes", "blueprints", "workflow_rules"}
     unresolved = []
     for group, links in SETUP_NAVIGATION.items():
         for resource, label in links:
