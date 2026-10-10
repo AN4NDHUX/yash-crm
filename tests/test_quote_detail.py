@@ -88,3 +88,15 @@ def test_quote_details_route_actions_and_responsive_styles_wired():
     assert 'data-quote-archive' in detail and 'data-quote-related-open' in detail
     assert '/api/platform/quotes/${id}/related' in detail
     assert '@media(max-width:820px)' in css
+
+
+def test_quote_detail_coexists_with_generic_modules_and_automatic_numbering():
+    app = (ROOT / 'static/js/app.js').read_text(encoding='utf-8')
+    table = (ROOT / 'static/js/features/platform-table.js').read_text(encoding='utf-8')
+    assert 'createPlatformDetailFeature' in app
+    assert 'selectAll: $$' in app
+    assert 'if (resource === "quotes")' in app
+    assert 'bindPlatformDetail(resource, id)' in app
+    assert 'data-platform-open="${resource}"' in table
+    assert 'href="/quotes/${Number(row.id)}"' in table
+    assert 'config.fields.filter((field) => !["record_number","quote_number","order_number","po_number","invoice_number"].includes(field.key))' in app
