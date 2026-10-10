@@ -237,6 +237,11 @@ async function renderRoute() {
       bindDashboard();
       return;
     }
+    if (parts[0] === "dashboard" && parts[1] === "report" && parts[2] && parts.length === 3) {
+      setBreadcrumb("Dashboard report", "Dashboard");
+      content.innerHTML = await dashboardReportView(parts[2]);
+      return;
+    }
     if (parts[0] === "teamspaces") {
       setBreadcrumb("Teamspaces", "Workspace");
       content.innerHTML = await teamspacesView();
@@ -419,19 +424,45 @@ function bindTeamspaces() {
   }));
 }
 
+
+async function dashboardReportView(key) {
+  const rawOffset = Number(new URLSearchParams(window.location.search).get("offset") || "0");
+  const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+  const report = await api(`/api/dashboard/report/${encodeURIComponent(key)}?limit=25&offset=${offset}`);
+  const isDeal = ["open-deals", "pipeline-value"].includes(key);
+  const isActivity = key === "activities-due";
+  const column = isDeal ? "Amount" : isActivity ? "Due date" : key === "ai-action-queue" ? "Follow-up / validity" : "Next follow-up";
+  const rows = (report.items || []).map((item) => {
+    const date = item.date ? (isActivity ? formatDateTime(item.date) : formatDate(item.date)) : "—";
+    const value = isDeal ? formatMoney(item.amount || 0) : date;
+    return `<tr><td><strong>${esc(item.title)}</strong><span class="sub-cell">${esc(item.context || item.resource)}</span></td><td>${badge(item.status || "Unspecified")}</td><td>${esc(value)}</td><td><button type="button" class="button button-small button-ghost" data-go="${esc(item.url)}">Open ↗</button></td></tr>`;
+  }).join("");
+  const base = `/dashboard/report/${encodeURIComponent(key)}`;
+  const previous = offset > 0 ? `<button type="button" class="button button-small button-ghost" data-go="${base}?offset=${Math.max(0, offset - report.limit)}">← Previous</button>` : "";
+  const next = report.has_more ? `<button type="button" class="button button-small button-ghost" data-go="${base}?offset=${offset + report.limit}">Next →</button>` : "";
+  const from = report.total ? offset + 1 : 0;
+  const to = Math.min(offset + (report.items || []).length, report.total);
+  return `${pageHeader("Dashboard / Reports", report.title, report.description, '<button type="button" class="button button-ghost" data-go="/dashboard">← Back to dashboard</button>')}
+    <section class="card dashboard-report" data-dashboard-report="${esc(key)}">
+      <div class="card-head"><div class="card-head-copy"><h2>${report.total} matching record${report.total === 1 ? "" : "s"}</h2><small>Live CRM records${report.amount != null ? " · Open pipeline: " + formatMoney(report.amount) : ""}</small></div></div>
+      <div class="card-body">${rows ? `<div class="table-wrap"><table class="data-table dashboard-report-table"><thead><tr><th>Record</th><th>Status / Stage</th><th>${column}</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table></div>` : emptyState("◎", "No matching records", "There are no records matching this dashboard metric right now.")}</div>
+      <div class="dashboard-report-footer"><span>${from}–${to} of ${report.total}</span><div class="dashboard-report-pages">${previous}${next}</div></div>
+    </section>`;
+}
+
 async function dashboardView() {
   const data = await api("/api/dashboard");
   const metrics = data.metrics;
   const maxPipeline = Math.max(...data.pipeline.map((row) => row.amount), 1);
   const maxLeads = Math.max(...data.lead_funnel.map((row) => row.count), 1);
   const performancePanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Sales performance</h2><small>Target, collections, conversion and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${performanceTable(data.sales_performance || [])}</div></section>`;
-  const attentionPanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div></div><div class="card-body">${attentionQueue(data.attention || {})}</div></section>`;
+  const attentionPanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div><button type="button" class="card-head-link" data-go="/dashboard/report/ai-action-queue">View queue ↗</button></div><div class="card-body">${attentionQueue(data.attention || {})}</div></section>`;
   return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-go="/ai"><span class="button-icon">✦</span>Ask AI</button><button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
     <div class="stats-grid">
-      <article class="card stat-card"><div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div><div class="stat-value">${metrics.total_leads}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
-      <article class="card stat-card"><div class="stat-top"><span class="stat-label">Open deals</span><span class="stat-icon">◇</span></div><div class="stat-value">${metrics.open_deals}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></article>
-      <article class="card stat-card"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></article>
-      <article class="card stat-card"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></article>
+      <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/total-leads" aria-label="Open Total leads report"><div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div><div class="stat-value">${metrics.total_leads}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></button>
+      <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/open-deals" aria-label="Open Open deals report"><div class="stat-top"><span class="stat-label">Open deals</span><span class="stat-icon">◇</span></div><div class="stat-value">${metrics.open_deals}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></button>
+      <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/pipeline-value" aria-label="Open Pipeline value report"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></button>
+      <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/activities-due" aria-label="Open Activities due report"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></button>
     </div>
     <div class="dashboard-grid management-grid">${performancePanel}${attentionPanel}</div>
     <div class="dashboard-grid">
@@ -535,7 +566,7 @@ function activityItem(item) {
 
 function bindDashboard() {
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create)));
-  $$('[data-go]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.go)));
+  // The global delegated data-go handler performs dashboard navigation once.
 }
 
 async function moduleView(resource) {
