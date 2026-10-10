@@ -803,7 +803,7 @@ async function detailView(resource, id) {
   const secondary = resource === "leads" ? record.company || record.email : resource === "contacts" ? record.email || record.job_title : resource === "accounts" ? record.website || record.industry : resource === "deals" ? `${record.stage} · ${formatMoney(record.amount)}` : resource === "products" ? `${record.category || "Product"} · ${formatMoney(record.unit_price)}` : `${titleCase(record.activity_type)} · ${formatDateTime(record.due_at)}`;
   const details = detailFields(resource, record);
   return `${pageHeader(config.label, title, secondary || "Record detail", `${resource === "leads" ? `<button class="button button-ghost" data-go="/ai?lead=${id}">✦ Analyze with AI</button>` : ""}<button class="button button-ghost" data-go="/${resource}">← Back to ${config.label.toLowerCase()}</button><button class="button button-primary" data-edit-record="${resource}" data-id="${id}">Edit ${config.singular.toLowerCase()}</button>`)}
-    <section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>
+    <section class="card detail-summary"><div class="detail-title-row"><span class="detail-avatar">${initials(title)}</span><div class="detail-title-copy"><span class="eyebrow">${esc(config.singular)}</span><h2>${esc(title)}</h2><p>${esc(secondary || "No summary available")}</p></div><div class="detail-actions">${resource === "leads" && record.status !== "Converted" && !timeline?.blueprint_enabled ? `<button class="button button-small button-ghost" data-convert-lead="${id}">Convert</button>` : ""}<button class="button button-small button-ghost" data-delete-record="${resource}" data-id="${id}">Archive</button></div></div><div class="detail-meta-grid">${details.map((item) => `<div><span class="meta-label">${esc(item.label)}</span><span class="meta-value">${item.html || esc(item.value || "—")}</span></div>`).join("")}</div>${record.notes ? `<div class="notes-box"><h3>Notes</h3><p>${esc(record.notes)}</p></div>` : ""}</section>
     <div class="detail-record-layout"><aside class="detail-related-nav"><div class="detail-related-nav-head"><h3>Related List</h3></div>${relatedNavigation(resource, related, timeline)}</aside><section class="detail-record-main"><div class="detail-tab-strip"><button class="detail-tab active" type="button" data-detail-tab="overview">Overview</button><button class="detail-tab" type="button" data-detail-tab="timeline">Timeline</button></div><div class="detail-tab-panel" data-detail-panel="overview">${resource === "leads" ? leadStagePanel(record, timeline) : ""}${resource === "deals" ? `<section class="detail-plain-section" id="detail-section-stage_progress"><div class="detail-plain-head"><h3>Stage progress</h3></div><div class="detail-plain-body">${blueprintDealProgress(record,timeline)}</div></section>` : ""}${relatedContent(resource, related)}</div><div class="detail-tab-panel" data-detail-panel="timeline" hidden><section class="detail-plain-section" id="detail-section-timeline"><div class="detail-plain-head"><h3>Timeline</h3></div><div class="detail-plain-body">${(resource === "leads" || resource === "deals") ? timelineHtml(timeline?.items || []) : `<div class="activity-list">${related.activities?.length ? related.activities.map(activityItem).join("") : `<p class="related-empty">No linked activity yet.</p>`}</div>`}</div></section></div></section></div>`;
 }
 
@@ -872,12 +872,12 @@ function leadStagePanel(record,timeline) {
   const current = timeline?.current_stage || record.status || "New";
   const custom = !!timeline?.blueprint_enabled;
   const choices = custom ? (timeline.transition_details || []) : MODULES.leads.status.filter(s => s !== current).map(s => ({label:s,to:s}));
-  const converted = current === "Converted";
+  const converted = current === "Converted" && record.status === "Converted" && Boolean(record.converted_deal_id);
   return `<section class="detail-plain-section crm-lead-state" id="detail-section-current_stage"><div class="detail-plain-head"><h3>Current stage &amp; transitions</h3><span class="crm-stage-label">${custom ? esc(timeline.blueprint_name || "Custom Blueprint") : "Lead process"}</span></div>
     <div class="crm-state-body"><div class="crm-state-current"><span>Current stage</span><strong>${esc(current)}</strong></div>
-    <div class="crm-state-actions"><span>Available transitions</span><div class="crm-transition-options">${converted ? '<p class="related-empty">This lead has been converted.</p>' : choices.length ? choices.map(choice =>
+    <div class="crm-state-actions"><span>Available transitions</span><div class="crm-transition-options">${converted ? `<div class="crm-conversion-confirmation"><p class="related-empty">This lead has been converted.</p><button class="crm-transition-action" type="button" data-go="/deals/${Number(record.converted_deal_id)}">View created Deal →</button></div>` : choices.length ? choices.map(choice =>
       custom ? `<button type="button" class="crm-transition-action" data-blueprint-move="${esc(choice.id)}" data-blueprint-resource="leads" data-blueprint-record="${record.id}" data-blueprint-required="${esc(JSON.stringify(choice.required || []))}" title="${esc(choice.message || choice.to)}">${esc(choice.label || choice.to)} <span aria-hidden="true">→</span></button>` :
-      `<button type="button" class="crm-transition-action" data-lead-transition="${record.id}" data-status="${esc(choice.to)}">${esc(choice.label)} <span aria-hidden="true">→</span></button>`).join("") : '<p class="related-empty">No transitions are available from this stage.</p>'}
+      `<button type="button" class="crm-transition-action" data-lead-transition="${record.id}" data-status="${esc(choice.to)}">${esc(choice.label)} <span aria-hidden="true">→</span></button>`).join("") : `<p class="related-empty">${custom ? "No outgoing transitions from this stage in the published Blueprint." : "No transitions are available from this stage."}</p>`}
     </div><small>${custom ? "Transitions and rules are supplied by the published Blueprint." : "Contacted creates or links an Account and Contact; Converted creates a Deal."}</small></div></div></section>`;
 }
 
@@ -949,8 +949,8 @@ function bindBlueprintMoves(){
     try {
       const changed = await api(`/api/blueprint-records/${resource}/${recordId}/transition`,{method:"POST",body:JSON.stringify({transition_id:button.dataset.blueprintMove,fields})});
       toast("Blueprint transition completed","Current stage and transitions updated.");
-      if(resource==="leads" && changed.status==="Converted" && changed.converted_deal_id) await navigate(`/deals/${changed.converted_deal_id}`);
-      else await renderRoute();
+      if(resource==="leads" && changed.status==="Converted" && changed.converted_deal_id) toast("Lead converted","Account, Contact and Deal records are now linked.");
+      await renderRoute();
     }catch(error){button.disabled=false;toast("Transition blocked",error.message,"error");}
   }));
 }
@@ -1558,6 +1558,8 @@ async function leadConvertPage(id) {
   if (lead.status === "Converted") {
     return `<section class="card" style="padding:28px"><h2>Lead already converted</h2><p>This lead has already been converted. Additional records will not be created.</p><button class="button button-primary" data-conversion-go="/leads">Go to Leads</button></section>`;
   }
+  const timeline = await api(`/api/leads/${id}/timeline`);
+  if (timeline.blueprint_enabled) return `<section class="card" style="padding:28px"><h2>Use the Blueprint transition</h2><p>Advance this lead through the published Blueprint and click Convert at the final stage.</p><button class="button button-primary" data-conversion-go="/leads/${id}">Go to lead</button></section>`;
   const name = esc(lead.name || "Lead");
   const company = esc(lead.company || "");
   return `<section class="card" style="padding:0;overflow:visible;min-height:70vh">
@@ -1585,7 +1587,7 @@ async function leadConvertPage(id) {
 function bindLeadConvertPage(id) {
   const form = $("#lead-conversion-form");
   if (!form) {
-    $("[data-conversion-go]")?.addEventListener("click", () => navigate("/leads"));
+    $("[data-conversion-go]")?.addEventListener("click", (event) => navigate(event.currentTarget.dataset.conversionGo || "/leads"));
     return;
   }
   const checkbox = $("#convert-deal");
