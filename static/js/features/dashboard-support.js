@@ -43,6 +43,10 @@ function attentionQueue(attention) {
   return items.length ? `<div class="ai-queue-list" aria-label="Records requiring action">${items.join("")}</div>` : emptyState("✓", "Nothing urgent", "No stale leads or quotations need immediate follow-up.");
 }
 
+function attentionPanel(attention) {
+  return `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div><button type="button" class="card-head-link" data-go="/dashboard/report/ai-action-queue">View queue ↗</button></div><div class="card-body">${attentionQueue(attention)}</div></section>`;
+}
+
 function activityItem(item) {
   const rawKind = String(item.activity_type || "task").toLowerCase();
   const kind = ["call", "meeting"].includes(rawKind) ? rawKind : "task";
@@ -56,5 +60,5 @@ function bindDashboard() {
 }
 
 
-return { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard };
+return { dashboardReportView, performanceTable, attentionPanel, activityItem, bindDashboard };
 }
