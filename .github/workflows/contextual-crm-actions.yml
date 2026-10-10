@@ -1,0 +1,39 @@
+name: Contextual CRM Creation Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "static/js/app.js"
+      - "static/js/features/context-actions.js"
+      - "app/services/core.py"
+      - "tests/test_contextual_deal_quote.py"
+      - "tests/test_browser_contextual_actions.py"
+      - ".github/workflows/contextual-crm-actions.yml"
+  workflow_dispatch:
+
+jobs:
+  contextual-actions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Install test requirements
+        run: python -m pip install -r requirements-dev.txt pytest pytest-timeout
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Validate frontend modules
+        run: |
+          node --check static/js/app.js
+          node --check static/js/features/context-actions.js
+      - name: Test Account to Deal and Deal to Quote workflows
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q tests/test_contextual_deal_quote.py tests/test_browser_contextual_actions.py --timeout=180
