@@ -5240,6 +5240,36 @@ async def import_csv(resource: str, file: UploadFile = File(...), db: Session = 
     return {"job_id": job.id, "resource": resource, "imported": imported, "errors": errors, "status": job.status}
 
 
+@app.get("/api/import-wizard/{resource}/sample.{format}")
+def guided_import_sample(resource: str, format: str, actor: User = Depends(current_actor)) -> StreamingResponse:
+    templates = {
+        "leads": ["First Name", "Last Name", "Phone Number", "Lead Source", "Lead Status"],
+        "deals": ["Deal Name", "Phone Number", "Amount", "Stage"],
+        "accounts": ["Account Name", "Phone Number", "Website", "Industry"],
+        "contacts": ["First Name", "Last Name", "Phone Number", "Email"],
+    }
+    if resource not in templates or format not in {"csv", "xlsx"}:
+        raise HTTPException(404, "Unknown import sample")
+    columns = templates[resource]
+    if format == "csv":
+        stream = io.StringIO()
+        csv.writer(stream).writerow(columns)
+        payload = stream.getvalue().encode("utf-8-sig")
+        media_type = "text/csv; charset=utf-8"
+    else:
+        from openpyxl import Workbook
+        book = Workbook()
+        book.active.title = resource.title()
+        book.active.append(columns)
+        binary = io.BytesIO()
+        book.save(binary)
+        payload = binary.getvalue()
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return StreamingResponse(iter([payload]), media_type=media_type, headers={
+        "Content-Disposition": f'attachment; filename="crm-{resource}-sample.{format}"'
+    })
+
+
 # Guided import endpoints are separate from the legacy CSV endpoint, preserving its
 # existing integrations while applying strict mapping and phone validation to the wizard.
 from app.services.import_wizard import parse_import_file, MAX_IMPORT_ROWS
@@ -5260,12 +5290,18 @@ async def _wizard_uploads(files: list[UploadFile], charset: str) -> tuple[list[d
 @app.post("/api/import-wizard/{resource}/preview")
 async def preview_guided_import(
     resource: str, files: list[UploadFile] = File(...),
-    charset: str = Form("auto"), actor: User = Depends(current_actor)
+    charset: str = Form("auto"), actor: User = Depends(current_actor),
+    db: Session = Depends(get_db)
 ) -> dict[str, Any]:
     if resource not in {"leads", "deals", "accounts", "contacts"}:
         raise HTTPException(404, "Unknown import module")
     parsed, columns = await _wizard_uploads(files, charset)
-    return {"resource": resource, "files": [{"name": p["filename"], "count": p["count"]} for p in parsed],
+    module = db.scalars(select(MetadataModule).where(MetadataModule.api_name == resource)).first()
+    layouts = ["Default"]
+    if module is not None:
+        layouts.extend(str(name) for name in db.scalars(select(MetadataLayout.name).where(
+            MetadataLayout.module_id == module.id)).all() if name and str(name) not in layouts)
+    return {"resource": resource, "layouts": layouts, "files": [{"name": p["filename"], "count": p["count"]} for p in parsed],
             "columns": columns, "sample": parsed[0]["sample"],
             "total": sum(p["count"] for p in parsed),
             "fields": [{"key": key, "label": key.replace("_", " ").title()}
