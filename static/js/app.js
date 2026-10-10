@@ -6,6 +6,7 @@ import { state, PLATFORM_MODULE_ROUTES, $, $$, esc, titleCase, initials, formatD
 import { MODULES } from "./features/modules.js";
 import { FILTERABLE_MODULES, renderModuleFilters, bindModuleFilters } from "./features/module-filters.js";
 import { createSetupFeature } from "./features/setup.js";
+import { createImportWizardFeature } from "./features/import-wizard.js";
 import { createBlueprintFeature } from "./features/blueprints.js";
 import { createWorkflowRulesUI } from "./features/workflow-rules.js";
 import { createAiFeature } from "./features/ai.js";
@@ -215,6 +216,7 @@ async function refreshNavCount() {
 }
 
 const workflowRulesUI = createWorkflowRulesUI({api, esc, toast, navigate, renderRoute, state});
+const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MODULES});
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
 const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
 
@@ -324,6 +326,12 @@ async function renderRoute() {
       setBreadcrumb(module.plural_label || module.label, "Custom Modules");
       content.innerHTML = await customRuntimeView(module);
       bindCustomRuntime(module);
+      return;
+    }
+    if (parts[0] === "import" && ["leads", "deals", "accounts", "contacts"].includes(parts[1])) {
+      setBreadcrumb("Import " + MODULES[parts[1]].label, "Data Administration");
+      content.innerHTML = importWizardUI.view(parts[1]);
+      importWizardUI.bind(content);
       return;
     }
     if (parts[0] === "settings") {
@@ -519,7 +527,7 @@ async function moduleView(resource) {
     params.set("filters", JSON.stringify(current.advancedFilters));
   }
   const data = await api(`/api/${resource}?${params}`);
-  const actions = `<button class="button button-primary" data-create="${resource}"><span class="button-icon">＋</span>Add ${config.singular.toLowerCase()}</button>`;
+  const actions = `<button class="button button-ghost" data-start-import="${resource}">Import ${config.label}</button><button class="button button-primary" data-create="${resource}"><span class="button-icon">＋</span>Add ${config.singular.toLowerCase()}</button>`;
   const viewOptions = [["list","List"],["grid","Grid"],["split","Split"],["chart","Chart"],["timeline","Timeline"]];
   if (resource === "deals") viewOptions.splice(1,0,["kanban","Pipeline"]);
   const viewToggle = `<div class="view-toggle">${viewOptions.map(([key,label]) => `<button class="${current.view === key ? "active" : ""}" data-toggle-view="${key}">${label}</button>`).join('')}</div>`;
@@ -740,6 +748,7 @@ async function bulkArchiveLeads(current) {
 function bindModule(resource) {
   const current = state.moduleState[resource];
   bindModuleFilters({resource, current, renderRoute, toast});
+  $("[data-start-import]").forEach(button => button.addEventListener("click", () => navigate("/import/" + button.dataset.startImport)));
   $$('[data-create]').forEach((button) => button.addEventListener("click", () => openRecordModal(button.dataset.create, null, button.dataset.activityType ? { activity_type: button.dataset.activityType } : {})));
   $$('[data-open-record]').forEach((button) => button.addEventListener("click", () => navigate(pathFor(button.dataset.openRecord, button.dataset.id))));
 
