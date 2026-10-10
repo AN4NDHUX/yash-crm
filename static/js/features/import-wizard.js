@@ -38,7 +38,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
     const resource = current.resource;
     const canMatchEmail = ["leads", "contacts"].includes(resource);
     return `<div class="import-form-section"><h3>Choose layout</h3><label class="import-input-row">Select layout to import ${esc(caption(resource))}
-      <select data-import-layout><option value="Default">Default</option></select></label></div>
+      <select data-import-layout>${(current.preview?.layouts || ["Default"]).map(name=>`<option value="${esc(name)}" ${current.layout===name?"selected":""}>${esc(name)}</option>`).join("")}</select></label></div>
       <div class="import-form-section"><h3>How should the records in these files be processed?</h3>
       ${[["add","Add as new"],["update","Update existing only"],["both","Both - add and update"]].map(([value,label])=>`
       <label class="import-choice"><input type="radio" name="import-operation" value="${value}" ${current.operation===value?"checked":""} /> ${esc(label)} ${esc(caption(resource))}</label>`).join("")}
@@ -100,7 +100,7 @@ export function createImportWizardFeature({ toast, navigate, esc, MODULES }) {
       <div class="import-upload-icon">⇧</div>
       <strong>Drag and drop files here</strong><p>- or -</p>
       <label class="button import-browse">Browse Files<input data-import-files type="file" multiple accept=".xlsx,.csv,.vcf,.xls" hidden /></label>
-      <p>Supported file formats: XLSX, CSV, VCF and XLS</p>
+      <p>Supported file formats: XLSX, CSV, VCF and XLS</p><p>Download sample file: <a href="/api/import-wizard/${current.resource}/sample.csv" download>CSV</a> or <a href="/api/import-wizard/${current.resource}/sample.xlsx" download>XLSX</a></p>
       ${fileList()}</div>
       <label class="import-input-row">Charset <select data-import-charset>${CHARSETS.map(k=>`<option value="${k}" ${current.charset===k?"selected":""}>${k==="auto"?"Auto-Detect":k.toUpperCase()}</option>`).join("")}</select></label>
       <div class="import-help">Up to 3 files, 25 MB per file, maximum 100,000 records per job. The files are previewed before importing.</div>`;
