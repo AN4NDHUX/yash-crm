@@ -994,8 +994,8 @@ def ensure_workspace_defaults(db: Session) -> None:
     lead = db.scalar(select(Lead).order_by(Lead.id).limit(1))
     if db.scalar(select(Product.id).limit(1)) is None and owner:
         db.add_all([
-            Product(name="CONVOSIS CRM Enterprise", sku="YCR-ENT-001", category="CRM platform", unit_price=480000, stock_quantity=999, status="Active", description="Enterprise customer operations workspace.", owner_id=owner.id, organization_id=organization_id, related_type="accounts" if account else None, related_id=account.id if account else None),
-            Product(name="Implementation Sprint", sku="YCR-SVC-010", category="Professional services", unit_price=125000, stock_quantity=20, status="Active", description="Guided onboarding and rollout package.", owner_id=owner.id, organization_id=organization_id, related_type="contacts" if contact else None, related_id=contact.id if contact else None),
+            Product(name="CONVOSIS CRM Enterprise", record_number="PRD00001", sku="YCR-ENT-001", category="CRM platform", unit_price=480000, stock_quantity=999, status="Active", description="Enterprise customer operations workspace.", owner_id=owner.id, organization_id=organization_id, related_type="accounts" if account else None, related_id=account.id if account else None),
+            Product(name="Implementation Sprint", record_number="PRD00002", sku="YCR-SVC-010", category="Professional services", unit_price=125000, stock_quantity=20, status="Active", description="Guided onboarding and rollout package.", owner_id=owner.id, organization_id=organization_id, related_type="contacts" if contact else None, related_id=contact.id if contact else None),
         ])
     if db.scalar(select(Note.id).limit(1)) is None and owner and (account or lead):
         db.add(Note(title="Discovery notes", content="Capture the next stakeholder discussion and rollout priorities.", related_type="accounts" if account else "leads", related_id=account.id if account else lead.id, owner_id=owner.id, organization_id=organization_id))
