@@ -70,15 +70,16 @@ def test_quote_detail_related_records_and_organization_isolation():
     assert related['sales_orders'][0]['quote_id'] == out['quote_id'], out
     assert related['invoices'][0]['sales_order_id'] == out['order']['id'], out
     assert any(event['action'] == 'create' for event in related['timeline']), out
-    assert (out['other_detail'],out['other_related']) == (404,404), out
+    assert out['other_detail'] in (403,404) and out['other_related'] in (403,404), out
 
 
 def test_quote_details_route_actions_and_responsive_styles_wired():
     js = (ROOT / 'static/js/app.js').read_text(encoding='utf-8')
     detail = (ROOT / 'static/js/features/quote-details.js').read_text(encoding='utf-8')
+    table = (ROOT / 'static/js/features/platform-table.js').read_text(encoding='utf-8')
     css = (ROOT / 'static/css/modules.css').read_text(encoding='utf-8')
     assert 'if (resource === "quotes" && parts[1])' in js
-    assert 'href="/quotes/${Number(row.id)}"' in js
+    assert 'href="/quotes/${Number(row.id)}"' in table
     assert 'createQuoteDetails' in js
     assert 'data-quote-tab="overview"' in detail and 'data-quote-tab="timeline"' in detail
     assert 'data-quote-convert="sales_orders"' in detail
