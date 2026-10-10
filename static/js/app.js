@@ -1296,6 +1296,15 @@ function bindPlatform(resource) {
     }catch(error){toast('Cleanup failed',error.message,'error');}
   });
   $$('[data-restore-resource]').forEach((button) => button.addEventListener("click", async () => { try { await api("/api/administration/restore", { method: "POST", body: JSON.stringify({ resource: button.dataset.restoreResource, record_id: Number(button.dataset.id) }) }); toast("Record restored"); await renderRoute(); } catch (error) { toast("Could not restore record", error.message, "error"); } }));
+  $('[data-setup-import-selector]')?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const selected = event.currentTarget.elements.resource.value;
+    if (!["leads", "deals", "accounts", "contacts"].includes(selected)) {
+      toast("Unsupported module", "Choose Leads, Deals, Accounts or Contacts.", "error");
+      return;
+    }
+    navigate("/import/" + selected);
+  });
   $('[data-import-form]')?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const file = form.querySelector('[name="file"]').files[0]; if (!file) return; const body = new FormData(); body.append("file", file); try { const response = await fetch(`/api/import/${form.elements.resource.value}`, { method: "POST", body }); const result = await response.json(); if (!response.ok) throw new Error(result.detail || "Import failed"); toast("Import complete", `${result.imported} rows imported; ${result.errors.length} errors.`); form.reset(); } catch (error) { toast("Could not import CSV", error.message, "error"); } });
   $('[data-duplicate-form]')?.addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const target = $('[data-duplicate-results]'); try { const result = await api(`/api/administration/duplicates?resource=${encodeURIComponent(form.elements.resource.value)}`); target.innerHTML = result.groups.length ? result.groups.map((group) => `<div class="rule-row"><div class="rule-info"><strong>${esc(group.value)}</strong><small>${group.count} records match on ${esc(group.match_on)}</small></div>${badge("Review")}</div>`).join("") : emptyState("✓", "No duplicates found", "No exact normalized matches were detected."); } catch (error) { toast("Duplicate scan failed", error.message, "error"); } });
 }
