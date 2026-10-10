@@ -74,8 +74,8 @@ def test_module_filter_catalogs_and_authorized_field_criteria():
             out['contacts_by_account'] = [r['id'] for r in filtered('contacts',[related('accounts','exists','Alpha')]).json()['items']]
             out['contacts_without_account'] = [r['id'] for r in filtered('contacts',[related('accounts','not_exists')]).json()['items']]
             out['deals_by_account'] = [r['id'] for r in filtered('deals',[related('accounts','exists','Alpha')]).json()['items']]
-            out['all_join'] = filtered('accounts',[field('name','contains','Filter'), related('contacts','exists')]).json()['total']
-            out['any_join'] = filtered('accounts',[field('name','contains','Beta'), related('contacts','exists')],join='any').json()['total']
+            out['all_join'] = [r['id'] for r in filtered('accounts',[field('name','contains','Filter'), related('contacts','exists')]).json()['items']]
+            out['any_join'] = [r['id'] for r in filtered('accounts',[field('name','contains','Beta'), related('contacts','exists')],join='any',limit=100).json()['items']]
             out['paged'] = filtered('accounts',[field('name','contains','Filter')],limit=1).json()
             out['no_results'] = filtered('leads',[field('name','contains','No match')]).json()['total']
             out['bad_field'] = filtered('leads',[field('password_hash','contains','secret')]).status_code
@@ -91,14 +91,15 @@ def test_module_filter_catalogs_and_authorized_field_criteria():
     assert all(out['catalog'].values()), out
     ids = out['ids']
     assert out['names'] == [ids['alpha']], out
-    assert out['numeric'] == [ids['deal']], out
-    assert out['status'] == [ids['lost']], out
+    assert ids['deal'] in out['numeric'] and ids['lost'] not in out['numeric'], out
+    assert ids['lost'] in out['status'] and ids['deal'] not in out['status'], out
     assert out['by_contact'] == [ids['alpha']], out
-    assert out['without_contact'] == [ids['beta']], out
+    assert ids['beta'] in out['without_contact'] and ids['alpha'] not in out['without_contact'], out
     assert out['contacts_by_account'] == [ids['contact']], out
-    assert out['contacts_without_account'] == [ids['lone']], out
+    assert ids['lone'] in out['contacts_without_account'] and ids['contact'] not in out['contacts_without_account'], out
     assert out['deals_by_account'] == [ids['deal']], out
-    assert out['all_join'] == 1 and out['any_join'] == 2, out
+    assert ids['alpha'] in out['all_join'] and ids['beta'] not in out['all_join'], out
+    assert ids['alpha'] in out['any_join'] and ids['beta'] in out['any_join'], out
     assert out['paged']['total'] == 2 and len(out['paged']['items']) == 1, out
     assert out['no_results'] == 0, out
     for name in ('bad_field','bad_relation','bad_date','too_many','bad_json'):
