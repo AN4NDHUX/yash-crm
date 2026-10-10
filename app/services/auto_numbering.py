@@ -95,5 +95,6 @@ def apply_number(db: Session, record: PlatformRecord | Product) -> str:
         existing = allocate_number(db, resource, record.organization_id)
     data["record_number"] = existing
     data[field] = existing
+    record.record_number = existing
     record.data = data
     return existing
