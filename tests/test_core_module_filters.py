@@ -117,3 +117,19 @@ def test_module_filter_file_sources_wired_to_core_lists():
     for text in ('System Defined Filters','Filter By Fields','Filter By Related Modules'):
         assert text in filters
     assert 'data-filter-apply' in filters and 'data-filter-reset' in filters
+
+
+def test_related_filters_enforce_organization_isolation_and_legacy_ownership():
+    from types import SimpleNamespace
+    from app.services.module_filtering import _same_org
+
+    def record(org, owner):
+        return SimpleNamespace(organization_id=org, owner_id=owner)
+
+    assert _same_org(record(4, 2), record(4, 3))
+    assert not _same_org(record(4, 2), record(5, 2))
+    assert not _same_org(record(4, 2), record(None, 2))
+    assert not _same_org(record(None, 2), record(4, 2))
+    assert _same_org(record(None, 2), record(None, 2))
+    assert not _same_org(record(None, 2), record(None, 3))
+    assert not _same_org(record(None, None), record(None, None))
