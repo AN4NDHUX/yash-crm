@@ -29,12 +29,12 @@ PLATFORM_RESOURCES: dict[str, dict[str, Any]] = {
     "price_books": {
         "label": "Price Books", "singular": "Price Book", "group": "Sales & Inventory",
         "description": "Maintain reusable product pricing and effective periods.",
-        "fields": [field("name", "Name", required=True), field("currency", "Currency", "select", options=["INR", "USD", "EUR"]), field("discount_percent", "Discount %", "number"), field("valid_from", "Valid from", "date"), field("valid_to", "Valid to", "date"), field("status", "Status", "select", options=COMMON_STATUS), field("description", "Description", "textarea", full=True)],
+        "fields": [field("name", "Name", required=True), field("record_number", "Price Book Number"), field("currency", "Currency", "select", options=["INR", "USD", "EUR"]), field("discount_percent", "Discount %", "number"), field("valid_from", "Valid from", "date"), field("valid_to", "Valid to", "date"), field("status", "Status", "select", options=COMMON_STATUS), field("description", "Description", "textarea", full=True)],
     },
     "vendors": {
         "label": "Vendors", "singular": "Vendor", "group": "Sales & Inventory",
         "description": "Track suppliers, purchasing contacts and commercial terms.",
-        "fields": [field("name", "Vendor name", required=True), field("email", "Email", "email"), field("phone", "Phone"), field("website", "Website"), field("category", "Category"), field("tax_id", "Tax ID"), field("status", "Status", "select", options=COMMON_STATUS), field("address", "Address", "textarea", full=True)],
+        "fields": [field("name", "Vendor name", required=True), field("record_number", "Vendor Number"), field("email", "Email", "email"), field("phone", "Phone"), field("website", "Website"), field("category", "Category"), field("tax_id", "Tax ID"), field("status", "Status", "select", options=COMMON_STATUS), field("address", "Address", "textarea", full=True)],
     },
     "quotes": {
         "label": "Quotes", "singular": "Quote", "group": "Sales & Inventory",
@@ -59,7 +59,7 @@ PLATFORM_RESOURCES: dict[str, dict[str, Any]] = {
     "payments": {
         "label": "Payments", "singular": "Payment", "group": "Sales & Inventory",
         "description": "Record customer collections against invoices and sales ownership.",
-        "fields": [field("name", "Payment reference", required=True), field("invoice_id", "Invoice", "platform:invoices", required=True), field("account_id", "Account", "account"), field("deal_id", "Opportunity", "deal"), field("amount", "Amount received", "number", required=True), field("payment_date", "Payment date", "date", required=True), field("method", "Method", "select", options=["Bank Transfer", "UPI", "Card", "Cheque", "Cash", "Other"]), field("status", "Status", "select", options=["Pending", "Received", "Cleared", "Failed", "Refunded"]), field("notes", "Notes", "textarea", full=True)],
+        "fields": [field("name", "Payment reference", required=True), field("record_number", "Payment Number"), field("invoice_id", "Invoice", "platform:invoices", required=True), field("account_id", "Account", "account"), field("deal_id", "Opportunity", "deal"), field("amount", "Amount received", "number", required=True), field("payment_date", "Payment date", "date", required=True), field("method", "Method", "select", options=["Bank Transfer", "UPI", "Card", "Cheque", "Cash", "Other"]), field("status", "Status", "select", options=["Pending", "Received", "Cleared", "Failed", "Refunded"]), field("notes", "Notes", "textarea", full=True)],
     },
     "site_visits": {
         "label": "Site Visits", "singular": "Site Visit", "group": "Customer & Marketing",
