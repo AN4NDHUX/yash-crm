@@ -222,7 +222,7 @@ const importWizardUI = createImportWizardFeature({api, toast, navigate, esc, MOD
 const { platformDetailView, bindPlatformDetail } = createPlatformDetailFeature({ api, state, esc, formatDateTime, formatMoney, navigate, openPlatformModal, deletePlatformRecord, selectAll: $$ });
 const { openDealForAccount, bindContextCreationActions } = createContextActions({ api, openPlatformModal, openRecordModal, state, toast, selectAll: $$ });
 const { teamspacesView, bindTeamspaces } = createTeamspacesFeature({ api, pageHeader, esc, emptyState, $, $$, readForm, toast, navigate });
-const { dashboardReportView, performanceTable, attentionQueue, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
+const { dashboardReportView, performanceTable, attentionPanel, activityItem, bindDashboard } = createDashboardSupport({ api, formatDate, formatDateTime, formatMoney, esc, badge, pageHeader, emptyState, titleCase, $$, openRecordModal });
 
 async function navigate(path, replace = false) {
   if (replace) history.replaceState({}, "", path); else history.pushState({}, "", path);
@@ -428,7 +428,7 @@ async function dashboardView() {
   const maxPipeline = Math.max(...data.pipeline.map((row) => row.amount), 1);
   const maxLeads = Math.max(...data.lead_funnel.map((row) => row.count), 1);
   const performancePanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>Sales performance</h2><small>Target, collections, conversion and earned incentive</small></div><button class="card-head-link" data-go="/sales_targets">Manage targets →</button></div><div class="card-body">${performanceTable(data.sales_performance || [])}</div></section>`;
-  const attentionPanel = `<section class="card"><div class="card-head"><div class="card-head-copy"><h2>AI action queue</h2><small>Prioritized from live CRM dates and statuses</small></div><button type="button" class="card-head-link" data-go="/dashboard/report/ai-action-queue">View queue ↗</button></div><div class="card-body">${attentionQueue(data.attention || {})}</div></section>`;
+  const queuePanel = attentionPanel(data.attention || {});
   return `${pageHeader("Overview", `${greeting()}, ${String(state.profile?.name || "there").split(" ")[0]}`, "Here is what is happening across your customer workspace.", `<button class="button button-ghost" data-go="/ai"><span class="button-icon">✦</span>Ask AI</button><button class="button button-ghost" data-create="activities"><span class="button-icon">＋</span>Log activity</button><button class="button button-primary" data-create="leads"><span class="button-icon">＋</span>Add lead</button>`)}
     <div class="stats-grid">
       <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/total-leads" aria-label="Open Total leads report"><div class="stat-top"><span class="stat-label">Total leads</span><span class="stat-icon">✦</span></div><div class="stat-value">${metrics.total_leads}</div><div class="stat-foot"><span class="trend-up">Live</span><span>from CRM records</span></div></button>
@@ -436,7 +436,7 @@ async function dashboardView() {
       <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/pipeline-value" aria-label="Open Pipeline value report"><div class="stat-top"><span class="stat-label">Pipeline value</span><span class="stat-icon">₹</span></div><div class="stat-value">${formatMoney(metrics.pipeline_value)}</div><div class="stat-foot"><span class="trend-up">Live</span><span>open opportunities</span></div></button>
       <button type="button" class="card stat-card dashboard-metric-link" data-go="/dashboard/report/activities-due" aria-label="Open Activities due report"><div class="stat-top"><span class="stat-label">Activities due</span><span class="stat-icon">✓</span></div><div class="stat-value">${metrics.activities_due}</div><div class="stat-foot"><span class="trend-warm">Needs attention</span><span>next 7 days</span></div></button>
     </div>
-    <div class="dashboard-grid management-grid">${performancePanel}${attentionPanel}</div>
+    <div class="dashboard-grid management-grid">${performancePanel}${queuePanel}</div>
     <div class="dashboard-grid">
       <div class="dashboard-column">
         <section class="card"><div class="card-head"><div class="card-head-copy"><h2>Pipeline overview</h2><small>Open opportunities by stage</small></div><button class="card-head-link" data-go="/deals">View deals ↗</button></div><div class="card-body"><div class="pipeline-chart">${data.pipeline.length ? data.pipeline.map((row) => `<div class="pipeline-row"><span class="pipeline-label">${esc(row.stage)}</span><div class="progress-track"><div class="progress-bar" style="width:${Math.max(4, row.amount / maxPipeline * 100)}%"></div></div><span class="pipeline-meta"><strong>${formatMoney(row.amount)}</strong>${row.count} deal${row.count === 1 ? "" : "s"}</span></div>`).join("") : `<p class="loading">No pipeline records yet.</p>`}</div></div></section>
