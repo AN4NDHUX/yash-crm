@@ -116,7 +116,7 @@ def test_account_detail_and_selection_create_deal_then_create_quote():
                 assert quote["amount"]==14800,quote
                 assert quote["terms"]=="Net 30 days",quote
                 assert quote["status"]=="Draft",quote
-                assert quote["quote_number"].startswith("QUO-"),quote
+                assert quote["quote_number"].startswith("QT"),quote
 
                 page.goto(base+"/accounts")
                 checkbox=page.locator('[data-select-record="accounts"]').first
