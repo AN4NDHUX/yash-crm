@@ -1074,7 +1074,7 @@ def order_clauses(model: type[Base], sort: str) -> list[Any]:
     return [created.desc(), model.id.desc()]
 
 
-def list_resource(db: Session, resource: str, search: str | None, status: str | None, owner_id: int | None, sort: str, min_amount: float | None, max_amount: float | None, close_from: date | None, close_to: date | None, limit: int, offset: int, activity_type: str | None = None, actor: User | None = None) -> dict[str, Any]:
+def list_resource(db: Session, resource: str, search: str | None, status: str | None, owner_id: int | None, sort: str, min_amount: float | None, max_amount: float | None, close_from: date | None, close_to: date | None, limit: int, offset: int, activity_type: str | None = None, actor: User | None = None, filters: str | None = None) -> dict[str, Any]:
     model = RESOURCE_MAP[resource]
     query = select(model)
     if hasattr(model, "archived"):
@@ -1106,6 +1106,9 @@ def list_resource(db: Session, resource: str, search: str | None, status: str | 
         if close_to:
             query = query.where(Deal.expected_close_date <= close_to)
     all_rows = [row for row in db.scalars(query.order_by(*order_clauses(model, sort))).all() if _access_hook(db, resource, row, actor)]
+    if filters:
+        from app.services.module_filtering import filter_rows
+        all_rows = filter_rows(db, resource, all_rows, filters, actor, _access_hook)
     count = len(all_rows)
     rows = all_rows[offset:offset + limit]
     return {"items": [serialize(row, db, actor) for row in rows], "total": count, "limit": limit, "offset": offset}
