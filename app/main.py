@@ -5333,12 +5333,22 @@ def download_document(item_id: int, db: Session = Depends(get_db), actor: User =
     return FileResponse(target, filename=download_name, media_type=str(data.get("content_type") or "application/octet-stream"), headers={"Cache-Control": "private, no-store"})
 
 
+@app.get("/api/module-filter-options/{resource}")
+def module_filter_options(
+    resource: str,
+    actor: User = Depends(current_actor),
+) -> dict[str, Any]:
+    _require_admin_resource(resource, actor)
+    from app.services.module_filtering import catalog
+    return catalog(resource)
+
+
 @app.get("/api/{resource}")
-def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, activity_type: str | None = None, limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
+def get_collection(resource: str, search: str | None = None, status: str | None = None, owner_id: int | None = None, sort: str = "created_desc", min_amount: float | None = None, max_amount: float | None = None, close_from: date | None = None, close_to: date | None = None, activity_type: str | None = None, filters: str | None = Query(default=None, max_length=6000), limit: int = Query(default=25, ge=1, le=100), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db), actor: User = Depends(current_actor)) -> dict[str, Any]:
     _require_admin_resource(resource, actor)
     if resource not in RESOURCE_MAP:
         raise HTTPException(404, "Resource not found")
-    return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset, activity_type, actor)
+    return list_resource(db, resource, search, status, owner_id, sort, min_amount, max_amount, close_from, close_to, limit, offset, activity_type, actor, filters)
 
 
 @app.post("/api/leads/bulk-archive")
