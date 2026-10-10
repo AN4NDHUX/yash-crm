@@ -166,7 +166,7 @@ def promote_lead_to_deal(db, lead, actor, values=None, *, create_deal=True):
         ).limit(1))
     if create_deal and deal is None:
         m["_enforce_record_limit"](db, actor)
-        name = str(values.get("deal_name") or f"{account.name} opportunity").strip()
+        name = str(values.get("deal_name") or lead.name).strip()
         if not name:
             raise HTTPException(422, "Deal name is required")
         close_date = (m["parse_date_value"](values["expected_close_date"])
@@ -177,8 +177,8 @@ def promote_lead_to_deal(db, lead, actor, values=None, *, create_deal=True):
             origin_lead_id=lead.id, amount=float(values.get("deal_amount") or 0),
             stage=stage, probability=20, expected_close_date=close_date,
             owner_id=lead.owner_id, organization_id=org_id, type="New business",
-            source="Lead conversion", status="Open",
-            notes=f"Created from lead #{lead.id} conversion. Contact role: {values.get('contact_role') or 'None'}",
+            source=lead.source or "Lead conversion", status="Open",
+            notes=(lead.notes or "") + f"\nOrigin Lead #{lead.id}; role: {values.get('contact_role') or 'None'}",
         )
         db.add(deal)
         db.flush()
